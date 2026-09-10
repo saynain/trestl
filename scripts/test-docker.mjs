@@ -46,6 +46,16 @@ const composeArgs = [
   '--file',
   join(root, 'compose.yaml'),
 ];
+// Publication can exercise the exact image that will be pushed, without rebuilding it.
+const smokeImage = process.env.TRESTL_SMOKE_IMAGE;
+if (smokeImage) {
+  const override = join(temporary, 'image.json');
+  await writeFile(
+    override,
+    JSON.stringify({ services: { app: { image: smokeImage, pull_policy: 'never' } } }),
+  );
+  composeArgs.push('--file', override);
+}
 async function compose(...args) {
   await new Promise((resolve, reject) => {
     const child = spawn('docker', [...composeArgs, ...args], {
@@ -85,7 +95,14 @@ async function api(path, body) {
   return response;
 }
 try {
-  await compose('up', '--build', '--detach', '--wait', '--wait-timeout', '120');
+  await compose(
+    'up',
+    smokeImage ? '--no-build' : '--build',
+    '--detach',
+    '--wait',
+    '--wait-timeout',
+    '120',
+  );
   await ready();
   const page = await fetch(origin);
   assert.equal(page.status, 200);

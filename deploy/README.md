@@ -44,6 +44,9 @@ Compose enables five-minute repository reconciliation by default. The `/health` 
 
 ## Kubernetes
 
+See [container releases](../docs/container-releases.md) for publishing tested
+images to GHCR and replicating selected versions into an internal registry.
+
 Use the [Kubernetes guide](kubernetes/README.md) for the reusable Kustomize base,
 an example overlay, and the GitOps deployment workflow. Kubernetes requires an
 external PostgreSQL database and one application replica. Environment-specific
