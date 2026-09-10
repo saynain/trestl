@@ -89,16 +89,3 @@ test('zen mode owns mod+b without switching list layout', () => {
   assert.deepEqual(matcher.match(key('B', { shiftKey: true }), ids, true, 2), { id: 'layout' });
   assert.deepEqual(matcher.match(key('b', { metaKey: true, repeat: true }), ids, true, 3), {});
 });
-
-test('workspace switching uses its own navigation chord and respects typing and repeats', () => {
-  const matcher = new ShortcutMatcher();
-  const ids: ShortcutId[] = ['switchWorkspace', 'projects', 'inbox'];
-  assert.deepEqual(matcher.match(key('g'), ids, true, 0), { prefix: 'g' });
-  assert.deepEqual(matcher.match(key('w'), ids, true, 50), { id: 'switchWorkspace' });
-  assert.deepEqual(matcher.match(key('g'), ids, false, 100), { prefix: 'g' });
-  assert.deepEqual(matcher.match(key('w'), ids, false, 150), { id: 'switchWorkspace' });
-  matcher.match(key('g'), ids, true, 200);
-  assert.deepEqual(matcher.match(key('w', { repeat: true }), ids, true, 250), {});
-  matcher.match(key('g'), ids, true, 300);
-  assert.deepEqual(matcher.match(key('w'), [], true, 350), {});
-});

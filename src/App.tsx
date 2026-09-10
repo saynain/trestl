@@ -63,13 +63,17 @@ import ProjectForm from './components/ProjectForm';
 import ProjectAccess from './components/ProjectAccess';
 import Settings from './components/Settings';
 export default function App() {
-  const [auth, setAuth] = useState<{ needsSetup: boolean; authenticated: boolean } | null>(null);
+  const [auth, setAuth] = useState<{
+    needsSetup: boolean;
+    authenticated: boolean;
+    authMode?: 'local' | 'google' | 'oidc' | 'proxy';
+    installationName?: string;
+  } | null>(null);
   const [data, setData] = useState<Bootstrap | null>(null);
   const [error, setError] = useState('');
   const [route, setRoute] = useState<Route>(readRoute);
-  const [workspaceMenu, setWorkspaceMenu] = useState(false);
   const [command, setCommand] = useState(false);
-  const [commandMode, setCommandMode] = useState<'all' | 'items' | 'projects' | 'accounts'>('all');
+  const [commandMode, setCommandMode] = useState<'all' | 'items' | 'projects'>('all');
   const [commandItemId, setCommandItemId] = useState<string>();
   const [help, setHelp] = useState(false);
   const [itemAction, setItemAction] = useState<ItemAction>();
@@ -133,17 +137,33 @@ export default function App() {
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
         setData(null);
-        setAuth({ needsSetup: false, authenticated: false });
+        setAuth((current) => ({
+          needsSetup: false,
+          authenticated: false,
+          authMode: current?.authMode,
+          installationName: current?.installationName,
+        }));
       } else throw e;
     }
   }, []);
   const checkAuth = useCallback(async () => {
     try {
       setError('');
-      const state = await api<{ needsSetup: boolean; authenticated: boolean }>('/auth/status');
+      const state = await api<{
+        needsSetup: boolean;
+        authenticated: boolean;
+        authMode?: 'local' | 'google' | 'oidc' | 'proxy';
+        installationName?: string;
+      }>('/auth/status');
       setAuth(state);
       if (state.authenticated) await refresh();
     } catch (e) {
+      if (e instanceof ApiError && e.status === 401) {
+        // A proxy session can expire between page navigation and bootstrap.
+        // Reload through the page router so it can start the sign-in flow.
+        window.location.reload();
+        return;
+      }
       setError((e as Error).message);
     }
   }, [refresh]);
@@ -224,8 +244,7 @@ export default function App() {
     },
     [data?.views],
   );
-  const showCommands = (mode: 'all' | 'items' | 'projects' | 'accounts' = 'all') => {
-    setWorkspaceMenu(false);
+  const showCommands = (mode: 'all' | 'items' | 'projects' = 'all') => {
     setCommandMode(mode);
     const focused = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>(
       '[data-item-id]',
@@ -242,7 +261,7 @@ export default function App() {
         else showCommands();
       },
       search: () => showCommands(),
-      switchWorkspace: () => showCommands('accounts'),
+
       sidebar: toggleSidebar,
       dismiss: () => {
         setMobileNav(false);
@@ -294,7 +313,15 @@ export default function App() {
       </div>
     );
   if (!auth.authenticated)
-    return <Auth setup={auth.needsSetup} onSuccess={() => void checkAuth()} />;
+    return (
+      <Auth
+        setup={auth.needsSetup}
+        proxy={auth.authMode === 'proxy'}
+        mode={auth.authMode}
+        installationName={auth.installationName}
+        onSuccess={() => void checkAuth()}
+      />
+    );
   if (!data) return null;
   const project =
     route.page === 'project' ? data.projects.find((p) => p.id === route.id) : undefined;
@@ -311,10 +338,12 @@ export default function App() {
         : route.page === 'my-work'
           ? 'My work'
           : route.page === 'settings'
-            ? 'Settings'
-            : route.page === 'inbox'
-              ? 'Inbox'
-              : 'Work items');
+            ? 'Administration'
+            : route.page === 'account-settings'
+              ? 'Account settings'
+              : route.page === 'inbox'
+                ? 'Inbox'
+                : 'Work items');
   const description =
     route.page === 'projects'
       ? 'A little structure for everything you’re moving forward.'
@@ -372,8 +401,6 @@ export default function App() {
         className={`app-shell ${mobileNav ? 'nav-open' : ''} ${uiPreferences.zenMode ? 'zen-mode' : ''} ${presentingRoadmap ? 'roadmap-presenting' : ''}`}
       >
         <Sidebar
-          workspaceMenu={workspaceMenu}
-          setWorkspaceMenu={setWorkspaceMenu}
           route={route}
           command={() => showCommands()}
           onShortcuts={() => setHelp(true)}
@@ -405,7 +432,13 @@ export default function App() {
               <PanelLeft size={19} />
             </button>
             <div className="breadcrumbs">
-              <button onClick={() => navigate('projects')}>Workspace</button>
+              {route.page === 'account-settings' ? (
+                <span>{data.user.name}</span>
+              ) : (
+                <button onClick={() => navigate('projects')}>
+                  {data.workspace?.name ?? 'Workspace'}
+                </button>
+              )}
               <ChevronRight size={12} />
               {parent && (
                 <>
@@ -416,12 +449,14 @@ export default function App() {
               <span>{title}</span>
             </div>
             <div className="topbar-actions">
-              <div className="member-stack">
-                {data.users.slice(0, 3).map((u) => (
-                  <Avatar key={u.id} user={u} size={25} />
-                ))}
-              </div>
-              {route.page === 'settings' ? (
+              {route.page !== 'account-settings' && (
+                <div className="member-stack">
+                  {data.users.slice(0, 3).map((u) => (
+                    <Avatar key={u.id} user={u} size={25} />
+                  ))}
+                </div>
+              )}
+              {route.page === 'settings' || route.page === 'account-settings' ? (
                 <button
                   className="icon-button"
                   aria-label="Search workspace"
@@ -443,8 +478,12 @@ export default function App() {
               )}
             </div>
           </header>
-          {route.page === 'settings' ? (
-            <Settings section={route.tab} />
+          {route.page === 'settings' || route.page === 'account-settings' ? (
+            <Settings
+              key={`${data.user.id}:${route.page}`}
+              section={route.tab}
+              scope={route.page === 'account-settings' ? 'account' : 'workspace'}
+            />
           ) : route.page === 'home' ? (
             <Home tab={route.tab} />
           ) : (

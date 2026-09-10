@@ -30,6 +30,13 @@ const environment = {
   APP_SECRET: randomBytes(32).toString('hex'),
   APP_ORIGIN: origin,
   SECURE_COOKIES: 'false',
+  AUTH_MODE: 'local',
+  INSTALLATION_ID: '',
+  PROXY_AUTH_INSTALLATION_ID: '',
+  PROXY_AUTH_SECRET: '',
+  PROXY_AUTH_ALLOWED_DOMAINS: '',
+  PROXY_AUTH_ADMIN_EMAILS: '',
+  PROXY_AUTH_LINK_EXISTING_EMAILS: '',
   GITHUB_APP_CLIENT_ID: '',
   GITHUB_APP_CLIENT_SECRET: '',
   GITHUB_APP_SLUG: '',
@@ -107,7 +114,9 @@ try {
   const page = await fetch(origin);
   assert.equal(page.status, 200);
   assert.match(await page.text(), /<div id="root"><\/div>/);
+  assert.equal((await (await api('/auth/status')).json()).needsSetup, true);
   const setup = await api('/auth/setup', {
+    installationName: 'Container test installation',
     name: 'Container smoke test',
     email: 'smoke@example.test',
     password: randomBytes(24).toString('hex'),
@@ -117,6 +126,11 @@ try {
     .getSetCookie()
     .find((value) => value.startsWith('trestl_session='))
     .split(';')[0];
+  const bootstrap = await (await api('/bootstrap')).json();
+  assert.equal(bootstrap.workspace.name, 'Container test installation');
+  assert.equal(bootstrap.workspaces.length, 1);
+  assert.equal(bootstrap.user.role, 'admin');
+  assert.equal(bootstrap.user.personalWorkspaceId, undefined);
   const item = await (await api('/items', { title: 'Persist across container restart' })).json();
   await compose('restart', 'app');
   await ready();

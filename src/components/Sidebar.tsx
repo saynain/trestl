@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Home,
   Keyboard,
@@ -15,28 +15,66 @@ import {
   Lightbulb,
   PanelLeftClose,
   Bookmark,
+  ChevronsUpDown,
+  LogOut,
+  UserRound,
 } from 'lucide-react';
 import { useApp } from '../lib/context';
 import { navigate, type Route, isDone } from '../lib/model';
 import type { Project } from '../../shared/types';
 import { Avatar, Brand, ProjectIcon } from './ui';
-import ProfileSwitcher from './ProfileSwitcher';
+import { post } from '../lib/api';
 export default function Sidebar({
   route,
   command,
   onDismiss,
   onShortcuts,
-  workspaceMenu,
-  setWorkspaceMenu,
 }: {
-  workspaceMenu: boolean;
-  setWorkspaceMenu: (open: boolean) => void;
   route: Route;
   command: () => void;
   onDismiss: () => void;
   onShortcuts: () => void;
 }) {
-  const { data, createProject } = useApp();
+  const { data, createProject, toast } = useApp();
+  const [accountMenu, setAccountMenu] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const accountRoot = useRef<HTMLDivElement>(null);
+  const accountTrigger = useRef<HTMLButtonElement>(null);
+  const accountSettings = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!accountMenu) return;
+    accountSettings.current?.focus();
+    const closeOutside = (event: PointerEvent) => {
+      if (!accountRoot.current?.contains(event.target as Node)) setAccountMenu(false);
+    };
+    const closeEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        setAccountMenu(false);
+        accountTrigger.current?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', closeOutside);
+    document.addEventListener('keydown', closeEscape, true);
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside);
+      document.removeEventListener('keydown', closeEscape, true);
+    };
+  }, [accountMenu]);
+  async function signOut() {
+    setSigningOut(true);
+    try {
+      const result = await post<{ redirectUrl?: string }>('/auth/logout', {});
+      if (result.redirectUrl) window.location.assign(result.redirectUrl);
+      else window.location.reload();
+    } catch (error) {
+      toast(
+        error instanceof Error ? error.message : 'Could not sign out. Please try again.',
+        'error',
+      );
+      setSigningOut(false);
+    }
+  }
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const go = (page: string, id?: string, tab = 'list') => {
     navigate(page, id, tab);
@@ -88,7 +126,9 @@ export default function Sidebar({
           <PanelLeftClose size={17} />
         </button>
       </div>
-      <ProfileSwitcher open={workspaceMenu} setOpen={setWorkspaceMenu} />
+      <div className="workspace-trigger">
+        <span className="workspace-trigger-text">{data.workspace?.name}</span>
+      </div>
       <button className="sidebar-search" onClick={command}>
         <Search size={15} />
         <span>Search anything</span>
@@ -138,7 +178,7 @@ export default function Sidebar({
       </nav>
       <div className="sidebar-scroll">
         <div className="nav-section-title">
-          <span>Workspace</span>
+          <span>Projects</span>
           <button
             className="icon-button"
             onClick={() => createProject()}
@@ -197,18 +237,58 @@ export default function Sidebar({
         </button>
         <button
           className={`nav-item ${route.page === 'settings' ? 'active' : ''}`}
-          onClick={() => go('settings')}
+          onClick={() => go('settings', undefined, 'general')}
         >
           <Settings size={18} />
-          <span>Settings</span>
+          <span>Administration</span>
         </button>
-        <div className="sidebar-user">
-          <Avatar user={data.user} size={30} />
-          <div>
-            <strong>{data.user.name}</strong>
-            <small>{data.user.role === 'admin' ? 'Workspace admin' : 'Member'}</small>
-          </div>
-          <span className="online-dot" title="Signed in" />
+        <div
+          className="sidebar-account"
+          ref={accountRoot}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) setAccountMenu(false);
+          }}
+        >
+          {accountMenu && (
+            <div className="sidebar-account-popover" id="sidebar-account-options">
+              <div className="sidebar-account-info">
+                <strong>{data.user.name}</strong>
+                <span>{data.user.email}</span>
+              </div>
+              <button
+                ref={accountSettings}
+                className="nav-item"
+                onClick={() => {
+                  setAccountMenu(false);
+                  go('account-settings', undefined, 'profile');
+                }}
+              >
+                <UserRound size={16} />
+                Account settings
+              </button>
+              <button className="nav-item" disabled={signingOut} onClick={() => void signOut()}>
+                <LogOut size={16} />
+                {signingOut ? 'Signing out…' : 'Sign out'}
+              </button>
+            </div>
+          )}
+          <button
+            ref={accountTrigger}
+            className={`sidebar-user ${route.page === 'account-settings' ? 'active' : ''}`}
+            aria-label={`Account menu for ${data.user.name}`}
+            aria-expanded={accountMenu}
+            aria-controls="sidebar-account-options"
+            onClick={() => {
+              setAccountMenu((open) => !open);
+            }}
+          >
+            <Avatar user={data.user} size={30} />
+            <div>
+              <strong>{data.user.name}</strong>
+              <small>{data.user.email}</small>
+            </div>
+            <ChevronsUpDown size={14} />
+          </button>
         </div>
       </div>
     </aside>

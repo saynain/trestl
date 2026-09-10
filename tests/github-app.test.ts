@@ -1,3 +1,4 @@
+import { addMembership } from '../server/workspaces.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
@@ -62,6 +63,12 @@ async function fixture() {
   await store.put('system', { id: 'mutation-lock' });
   for (const user of [alice, bob]) {
     await store.put('users', user);
+    await store.put('workspaces', {
+      id: user.workspaceId ?? 'default',
+      kind: 'personal',
+      ownerId: user.id,
+    });
+    await addMembership(store, user.workspaceId ?? 'default', user.id, user.role);
     for (const session of [user.id, `${user.id}-other-browser`])
       await db.query('INSERT INTO sessions(hash,user_id,expires_at) VALUES($1,$2,$3)', [
         digest(session),
@@ -203,7 +210,7 @@ test('GitHub App flow binds state and PKCE to one browser session and stores onl
     assert.equal(f.requests.length, 0);
     const result = await f.callback(url);
     assert.equal(result.statusCode, 303);
-    assert.match(result.headers.location!, /github=connected/);
+    assert.match(result.headers.location!, /#\/settings\?tab=integrations&github=connected$/);
     assert.equal(result.headers['referrer-policy'], 'no-referrer');
     assert.match(result.headers['cache-control']!, /no-store/);
     const exchange = f.requests[0];

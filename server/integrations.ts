@@ -6,7 +6,7 @@ import {
   type GitConnection,
 } from './git-connections.ts';
 import { invalidateGitHubCredential } from './github-app.ts';
-import { sameWorkspace, workspaceOf } from './workspaces.ts';
+import { sameWorkspace, workspaceOf, workspaceUser } from './workspaces.ts';
 import { createHash } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -201,7 +201,7 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
         );
       const project = await store.get<Project>('projects', integration.projectId);
       if (!project) ctx.fail(404, 'The connected project no longer exists.');
-      const owner = await store.get<User>('users', integration.creatorId);
+      const owner = await workspaceUser(store, integration.creatorId, workspaceOf(project));
       if (!owner || owner.role !== 'admin' || !(await ctx.canProject(owner, project.id, store)))
         ctx.fail(403, 'The connection owner no longer has access to this project.');
       const result = { imported: 0, updated: 0, comments: 0 };
@@ -366,8 +366,12 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
       let issues: SourceIssue[];
       try {
         issues = await fetchRepository(integration, token, {
-          allowedOrigins,
-          ...(credential.githubApp ? { fetch: ctx.githubFetch } : {}),
+          allowedOrigins: credential.shared
+            ? [...allowedOrigins, new URL(credential.baseUrl).origin]
+            : allowedOrigins,
+          ...(credential.githubApp || credential.githubInstallation
+            ? { fetch: ctx.githubFetch }
+            : {}),
         });
       } catch (error) {
         if (
@@ -381,7 +385,9 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
         throw error;
       }
       // Recheck owner authorization after network work, before writing fetched content.
-      const owner = await ctx.store.get<User>('users', integration.creatorId);
+      const project = await ctx.store.get<Project>('projects', integration.projectId);
+      const owner =
+        project && (await workspaceUser(ctx.store, integration.creatorId, workspaceOf(project)));
       if (!owner || owner.role !== 'admin' || !(await ctx.canProject(owner, integration.projectId)))
         throw new Error('The connection owner no longer has administrator access to this project.');
       const current = await ctx.store.get<Integration>('integrations', integration.id);
@@ -453,7 +459,7 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
             (data.baseUrl || (data.provider === 'github' ? 'https://api.github.com' : '')),
           repository: data.repository,
         },
-        allowedOrigins,
+        saved?.shared ? [...allowedOrigins, new URL(saved.baseUrl).origin] : allowedOrigins,
       );
     } catch (error) {
       ctx.fail(400, error instanceof Error ? error.message : 'Invalid repository configuration.');
@@ -549,7 +555,10 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
       try {
         for (const integration of await ctx.store.list<Integration>('integrations')) {
           if (stopped || syncing) break;
-          const owner = await ctx.store.get<User>('users', integration.creatorId);
+          const project = await ctx.store.get<Project>('projects', integration.projectId);
+          const owner =
+            project &&
+            (await workspaceUser(ctx.store, integration.creatorId, workspaceOf(project)));
           if (
             !owner ||
             owner.role !== 'admin' ||

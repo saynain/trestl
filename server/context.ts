@@ -16,6 +16,8 @@ export interface AppContext {
 declare module 'fastify' {
   interface FastifyRequest {
     user: User | null;
+    authMode: 'local' | 'google' | 'oidc' | 'proxy';
+    sessionMethod: string | null;
     tokenScope: string | null;
   }
 }

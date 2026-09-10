@@ -2,7 +2,23 @@ export type Status = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' |
 export type Priority = 'none' | 'low' | 'medium' | 'high' | 'urgent';
 export type ItemType = 'task' | 'bug' | 'idea' | 'followup';
 export type Visibility = 'workspace' | 'private';
+export interface Workspace {
+  id: string;
+  name: string;
+  kind: 'personal' | 'shared';
+  ownerId: string;
+  createdAt: string;
+}
+export interface WorkspaceMembership {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  role: 'admin' | 'member';
+}
 export interface User {
+  disabledAt?: string;
+  personalWorkspaceId?: string;
+  lastWorkspaceId?: string;
   workspaceId?: string;
   id: string;
   name: string;
@@ -111,6 +127,7 @@ export interface ResourceLink {
   kind: 'confluence' | 'repository' | 'link';
 }
 export interface SavedView {
+  workspaceId?: string;
   id: string;
   name: string;
   icon: string;
@@ -127,6 +144,10 @@ export interface Milestone {
   completed: boolean;
 }
 export interface Bootstrap {
+  authMode?: 'local' | 'google' | 'oidc' | 'proxy';
+  installation?: boolean;
+  workspace?: Workspace;
+  workspaces?: (Workspace & { role: User['role'] })[];
   /** Only relationships whose two endpoints are visible to the signed-in user. */
   relations?: Relation[];
   user: User;

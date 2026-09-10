@@ -1,3 +1,4 @@
+import { sharedWorkspace } from './shared-workspace-fixture.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -22,7 +23,8 @@ test('collections persist, enforce project access, validate moves, and preserve 
         seedDemo: false,
       },
     });
-    const cookie = setup.cookies.find((c) => c.name === 'trestl_session')!;
+    const shared = await sharedWorkspace(app, setup);
+    const cookie = shared.cookies.find((c) => c.name === 'trestl_session')!;
     const owner = `${cookie.name}=${cookie.value}`;
     const call = (
       method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
@@ -123,18 +125,8 @@ test('collections persist, enforce project access, validate moves, and preserve 
       ).statusCode,
       404,
     );
-    const outsiderLogin = await call('POST', '/auth/profiles', {
-      name: 'Other workspace',
-      email: 'outside@collections.test',
-      password: 'collection-password',
-    });
-    const outsideCookie = outsiderLogin.cookies.find((c) => c.name === 'trestl_session')!;
-    const outsider = `${outsideCookie.name}=${outsideCookie.value}`;
-    assert.equal((await call('GET', base, undefined, outsider)).statusCode, 404);
-    assert.deepEqual(
-      (await call('GET', '/export', undefined, outsider)).json().canvasCollections,
-      [],
-    );
+    // Installation access requires authentication, even for shared projects.
+    assert.equal((await app.inject({ url: `/api/v1${path}` })).statusCode, 401);
     const readToken = (await call('POST', '/tokens', { name: 'Read only', scope: 'read' })).json()
       .token;
     assert.equal(

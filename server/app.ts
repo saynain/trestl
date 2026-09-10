@@ -1,3 +1,11 @@
+import { authSettings, configuredProxy, registerAuthSettings } from './auth-settings.ts';
+import { createInstallation, installation, migrateInstallation } from './installation.ts';
+import {
+  authenticateProxy,
+  proxyAuthConfig,
+  validateProxyAuth,
+  type ProxyAuthConfig,
+} from './proxy-auth.ts';
 import { createsDependencyCycle, scheduleConflicts } from '../shared/dependencies.ts';
 import { registerCanvases } from './canvases.ts';
 import { roadmapUpdate } from './roadmap.ts';
@@ -7,7 +15,16 @@ import rateLimit from '@fastify/rate-limit';
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
 import { z } from 'zod';
 import { openDatabase, makeStore, type Store, type Database } from './db.ts';
-import { sameWorkspace, workspaceOf } from './workspaces.ts';
+import {
+  sameWorkspace,
+  workspaceOf,
+  migrateWorkspaces,
+  workspaceUser,
+  workspaceMembers,
+  userWorkspaces,
+  addMembership,
+} from './workspaces.ts';
+import { registerWorkspaceRoutes } from './workspace-routes.ts';
 import { nextItemIdentifier } from './item-identifiers.ts';
 import { seedDemo } from './seed.ts';
 import { openapi } from './openapi.ts';
@@ -16,6 +33,7 @@ import { registerConfluence } from './confluence.ts';
 import type { AppContext } from './context.ts';
 import type {
   User,
+  Workspace,
   ProjectCanvas,
   CanvasCollection,
   Project,
@@ -184,17 +202,29 @@ export async function createApp(
     logger?: boolean;
     integrations?: boolean;
     githubFetch?: typeof fetch;
+    proxyAuth?: ProxyAuthConfig | null;
   } = {},
 ) {
+  const environmentProxy =
+    options.proxyAuth === undefined
+      ? proxyAuthConfig()
+      : options.proxyAuth && validateProxyAuth(options.proxyAuth);
   const app = Fastify({
     logger: options.logger
       ? {
-          redact: ['req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
+          redact: [
+            'req.headers.authorization',
+            'req.headers.cookie',
+            'req.headers["x-trestl-proxy-secret"]',
+            'res.headers["set-cookie"]',
+          ],
           serializers: {
             req(request) {
               return {
                 method: request.method,
-                url: request.url?.split('?')[0],
+                url: request.url
+                  ?.split('?')[0]
+                  .replace(/\/invitations\/[^/]+/, '/invitations/[redacted]'),
                 hostname: request.hostname,
                 remoteAddress: request.ip,
               };
@@ -211,7 +241,14 @@ export async function createApp(
   });
   const store = makeStore(db);
   await store.put('system', { id: 'mutation-lock' });
+  await migrateWorkspaces(db);
+  await migrateInstallation(db);
+  await db.query(
+    "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS auth_method TEXT NOT NULL DEFAULT 'local'",
+  );
   app.decorateRequest('user', null);
+  app.decorateRequest('authMode', 'local');
+  app.decorateRequest('sessionMethod', null);
   app.decorateRequest('tokenScope', null);
   await app.register(cookie);
   await app.register(rateLimit, { max: 300, timeWindow: '1 minute' });
@@ -328,34 +365,61 @@ export async function createApp(
       )
     ).rows[0];
   };
-  const rememberCurrent = async (request: FastifyRequest, reply: { setCookie: Function }) => {
-    const secret = request.cookies.trestl_session;
-    const row = await savedSession(secret);
-    if (row)
-      reply.setCookie(profileCookie(row.user_id), secret, {
-        ...cookieOptions,
-        maxAge: Math.max(0, Math.floor((new Date(row.expires_at).getTime() - Date.now()) / 1000)),
-      });
-  };
-  const session = async (user: User, reply: { setCookie: Function }) => {
+  const session = async (user: User, reply: { setCookie: Function }, method = 'local') => {
+    const workspaceId = workspaceOf(user);
+    await db.query(
+      "UPDATE entities SET data=data || jsonb_build_object('lastWorkspaceId',$1::text) WHERE collection='users' AND id=$2",
+      [workspaceId, user.id],
+    );
     const secret = randomBytes(32).toString('base64url');
-    await db.query('INSERT INTO sessions(hash,user_id,expires_at) VALUES($1,$2,$3)', [
-      hash(secret),
-      user.id,
-      new Date(Date.now() + 30 * 86400000).toISOString(),
-    ]);
+    await db.query(
+      'INSERT INTO sessions(hash,user_id,expires_at,workspace_id,auth_method) VALUES($1,$2,$3,$4,$5)',
+      [
+        hash(secret),
+        user.id,
+        new Date(Date.now() + 30 * 86400000).toISOString(),
+        workspaceId,
+        method,
+      ],
+    );
     reply.setCookie('trestl_session', secret, cookieOptions);
-    reply.setCookie(profileCookie(user.id), secret, cookieOptions);
   };
-  app.addHook('onRequest', async (request) => {
+  app.addHook('onRequest', async (request, reply) => {
     if (!request.url.startsWith('/api/')) return;
-    const bearer = request.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
+    const route = request.url.split('?')[0];
+    const site = await installation(store);
+    const configured = await authSettings(store);
+    const proxyAuth = site
+      ? configured
+        ? configured.mode === 'proxy'
+          ? await configuredProxy(store, configured)
+          : null
+        : environmentProxy
+          ? { ...environmentProxy, installationId: site.workspaceId }
+          : null
+      : null;
+    request.authMode = configured?.mode ?? (proxyAuth ? 'proxy' : 'local');
+    const authorization = request.headers.authorization;
+    const bearer = authorization?.match(/^Bearer (.+)$/i)?.[1];
+    if (authorization && !bearer) fail(401, 'A valid Bearer token is required');
+    if (proxyAuth && request.headers['x-trestl-api-only'] === 'true' && !bearer)
+      fail(401, 'This API route requires a personal API token');
+    if (
+      proxyAuth &&
+      !['GET', 'HEAD', 'OPTIONS'].includes(request.method) &&
+      !bearer &&
+      request.headers.origin !== proxyAuth.origin
+    )
+      fail(403, 'Request origin is not allowed');
     if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && !bearer) {
       const origin = request.headers.origin;
       if (origin) {
-        const allowed = process.env.APP_ORIGIN
-          ? new URL(process.env.APP_ORIGIN).origin
-          : `${request.protocol}://${request.host}`;
+        const allowed =
+          proxyAuth?.origin ??
+          configured?.origin ??
+          (process.env.APP_ORIGIN
+            ? new URL(process.env.APP_ORIGIN).origin
+            : `${request.protocol}://${request.host}`);
         if (origin !== allowed) fail(403, 'Request origin is not allowed');
       }
       if (request.headers['sec-fetch-site'] === 'cross-site')
@@ -363,32 +427,88 @@ export async function createApp(
     }
     if (bearer) {
       const token = (
-        await db.query<{ user_id: string; scope: string }>(
-          'SELECT user_id,scope FROM tokens WHERE hash=$1',
+        await db.query<{ user_id: string; scope: string; workspace_id: string }>(
+          'SELECT user_id,scope,workspace_id FROM tokens WHERE hash=$1',
           [hash(bearer)],
         )
       ).rows[0];
-      if (token) {
-        request.user = await store.get<User>('users', token.user_id);
+      if (token && site && token.workspace_id === site.workspaceId) {
+        request.user = await workspaceUser(store, token.user_id, token.workspace_id);
         request.tokenScope = token.scope;
+      }
+      if (!request.user) fail(401, 'Invalid API token');
+    } else if (proxyAuth) {
+      const recovery =
+        request.cookies.trestl_session &&
+        (
+          await db.query<{ user_id: string; auth_method: string }>(
+            'SELECT user_id,auth_method FROM sessions WHERE hash=$1 AND expires_at>NOW()',
+            [hash(request.cookies.trestl_session)],
+          )
+        ).rows[0];
+      if (recovery && recovery.auth_method === 'local' && recovery.user_id === site?.ownerId) {
+        request.user = await workspaceUser(store, recovery.user_id, site.workspaceId);
+        request.sessionMethod = 'local';
+      } else {
+        request.user = await authenticateProxy(request, db, proxyAuth);
+        request.sessionMethod = 'proxy';
+      }
+      if (request.user) {
+        const saved = await savedSession(request.cookies.trestl_session);
+        const context =
+          saved &&
+          (
+            await db.query<{ workspace_id: string }>(
+              'SELECT workspace_id FROM sessions WHERE hash=$1',
+              [hash(request.cookies.trestl_session!)],
+            )
+          ).rows[0];
+        if (
+          !saved ||
+          saved.user_id !== request.user.id ||
+          context?.workspace_id !== proxyAuth.installationId
+        )
+          await session(request.user, reply, request.sessionMethod ?? 'proxy');
       }
     } else if (request.cookies.trestl_session) {
       const row = (
-        await db.query<{ user_id: string }>(
-          'SELECT user_id FROM sessions WHERE hash=$1 AND expires_at>NOW()',
+        await db.query<{ user_id: string; workspace_id: string; auth_method: string }>(
+          'SELECT user_id,workspace_id,auth_method FROM sessions WHERE hash=$1 AND expires_at>NOW()',
           [hash(request.cookies.trestl_session)],
         )
       ).rows[0];
-      if (row) request.user = await store.get<User>('users', row.user_id);
+      if (row) {
+        request.sessionMethod = row.auth_method;
+        if (
+          site &&
+          row.workspace_id === site.workspaceId &&
+          (request.authMode === 'local'
+            ? row.auth_method === 'local'
+            : row.auth_method === 'oidc' ||
+              (row.auth_method === 'local' && row.user_id === site.ownerId))
+        )
+          request.user = await workspaceUser(store, row.user_id, row.workspace_id);
+      }
     }
-    const route = request.url.split('?')[0];
+    if (request.user?.disabledAt) fail(403, 'Your Trestl account is disabled');
+    if (
+      request.authMode !== 'local' &&
+      request.method === 'PATCH' &&
+      route === '/api/v1/auth/account' &&
+      request.sessionMethod !== 'local'
+    )
+      fail(403, 'Your identity is managed by the sign-in provider.');
     if (
       [
+        '/api/v1/auth/provider/start',
+        '/api/v1/auth/provider/callback',
         '/api/v1/auth/status',
         '/api/v1/auth/setup',
         '/api/v1/auth/login',
+        '/api/v1/auth/register',
         '/api/v1/openapi.json',
-      ].includes(route)
+      ].includes(route) ||
+      (request.method === 'GET' && /^\/api\/v1\/invitations\/[^/]+$/.test(route))
     )
       return;
     requireUser(request);
@@ -406,7 +526,12 @@ export async function createApp(
   });
   app.get('/api/v1/openapi.json', async () => openapi);
   app.get('/api/v1/auth/status', async (request) => ({
-    needsSetup: (await store.list<User>('users')).length === 0,
+    needsSetup: !(await installation(store)),
+    authMode: request.authMode,
+    installationName: (
+      await store.get<Workspace>('workspaces', (await installation(store))?.workspaceId ?? '')
+    )?.name,
+    localLogin: request.authMode === 'local',
     authenticated: !!request.user,
     ...(request.user ? { user: request.user } : {}),
   }));
@@ -414,9 +539,14 @@ export async function createApp(
     '/api/v1/auth/setup',
     { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
     async (request, reply) => {
-      const input = userInput.extend({ seedDemo: z.boolean().default(true) }).parse(request.body);
+      const input = userInput
+        .extend({
+          installationName: z.string().trim().min(1).max(80).default('Trestl'),
+          seedDemo: z.boolean().default(false),
+        })
+        .parse(request.body);
       const user = await mutate(async (s, tx) => {
-        if ((await s.list('users')).length) fail(409, 'Workspace is already set up');
+        if ((await s.list('users')).length) fail(409, 'Installation is already set up');
         const u: User = {
           id: id(),
           name: input.name,
@@ -429,6 +559,9 @@ export async function createApp(
           u.email,
           passwordHash(input.password),
         ]);
+        const home = await createInstallation(s, u, input.installationName);
+        u.workspaceId = home.id;
+        u.lastWorkspaceId = home.id;
         await s.put('users', u);
         if (input.seedDemo) {
           await seedDemo(s, u, tx);
@@ -454,83 +587,36 @@ export async function createApp(
       ).rows[0];
       if (!row || !passwordMatches(input.password, row.password))
         fail(401, 'Email or password is incorrect');
-      const user = await store.get<User>('users', row.user_id);
-      if (!user) fail(401, 'Email or password is incorrect');
-      await rememberCurrent(request, reply);
+      const account = await store.get<User>('users', row.user_id);
+      const site = await installation(store);
+      const user = account && site && (await workspaceUser(store, account.id, site.workspaceId));
+      if (!user || user.disabledAt) fail(401, 'Email or password is incorrect');
+      if (request.authMode !== 'local' && user.id !== site?.ownerId)
+        fail(403, 'Use your organization’s sign-in provider.');
       await session(user, reply);
       return user;
     },
   );
-  app.post(
-    '/api/v1/auth/profiles',
-    {
-      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
-    },
-    async (request, reply) => {
-      requireUser(request);
-      if (request.tokenScope) fail(403, 'Create profiles from a signed-in browser');
-      const input = userInput.parse(request.body);
-      const user = await mutate(async (s, tx) => {
-        if ((await s.list<User>('users')).some((other) => other.email === input.email))
-          fail(409, 'An account with this email already exists. Sign in to add it.');
-        const user: User = {
-          id: id(),
-          workspaceId: id(),
-          name: input.name,
-          email: input.email,
-          color: '#a394c4',
-          role: 'admin',
-        };
-        await tx.query('INSERT INTO credentials(user_id,email,password) VALUES($1,$2,$3)', [
-          user.id,
-          user.email,
-          passwordHash(input.password),
-        ]);
-        return s.put('users', user);
-      });
-      await rememberCurrent(request, reply);
-      await session(user, reply);
-      return reply.code(201).send(user);
-    },
+  app.post('/api/v1/auth/register', async () =>
+    fail(403, 'Ask an administrator to create your account.'),
   );
-  app.get('/api/v1/auth/profiles', async (request, reply) => {
-    if (request.tokenScope) fail(403, 'Manage profiles from a signed-in browser');
-    reply.header('Cache-Control', 'no-store');
-    const users = new Map<string, User>();
-    const current = requireUser(request);
-    users.set(current.id, current);
-    for (const [name, secret] of Object.entries(request.cookies)) {
-      if (!name.startsWith('trestl_profile_')) continue;
-      const row = await savedSession(secret);
-      const user =
-        row && name === profileCookie(row.user_id)
-          ? await store.get<User>('users', row.user_id)
-          : null;
-      if (user) users.set(user.id, user);
-      else reply.clearCookie(name, { path: '/' });
-    }
-    return { data: [...users.values()] };
-  });
-  app.post('/api/v1/auth/switch', async (request, reply) => {
-    if (request.tokenScope) fail(403, 'Switch profiles from a signed-in browser');
-    const { userId } = z.object({ userId: z.string().uuid() }).strict().parse(request.body);
-    const secret = request.cookies[profileCookie(userId)];
-    const row = await savedSession(secret);
-    if (!row || row.user_id !== userId || !(await store.get<User>('users', userId)))
-      fail(401, 'This account has expired. Add it again to sign in.');
-    await rememberCurrent(request, reply);
-    reply.setCookie('trestl_session', secret!, {
-      ...cookieOptions,
-      maxAge: Math.max(0, Math.floor((new Date(row.expires_at).getTime() - Date.now()) / 1000)),
-    });
-    return { ok: true };
-  });
+  app.get('/api/v1/auth/profiles', async (request) => ({ data: [requireUser(request)] }));
+  app.post('/api/v1/auth/profiles', async () =>
+    fail(410, 'Account profiles are managed by the client, not this installation.'),
+  );
+  app.post('/api/v1/auth/switch', async () => fail(410, 'This server has one installation.'));
+  registerWorkspaceRoutes(app, ctx);
+  registerAuthSettings(app, ctx, session);
+
   app.post('/api/v1/auth/logout', async (request, reply) => {
     if (request.cookies.trestl_session)
       await db.query('DELETE FROM sessions WHERE hash=$1', [hash(request.cookies.trestl_session)]);
     reply.clearCookie(profileCookie(requireUser(request).id), { path: '/' });
     reply.clearCookie('trestl_session', { path: '/' });
-    return { ok: true };
+    return {
+      ok: true,
+      ...(request.authMode === 'proxy' ? { redirectUrl: '/oauth2/sign_out' } : {}),
+    };
   });
   app.patch('/api/v1/auth/account', async (request) => {
     const u = requireUser(request);
@@ -561,7 +647,7 @@ export async function createApp(
       const email = input.email ?? u.email;
       if ((await s.list<User>('users')).some((other) => other.id !== u.id && other.email === email))
         fail(409, 'This email is already in use');
-      const updated = { ...u, name: input.name ?? u.name, email };
+      const updated = { ...(await s.get<User>('users', u.id))!, name: input.name ?? u.name, email };
       await tx.query('UPDATE credentials SET email=$1,password=$2 WHERE user_id=$3', [
         email,
         input.password ? passwordHash(input.password) : row.password,
@@ -573,7 +659,8 @@ export async function createApp(
           hash(request.cookies.trestl_session ?? ''),
         ]);
       }
-      return s.put('users', updated);
+      await s.put('users', updated);
+      return { ...updated, workspaceId: u.workspaceId, role: u.role };
     });
   });
   const visibleData = async (user: User) => {
@@ -583,7 +670,7 @@ export async function createApp(
       await Promise.all([
         store.list<Project>('projects'),
         store.list<WorkItem>('items'),
-        store.list<User>('users'),
+        workspaceMembers(store, workspaceOf(user)),
         store.list<SavedView>('views'),
         store.list<ResourceLink>('links'),
         store.list<Milestone>('milestones'),
@@ -626,10 +713,16 @@ export async function createApp(
     const items = allItems.filter((item) => itemVisible(item.id));
     return {
       user,
+      authMode:
+        (await authSettings(store))?.mode ??
+        (environmentProxy ? ('proxy' as const) : ('local' as const)),
+      installation: true,
+      workspace: await store.get<Workspace>('workspaces', workspaceOf(user)),
+      workspaces: (await userWorkspaces(store, user.id)).filter((w) => w.id === workspaceOf(user)),
       users: users.filter((member) => sameWorkspace(user, member)),
       projects,
       items,
-      views: allViews.filter((view) => view.userId === user.id),
+      views: allViews.filter((view) => view.userId === user.id && sameWorkspace(user, view)),
       links: allLinks.filter(
         (link) =>
           !!(link.projectId || link.itemId) &&
@@ -658,7 +751,7 @@ export async function createApp(
       get: async <T>(name: string, key: string): Promise<T | null> =>
         name === collection && key === entity.id ? (entity as T) : s.get<T>(name, key),
     };
-    for (const member of await s.list<User>('users')) {
+    for (const member of await workspaceMembers(s, workspaceOf(entity))) {
       const before =
         collection === 'projects'
           ? await canProjectIn(s, member, entity.id)
@@ -693,7 +786,7 @@ export async function createApp(
   };
   const validateProjectMembers = async (s: Store, p: Project) => {
     for (const memberId of p.memberIds ?? []) {
-      const member = await s.get<User>('users', memberId);
+      const member = await workspaceUser(s, memberId, workspaceOf(p));
       if (!member || !sameWorkspace(p, member))
         fail(400, 'Project members must belong to this workspace');
     }
@@ -798,7 +891,7 @@ export async function createApp(
       fail(400, 'Start date must be on or before the due date');
     if (item.projectId) await checkedProject(s, u, item.projectId);
     if (item.assigneeId) {
-      const assignee = await s.get<User>('users', item.assigneeId);
+      const assignee = await workspaceUser(s, item.assigneeId, workspaceOf(u));
       if (!assignee || !sameWorkspace(u, assignee))
         fail(400, 'Assignee does not exist in this workspace');
     }
@@ -1158,6 +1251,7 @@ export async function createApp(
         ...viewInput.parse(request.body),
         id: id(),
         userId: requireUser(request).id,
+        workspaceId: workspaceOf(requireUser(request)),
       }),
     ),
   );
@@ -1165,14 +1259,16 @@ export async function createApp(
     const input = viewInput.partial().parse(request.body);
     return mutate(async (s) => {
       const v = await s.get<SavedView>('views', request.params.id);
-      if (!v || v.userId !== requireUser(request).id) fail(404, 'View not found');
+      if (!v || v.userId !== requireUser(request).id || !sameWorkspace(v, requireUser(request)))
+        fail(404, 'View not found');
       return s.put('views', { ...v, ...input });
     });
   });
   app.delete<{ Params: { id: string } }>('/api/v1/views/:id', async (request, reply) => {
     await mutate(async (s) => {
       const v = await s.get<SavedView>('views', request.params.id);
-      if (!v || v.userId !== requireUser(request).id) fail(404, 'View not found');
+      if (!v || v.userId !== requireUser(request).id || !sameWorkspace(v, requireUser(request)))
+        fail(404, 'View not found');
       await s.remove('views', v.id);
     });
     return reply.code(204).send();
@@ -1303,11 +1399,14 @@ export async function createApp(
   app.get('/api/v1/users', async (request) => {
     const user = requireUser(request);
     return {
-      data: (await store.list<User>('users')).filter((member) => sameWorkspace(user, member)),
+      data: await workspaceMembers(store, workspaceOf(user)),
     };
   });
   app.post('/api/v1/users', async (request, reply) => {
     const current = admin(request);
+    const workspace = await store.get<Workspace>('workspaces', workspaceOf(current));
+    if (workspace?.kind === 'personal')
+      fail(400, 'Personal workspaces are private. Create a shared workspace to add members.');
     const input = userInput
       .extend({ role: z.enum(['admin', 'member']).default('member') })
       .parse(request.body);
@@ -1327,14 +1426,39 @@ export async function createApp(
         user.email,
         passwordHash(input.password),
       ]);
+
+      user.lastWorkspaceId = workspaceOf(current);
+      await addMembership(s, workspaceOf(current), user.id, input.role);
       return s.put('users', user);
     });
     return reply.code(201).send(u);
   });
+  app.patch<{ Params: { id: string } }>('/api/v1/users/:id/access', async (request) => {
+    const actor = requireUser(request);
+    if (request.tokenScope || actor.role !== 'admin')
+      fail(403, 'Installation administrator access is required');
+    const { disabled } = z.object({ disabled: z.boolean() }).strict().parse(request.body);
+    return mutate(async (s, tx) => {
+      const target = await workspaceUser(s, request.params.id, workspaceOf(actor));
+      const installation = await s.get<Workspace>('workspaces', workspaceOf(actor));
+      if (!target) fail(404, 'Account not found');
+      if (disabled && (target.id === actor.id || target.id === installation?.ownerId))
+        fail(400, 'You cannot disable yourself or the installation owner');
+      const account = (await s.get<User>('users', target.id))!;
+      if (disabled) account.disabledAt = now();
+      else delete account.disabledAt;
+      await s.put('users', account);
+      if (disabled) {
+        await tx.query('DELETE FROM tokens WHERE user_id=$1', [target.id]);
+        await tx.query('DELETE FROM sessions WHERE user_id=$1', [target.id]);
+      }
+      return { ok: true };
+    });
+  });
   app.get('/api/v1/tokens', async (request) => ({
     data: (
       await db.query(
-        'SELECT id,name,scope,created_at AS "createdAt" FROM tokens WHERE user_id=$1',
+        'SELECT id,name,scope,workspace_id AS "workspaceId",created_at AS "createdAt" FROM tokens WHERE user_id=$1',
         [requireUser(request).id],
       )
     ).rows,
@@ -1351,12 +1475,17 @@ export async function createApp(
       tokenId = id(),
       createdAt = now();
     await db.query(
-      'INSERT INTO tokens(id,hash,user_id,name,scope,created_at) VALUES($1,$2,$3,$4,$5,$6)',
-      [tokenId, hash(token), u.id, input.name, input.scope, createdAt],
+      'INSERT INTO tokens(id,hash,user_id,name,scope,created_at,workspace_id) VALUES($1,$2,$3,$4,$5,$6,$7)',
+      [tokenId, hash(token), u.id, input.name, input.scope, createdAt, workspaceOf(u)],
     );
-    return reply
-      .code(201)
-      .send({ id: tokenId, token, name: input.name, scope: input.scope, createdAt });
+    return reply.code(201).send({
+      id: tokenId,
+      token,
+      name: input.name,
+      scope: input.scope,
+      workspaceId: workspaceOf(u),
+      createdAt,
+    });
   });
   app.delete<{ Params: { id: string } }>('/api/v1/tokens/:id', async (request, reply) => {
     await db.query('DELETE FROM tokens WHERE id=$1 AND user_id=$2', [

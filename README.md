@@ -47,6 +47,22 @@ port 4317. Existing local users can continue running `pnpm dev` as before.
 
 The repository currently requires GitHub access while it is private.
 
+### One installation, your account, and your projects
+
+On first visit, name the installation and create its administrator with an email and password. There are no default credentials and no automatic Personal workspaces. The same installation supports one person or a team. Keep private follow-ups in your inbox and choose private, selected-person, or installation-wide access for projects.
+
+**Administration** contains General, Authentication, People, Integrations, and Export. Administrators can rename the installation, configure local accounts, Google, OpenID Connect (OIDC), or a trusted proxy, and manage access. Click your account at the bottom of the sidebar for **Account settings** (Profile, Appearance, API tokens) and **Sign out**.
+
+With local authentication, administrators create colleague accounts in People. With external authentication, approved people are provisioned as members when they sign in. The setup administrator retains a local password for recovery. Trestl manages project permissions in every authentication mode.
+
+Git connections configured in Administration are shared with the installation. A Gitea service token or GitHub App installation gives everyone access to the repositories allowed by those credentials. Repository imports still follow Trestl project visibility. Existing personal Git credentials are preserved as personal; they are never silently shared. Confluence search currently uses each person's own credentials.
+
+Personal API tokens act as your account within this server, subject to the token's scope and current permissions. Configure a CLI or Raycast client with the installation URL and one token. Disabling an account revokes its tokens and sessions.
+
+See [installation setup and authentication](docs/installation.md), [proxy deployment](docs/proxy-auth.md), and [GitHub organization connections](docs/github-installation.md).
+
+Existing data is preserved. Startup selects the sole existing shared workspace, or the sole workspace if only one exists. If several legacy workspaces are candidates, startup stops and asks the operator to set `INSTALLATION_ID` to the intended existing workspace ID. Selection does not merge, delete, or expose other workspaces' data. Back up first; export any other needed data using the previous version before upgrading. Do not run an older version against the migrated database.
+
 ### Docker Compose
 
 With Docker and the Compose plugin installed:
@@ -104,3 +120,7 @@ startup; back up before upgrading and retain your `APP_SECRET`.
 
 The CLI and container image can be built from source. This repository does
 not yet publish an npm package, a hosted SaaS, or a public container release.
+
+### Authentication proxy deployments
+
+For a dedicated company installation behind Traefik and oauth2-proxy, see [Google/proxy authentication](docs/proxy-auth.md). Proxy authentication provides automatic approved-user provisioning and personal API-token access for CLI and Raycast. Every authentication mode uses one installation. Local authentication remains the default. Keep actual domains, emails, and secrets in private deployment configuration.

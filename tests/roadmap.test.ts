@@ -1,3 +1,4 @@
+import { sharedWorkspace } from './shared-workspace-fixture.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../server/app.ts';
@@ -17,7 +18,8 @@ test('roadmaps persist, reject stale/invalid changes, and inherit project privac
       },
     });
     assert.equal(setup.statusCode, 201, setup.body);
-    const cookie = `${setup.cookies[0].name}=${setup.cookies[0].value}`;
+    const shared = await sharedWorkspace(app, setup);
+    const cookie = `${shared.cookies[0].name}=${shared.cookies[0].value}`;
     const call = (
       method: 'GET' | 'POST' | 'PATCH',
       path: string,

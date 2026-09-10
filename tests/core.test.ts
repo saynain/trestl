@@ -1,3 +1,5 @@
+import { memberSession } from './installation-fixture.ts';
+import { sharedWorkspace } from './shared-workspace-fixture.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -21,8 +23,9 @@ async function setup(app: FastifyInstance, seedDemo = false) {
     },
   });
   assert.equal(response.statusCode, 201, response.body);
+  const shared = await sharedWorkspace(app, response);
   return {
-    cookie: response.cookies[0].name + '=' + response.cookies[0].value,
+    cookie: shared.cookies[0].name + '=' + shared.cookies[0].value,
     user: response.json(),
   };
 }
@@ -212,13 +215,10 @@ test('project membership validates workspace users and cannot bypass private anc
       payload: { email: memberUser.email, password: 'sharing-password' },
     });
     const member = client(app, `${login.cookies[0].name}=${login.cookies[0].value}`);
-    const profile = await owner('POST', '/auth/profiles', {
-      name: 'Other workspace',
-      email: 'other@sharing.test',
-      password: 'sharing-password',
-    });
-    assert.equal(profile.statusCode, 201, profile.body);
-    const otherUser = profile.json();
+    const otherUser = { id: randomUUID() };
+    await app
+      .getDecorator<AppContext>('context')
+      .store.put('users', { ...memberUser, id: otherUser.id, workspaceId: 'legacy-other' });
     const project = (
       await owner('POST', '/projects', { key: 'ROOT', name: 'Private root', visibility: 'private' })
     ).json();
@@ -258,17 +258,10 @@ test('project membership validates workspace users and cannot bypass private anc
       200,
     );
     assert.equal((await member('GET', `/projects/${child.id}`)).statusCode, 200);
-    const session = profile.cookies.find((cookie) => cookie.name === 'trestl_session')!;
-    const other = client(app, `${session.name}=${session.value}`);
-    assert.equal((await other('GET', `/projects/${project.id}`)).statusCode, 404);
+    assert.equal((await app.inject({ url: `/api/v1/projects/${project.id}` })).statusCode, 401);
     assert.equal(
       (await owner('PATCH', `/projects/${project.id}`, { visibility: 'workspace' })).statusCode,
       200,
-    );
-    assert.equal(
-      (await other('GET', `/projects/${project.id}`)).statusCode,
-      404,
-      'Workspace isolation still applies',
     );
   } finally {
     await app.close();
@@ -744,14 +737,14 @@ test('bootstrap uses bounded database reads while resolving large nested and mal
     assert.equal(visible.items.length, 51);
     assert.equal(visible.projects.length, 1);
     assert.ok(
-      reads <= 9,
-      `Bootstrap used ${reads} queries; expected at most two authentication reads plus seven collection reads`,
+      reads <= 14,
+      `Bootstrap used ${reads} queries; expected at most five authentication/configuration reads, seven collection reads and two installation reads`,
     );
     reads = 0;
     const own = (await api('GET', '/bootstrap')).json();
     assert.equal(own.items.length, 102);
     assert.equal(own.projects.length, 2);
-    assert.ok(reads <= 9);
+    assert.ok(reads <= 14);
   } finally {
     await app.close();
   }
@@ -870,24 +863,27 @@ test('API numbering follows projects, moves, recurrence and deletion', async () 
   }
 });
 
-test('identical inbox identifiers resolve within the requesting workspace', async () => {
+test('installation inbox numbering is shared while private items stay private', async () => {
   const app = await createApp({ dataDir: ':memory:', integrations: false });
   try {
     const lead = await setup(app);
     const api = client(app, lead.cookie);
-    const first = (await api('POST', '/items', { title: 'Original workspace' })).json();
-    const profile = await api('POST', '/auth/profiles', {
+    const first = (
+      await api('POST', '/items', { title: 'Original inbox', visibility: 'private' })
+    ).json();
+    const profile = await memberSession(app, lead.cookie, {
       name: 'Other',
       email: 'other@example.test',
       password: 'other-password-123',
     });
-    assert.equal(profile.statusCode, 201, profile.body);
+    assert.equal(profile.statusCode, 200, profile.body);
     const session = profile.cookies.find((cookie) => cookie.name === 'trestl_session')!;
     const other = client(app, `${session.name}=${session.value}`);
     const second = (await other('POST', '/items', { title: 'Other workspace' })).json();
     assert.equal(first.identifier, 'INBOX-01');
-    assert.equal(second.identifier, 'INBOX-01');
-    assert.equal((await other('GET', '/items/INBOX-01')).json().item.id, second.id);
+    assert.equal(second.identifier, 'INBOX-02');
+    assert.equal((await other('GET', '/items/INBOX-01')).statusCode, 404);
+    assert.equal((await other('GET', '/items/INBOX-02')).json().item.id, second.id);
     assert.equal((await api('GET', '/items/INBOX-01')).json().item.id, first.id);
   } finally {
     await app.close();

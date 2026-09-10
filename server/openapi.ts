@@ -22,6 +22,7 @@ const schemas: Record<string, unknown> = {
       workspaceId: { ...string, readOnly: true },
       name: string,
       email: { type: 'string', format: 'email' },
+      disabledAt: { ...string, readOnly: true },
       color: string,
       role: { type: 'string', enum: ['admin', 'member'] },
     },
@@ -185,6 +186,7 @@ const schemas: Record<string, unknown> = {
   SavedView: {
     type: 'object',
     properties: {
+      workspaceId: { ...string, readOnly: true },
       id: uuid,
       userId: uuid,
       name: string,
@@ -222,6 +224,9 @@ schemas.ItemDetail = {
 schemas.Bootstrap = {
   type: 'object',
   properties: {
+    authMode: { type: 'string', enum: ['local', 'google', 'oidc', 'proxy'] },
+    workspace: ref('Workspace'),
+    workspaces: { type: 'array', items: ref('Workspace') },
     user: ref('User'),
     users: { type: 'array', items: ref('User') },
     projects: { type: 'array', items: ref('Project') },
@@ -237,6 +242,14 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
   properties,
   required,
   additionalProperties: false,
+});
+schemas.Workspace = object({
+  id: string,
+  name: string,
+  kind: { type: 'string', enum: ['personal', 'shared'] },
+  ownerId: uuid,
+  createdAt: string,
+  role: { type: 'string', enum: ['admin', 'member'] },
 });
 function writable(name: string, omit: string[], required: string[] = []) {
   const schema = schemas[name] as { properties: Record<string, unknown> };
@@ -314,6 +327,7 @@ operation(
   object({
     needsSetup: { type: 'boolean' },
     authenticated: { type: 'boolean' },
+    authMode: { type: 'string', enum: ['local', 'google', 'oidc', 'proxy'] },
     user: ref('User'),
   }),
   undefined,
@@ -327,13 +341,16 @@ const credentialFields = {
 operation(
   '/auth/setup',
   'post',
-  'Initialize the workspace and sign in',
+  'Initialize the named installation and its password-protected administrator',
   ref('User'),
-  object({ ...credentialFields, seedDemo: { type: 'boolean', default: true } }, [
-    'name',
-    'email',
-    'password',
-  ]),
+  object(
+    {
+      ...credentialFields,
+      seedDemo: { type: 'boolean', default: false },
+      installationName: { ...string, minLength: 1, maxLength: 80, default: 'Trestl' },
+    },
+    ['name', 'email', 'password'],
+  ),
   { public: true, created: true },
 );
 operation(
@@ -344,23 +361,26 @@ operation(
   object({ email: string, password: string }, ['email', 'password']),
   { public: true },
 );
-operation('/auth/profiles', 'get', 'List saved browser profiles', list('User'), undefined, {
-  browserOnly: true,
-});
 operation(
-  '/auth/profiles',
-  'post',
-  'Create an empty workspace with a new administrator and sign in',
-  ref('User'),
-  object(credentialFields, ['name', 'email', 'password']),
-  { created: true, browserOnly: true },
+  '/workspaces',
+  'get',
+  'Get the current installation (legacy endpoint name)',
+  list('Workspace'),
 );
 operation(
-  '/auth/switch',
-  'post',
-  'Switch to a saved, authenticated browser profile',
-  object({ ok: { type: 'boolean' } }),
-  object({ userId: uuid }, ['userId']),
+  '/workspaces/current',
+  'patch',
+  'Rename the current shared workspace (admin only)',
+  ref('Workspace'),
+  object({ name: { ...string, minLength: 1, maxLength: 80 } }, ['name']),
+  { browserOnly: true },
+);
+operation(
+  '/workspaces/current/members/{userId}',
+  'patch',
+  'Change a member role; the owner remains an admin',
+  object({ id: string, workspaceId: string, userId: uuid, role: string }),
+  object({ role: { type: 'string', enum: ['admin', 'member'] } }, ['role']),
   { browserOnly: true },
 );
 operation(
@@ -430,7 +450,7 @@ const resources = [
     ],
     ['title'],
   ],
-  ['views', 'SavedView', ['id', 'userId'], ['name', 'filters', 'layout']],
+  ['views', 'SavedView', ['id', 'userId', 'workspaceId'], ['name', 'filters', 'layout']],
   ['links', 'ResourceLink', ['id'], ['title', 'url', 'kind']],
   ['milestones', 'Milestone', ['id', 'revision'], ['projectId', 'title']],
 ] as const;
@@ -514,7 +534,7 @@ operation('/users', 'get', 'List workspace members', list('User'));
 operation(
   '/users',
   'post',
-  'Create a member (administrator only; no email is sent)',
+  'Create a local account in this installation (admin only)',
   ref('User'),
   object(
     { ...credentialFields, role: { type: 'string', enum: ['admin', 'member'], default: 'member' } },
@@ -523,13 +543,26 @@ operation(
   { created: true },
 );
 operation(
+  '/users/{id}/access',
+  'patch',
+  'Disable or enable an installation account (proxy mode; administrator browser session required). Disabling revokes all its personal tokens and sessions.',
+  object({ ok: { type: 'boolean' } }),
+  object({ disabled: { type: 'boolean' } }),
+);
+operation(
   '/tokens',
   'get',
   'List your personal token metadata',
   object({
     data: {
       type: 'array',
-      items: object({ id: uuid, name: string, scope: string, createdAt: string }),
+      items: object({
+        id: uuid,
+        name: string,
+        scope: string,
+        workspaceId: string,
+        createdAt: string,
+      }),
     },
   }),
 );
@@ -537,7 +570,14 @@ operation(
   '/tokens',
   'post',
   'Create a personal token (browser session required; secret returned once)',
-  object({ id: uuid, name: string, scope: string, createdAt: string, token: string }),
+  object({
+    id: uuid,
+    name: string,
+    scope: string,
+    workspaceId: string,
+    createdAt: string,
+    token: string,
+  }),
   object(
     { name: string, scope: { type: 'string', enum: ['read', 'write', 'admin'], default: 'write' } },
     ['name'],
@@ -627,7 +667,8 @@ operation(
 );
 schemas.GitConnection = object({
   id: string,
-  authType: { type: 'string', enum: ['token', 'github-app'] },
+  authType: { type: 'string', enum: ['token', 'github-app', 'github-installation'] },
+  shared: { type: 'boolean' },
   githubAccount: string,
   reconnectRequired: { type: 'boolean' },
   userId: uuid,
@@ -638,8 +679,62 @@ schemas.GitConnection = object({
   updatedAt: string,
   configured: { type: 'boolean' },
 });
+
+const authenticationFields = {
+  mode: { type: 'string', enum: ['local', 'google', 'oidc', 'proxy'] },
+  origin: string,
+  issuer: string,
+  clientId: string,
+  allowedDomains: { type: 'array', items: string },
+  linkExistingEmails: { type: 'array', items: string },
+};
+const authenticationResponse = object({
+  ...authenticationFields,
+  clientSecretConfigured: { type: 'boolean' },
+  proxySecretConfigured: { type: 'boolean' },
+});
+operation(
+  '/admin/authentication',
+  'get',
+  'Read installation authentication settings without secrets (admin only)',
+  authenticationResponse,
+  undefined,
+  { browserOnly: true },
+);
+operation(
+  '/admin/authentication',
+  'put',
+  'Configure installation sign-in (admin only)',
+  authenticationResponse,
+  object(
+    {
+      ...authenticationFields,
+      clientSecret: { type: 'string', writeOnly: true },
+      proxySecret: { type: 'string', minLength: 32, writeOnly: true },
+    },
+    ['mode', 'origin'],
+  ),
+  { browserOnly: true },
+);
+operation(
+  '/admin/github-installation',
+  'post',
+  'Verify and save a shared GitHub App installation (admin only)',
+  ref('GitConnection'),
+  object(
+    {
+      name: string,
+      appId: string,
+      installationId: string,
+      privateKey: { type: 'string', writeOnly: true },
+    },
+    ['name', 'appId', 'installationId', 'privateKey'],
+  ),
+  { created: true, browserOnly: true },
+);
 const gitConnectionInput = object(
   {
+    shared: { type: 'boolean', default: false },
     provider: { type: 'string', enum: ['github', 'gitea'] },
     name: string,
     baseUrl: string,
@@ -650,13 +745,13 @@ const gitConnectionInput = object(
 operation(
   '/git/connections',
   'get',
-  'List your personal Git connections, usable across all projects',
+  'List shared installation Git connections and your legacy personal credentials',
   { type: 'array', items: ref('GitConnection') },
 );
 operation(
   '/git/connections',
   'post',
-  'Save a personal Git token (browser session only)',
+  'Save a Git credential; shared credentials require an administrator browser session',
   ref('GitConnection'),
   gitConnectionInput,
   { created: true },

@@ -1,3 +1,4 @@
+import { sharedWorkspace } from './shared-workspace-fixture.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Relation, WorkItem } from '../shared/types.ts';
@@ -71,7 +72,8 @@ test('API loads visible dependencies, guards schedules atomically and rejects cy
         seedDemo: false,
       },
     });
-    const cookie = `${setup.cookies[0].name}=${setup.cookies[0].value}`;
+    const shared = await sharedWorkspace(app, setup);
+    const cookie = `${shared.cookies[0].name}=${shared.cookies[0].value}`;
     const api = (
       method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
       path: string,

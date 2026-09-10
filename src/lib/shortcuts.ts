@@ -7,7 +7,6 @@ export const shortcuts = {
     typing: true,
     dialog: true,
   },
-  switchWorkspace: { keys: ['g w'], label: 'Switch account / workspace', group: 'Workspace' },
   search: { keys: ['/'], label: 'Search workspace', group: 'Workspace' },
   sidebar: {
     keys: ['mod+b'],

@@ -1,3 +1,4 @@
+import { addMembership } from '../server/workspaces.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -135,6 +136,8 @@ test('personal Git credentials work without projects, enforce ownership, and are
   };
   await store.put('system', { id: 'mutation-lock' });
   await store.put('users', alice);
+  await store.put('workspaces', { id: 'default', kind: 'personal', ownerId: alice.id });
+  await addMembership(store, 'default', alice.id, alice.role);
   const app = Fastify();
   app.addHook('preHandler', async (request) => {
     request.tokenScope = (request.headers['x-scope'] as string) || null;
@@ -204,6 +207,7 @@ test('personal Git credentials work without projects, enforce ownership, and are
     }
     currentUser = { ...alice, role: 'admin' };
     await store.put('users', currentUser);
+    await addMembership(store, 'default', currentUser.id, currentUser.role);
     for (const [projectId, repository] of [
       ['p1', 'owner/one'],
       ['p2', 'owner/two'],

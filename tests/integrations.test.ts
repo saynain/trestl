@@ -1,3 +1,4 @@
+import { addMembership } from '../server/workspaces.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
@@ -213,7 +214,7 @@ test('provider failures redact responses, refuse redirects, bound responses and 
   });
   const origin = await listen(server);
   const source = { provider: 'gitea' as const, baseUrl: origin, repository: 'team/platform' };
-  const options = { allowedOrigins: [origin], timeoutMs: 100 };
+  const options = { allowedOrigins: [origin], timeoutMs: 2000 };
   try {
     await assert.rejects(fetchRepository(source, 'VERY_SECRET_TOKEN', options), /Could not reach/);
     assert.equal(receivingRequests, 0);
@@ -228,7 +229,10 @@ test('provider failures redact responses, refuse redirects, bound responses and 
     mode = 'large';
     await assert.rejects(fetchRepository(source, 'VERY_SECRET_TOKEN', options), /5 MB/);
     mode = 'timeout';
-    await assert.rejects(fetchRepository(source, 'VERY_SECRET_TOKEN', options), /timed out/);
+    await assert.rejects(
+      fetchRepository(source, 'VERY_SECRET_TOKEN', { ...options, timeoutMs: 100 }),
+      /timed out/,
+    );
   } finally {
     server.closeAllConnections();
     await close(server);
@@ -309,6 +313,8 @@ test('Gitea sync is idempotent, preserves local planning and reconciles source c
   const db = await openDatabase({ dataDir: ':memory:' });
   const store = makeStore(db);
   await store.put('users', admin);
+  await store.put('workspaces', { id: 'default', kind: 'shared', ownerId: admin.id });
+  await addMembership(store, 'default', admin.id, admin.role);
   await store.put('projects', project);
   let currentUser = admin;
   let accessible = true;

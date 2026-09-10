@@ -1,3 +1,4 @@
+import { sharedWorkspace } from './shared-workspace-fixture.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -21,11 +22,12 @@ test('project canvases persist, isolate access, reject stale writes, export, and
       },
     });
     assert.equal(setup.statusCode, 201, setup.body);
+    const shared = await sharedWorkspace(app, setup);
     const cookieOf = (response: typeof setup) => {
       const cookie = response.cookies.find((c) => c.name === 'trestl_session')!;
       return `${cookie.name}=${cookie.value}`;
     };
-    const owner = cookieOf(setup);
+    const owner = cookieOf(shared);
     const call = (
       method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
       path: string,
@@ -122,15 +124,8 @@ test('project canvases persist, isolate access, reject stale writes, export, and
     assert.deepEqual((await call('GET', '/export', undefined, member)).json().canvases, []);
     await call('PATCH', `/projects/${parent.id}`, { visibility: 'workspace' });
     assert.equal((await call('GET', path, undefined, member)).statusCode, 200);
-    const outsider = cookieOf(
-      await call('POST', '/auth/profiles', {
-        name: 'Other workspace',
-        email: 'other@canvas.test',
-        password: 'other-workspace-password',
-      }),
-    );
-    assert.equal((await call('GET', path, undefined, outsider)).statusCode, 404);
-    assert.deepEqual((await call('GET', '/export', undefined, outsider)).json().canvases, []);
+    // Installation access requires authentication, even for shared projects.
+    assert.equal((await app.inject({ url: `/api/v1${path}` })).statusCode, 401);
     const readToken = (await call('POST', '/tokens', { name: 'Read only', scope: 'read' })).json()
       .token;
     assert.equal(

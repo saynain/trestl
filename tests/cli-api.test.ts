@@ -1,3 +1,4 @@
+import { memberSession } from './installation-fixture.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../server/app.ts';
@@ -133,17 +134,12 @@ test('CLI API supports project keys, filtering, revisions and durable, scoped re
       409,
     );
     // Same key belongs to a different user/workspace and cannot reveal or replay this user's item.
-    const profile = await app.inject({
-      method: 'POST',
-      url: '/api/v1/auth/profiles',
-      headers: { cookie },
-      payload: {
-        name: 'Other account',
-        email: 'other-cli@example.test',
-        password: 'another-cli-password',
-      },
+    const profile = await memberSession(app, cookie, {
+      name: 'Other account',
+      email: 'other-cli@example.test',
+      password: 'another-cli-password',
     });
-    assert.equal(profile.statusCode, 201, profile.body);
+    assert.equal(profile.statusCode, 200, profile.body);
     const otherCookie = profile.cookies.find((c) => c.name === 'trestl_session')!;
     const otherToken = await app.inject({
       method: 'POST',
@@ -152,6 +148,10 @@ test('CLI API supports project keys, filtering, revisions and durable, scoped re
       payload: { name: 'Other CLI', scope: 'write' },
     });
     const otherAuth = `Bearer ${otherToken.json().token}`;
+    assert.equal(
+      (await api('PATCH', `/items/${item.id}`, { visibility: 'private' })).statusCode,
+      200,
+    );
     assert.equal(
       (await api('GET', `/items/${item.identifier}`, undefined, undefined, otherAuth)).statusCode,
       404,

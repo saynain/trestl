@@ -1,3 +1,6 @@
+import AuthenticationSettings from './AuthenticationSettings';
+import WorkspacePeople from './WorkspacePeople';
+import WorkspaceGeneral from './WorkspaceGeneral';
 import { Select } from './Select';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
@@ -11,7 +14,6 @@ import {
   Link2,
   Loader2,
   LogOut,
-  Monitor,
   Moon,
   Plus,
   RefreshCw,
@@ -28,7 +30,15 @@ import GitSettings, { type GitConnection } from './GitSettings';
 import { readTheme, saveTheme } from '../lib/preferences';
 import { formatShortcut, shortcuts } from '../lib/shortcuts';
 
-type Tab = 'general' | 'people' | 'integrations' | 'api';
+type Tab =
+  | 'authentication'
+  | 'tokens'
+  | 'profile'
+  | 'appearance'
+  | 'general'
+  | 'people'
+  | 'integrations'
+  | 'api';
 type Integration = {
   id: string;
   provider: string;
@@ -39,7 +49,13 @@ type Integration = {
   lastSyncedAt?: string | null;
   lastError?: string | null;
 };
-type AccessToken = { id: string; name: string; scope: string; createdAt: string };
+type AccessToken = {
+  workspaceId?: string;
+  id: string;
+  name: string;
+  scope: string;
+  createdAt: string;
+};
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : 'Something went wrong. Please try again.';
 const formatDate = (date?: string | null) =>
@@ -49,47 +65,57 @@ const formatDate = (date?: string | null) =>
 const rows = <T,>(result: { data: T[] } | T[]): T[] =>
   Array.isArray(result) ? result : result.data;
 
-export default function Settings({ section = 'general' }: { section?: string }) {
+export default function Settings({
+  section,
+  scope = 'workspace',
+}: {
+  section?: string;
+  scope?: 'account' | 'workspace';
+}) {
   const { data, toast, uiPreferences, updateUiPreferences } = useApp();
   const [signingOut, setSigningOut] = useState(false);
+  const [theme, setTheme] = useState(() => readTheme(data.user));
+  const personal = data.workspace?.kind === 'personal';
+  const accountTabs: { id: Tab; label: string }[] = [
+    { id: 'profile', label: 'Profile' },
+    { id: 'appearance', label: 'Appearance' },
+    { id: 'tokens', label: 'API tokens' },
+  ];
+  const workspaceTabs: { id: Tab; label: string }[] = [
+    { id: 'general', label: 'General' },
+    ...(data.user.role === 'admin'
+      ? [{ id: 'authentication' as const, label: 'Authentication' }]
+      : []),
+    ...(!personal ? [{ id: 'people' as const, label: 'People' }] : []),
+    { id: 'integrations', label: 'Integrations' },
+    { id: 'api', label: 'Export' },
+  ];
+  const legacyAccount =
+    scope === 'workspace' && (section === 'profile' || section === 'appearance');
+  const accountScope = scope === 'account' || legacyAccount;
+  const tabs = accountScope ? accountTabs : workspaceTabs;
+  const requested =
+    section === 'connections' ||
+    section === 'documentation' ||
+    new URLSearchParams(location.hash.split('?')[1]).has('github')
+      ? 'integrations'
+      : section;
+  const tab =
+    tabs.find((item) => item.id === requested)?.id ?? (accountScope ? 'profile' : 'general');
+  useEffect(() => {
+    if (legacyAccount) navigate('account-settings', undefined, section);
+  }, [legacyAccount, section]);
   async function signOut() {
     setSigningOut(true);
     try {
-      await post('/auth/logout', {});
-      window.location.reload();
+      const result = await post<{ redirectUrl?: string }>('/auth/logout', {});
+      if (result.redirectUrl) window.location.assign(result.redirectUrl);
+      else window.location.reload();
     } catch (error) {
       toast(errorMessage(error), 'error');
       setSigningOut(false);
     }
   }
-  const [tab, setTab] = useState<Tab>(
-    (['general', 'people', 'integrations', 'documentation', 'api'].includes(section)
-      ? section === 'documentation'
-        ? 'integrations'
-        : section
-      : 'general') as Tab,
-  );
-  useEffect(() => {
-    setTab(
-      (['general', 'people', 'integrations', 'documentation', 'api'].includes(section)
-        ? section === 'documentation'
-          ? 'integrations'
-          : section
-        : 'general') as Tab,
-    );
-  }, [section]);
-  function selectTab(next: Tab) {
-    setTab(next);
-    navigate('settings', undefined, next);
-  }
-  const [theme, setTheme] = useState(() => readTheme(data.user));
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'general', label: 'General' },
-    { id: 'people', label: 'People' },
-    { id: 'integrations', label: 'Integrations' },
-    { id: 'api', label: 'API & export' },
-  ];
-  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const setAppearance = (next: string) => {
     setTheme(next);
     saveTheme(data.user, next);
@@ -98,168 +124,137 @@ export default function Settings({ section = 'general' }: { section?: string }) 
   return (
     <div className="settings-page">
       <header className="settings-heading">
-        <h1>Settings</h1>
-        <p>A workspace that works the way you do.</p>
+        <h1>{accountScope ? 'Account settings' : 'Administration'}</h1>
+        <p>
+          {accountScope
+            ? 'Your profile, preferences, and API access.'
+            : `Manage ${data.workspace?.name ?? 'your installation'} and how your team works together.`}
+        </p>
       </header>
-      <div className="settings-tabs" role="tablist" aria-label="Settings sections">
-        {tabs.map((item, index) => (
-          <button
-            key={item.id}
-            ref={(el) => {
-              tabRefs.current[index] = el;
-            }}
-            role="tab"
-            id={`settings-tab-${item.id}`}
-            aria-selected={tab === item.id}
-            aria-controls={`settings-panel-${item.id}`}
-            tabIndex={tab === item.id ? 0 : -1}
-            className={tab === item.id ? 'active' : ''}
-            onClick={() => selectTab(item.id)}
-            onKeyDown={(event) => {
-              let next = index;
-              if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
-              else if (event.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length;
-              else if (event.key === 'Home') next = 0;
-              else if (event.key === 'End') next = tabs.length - 1;
-              else return;
-              event.preventDefault();
-              selectTab(tabs[next].id);
-              tabRefs.current[next]?.focus();
-            }}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-      <div role="tabpanel" id={`settings-panel-${tab}`} aria-labelledby={`settings-tab-${tab}`}>
-        {tab === 'general' && (
-          <>
+      <div className="settings-layout">
+        <nav className="settings-navigation" aria-label="Settings sections">
+          {[
+            accountScope
+              ? { label: 'Your account', detail: data.user.email, tabs: accountTabs }
+              : {
+                  label: 'Installation',
+                  detail: data.workspace?.name ?? 'Workspace',
+                  tabs: workspaceTabs,
+                },
+          ].map((group) => (
+            <div className="settings-navigation-group" key={group.label}>
+              <div className="settings-navigation-heading">
+                <span>{group.label}</span>
+                <strong title={group.detail}>{group.detail}</strong>
+              </div>
+              <div className="settings-navigation-links">
+                {group.tabs.map((item) => (
+                  <a
+                    key={item.id}
+                    href={`#/${accountScope ? 'account-settings' : 'settings'}?tab=${item.id}`}
+                    aria-current={tab === item.id ? 'page' : undefined}
+                  >
+                    {item.label}
+                  </a>
+                ))}
+              </div>
+            </div>
+          ))}
+        </nav>
+        <div className="settings-content" key={`${data.user.id}:${data.user.workspaceId}:${tab}`}>
+          {tab === 'profile' && (
             <AccountSettings signingOut={signingOut} onSignOut={() => void signOut()} />
-            <section className="settings-section">
-              <h2>Appearance</h2>
-              <p>Choose a comfortable space for focused work.</p>
-              <div className="settings-appearance">
-                {[
-                  { id: 'light', label: 'Light', Icon: Sun },
-                  { id: 'dark', label: 'Dark', Icon: Moon },
-                ].map(({ id, label, Icon }) => (
-                  <button
-                    key={id}
-                    type="button"
-                    aria-pressed={theme === id}
-                    onClick={() => setAppearance(id)}
-                    className={`settings-theme ${theme === id ? 'selected' : ''}`}
-                  >
-                    <span className={`settings-theme-preview ${id}`}>
-                      <i />
-                      <i />
-                      <i />
-                    </span>
-                    <span>
-                      <Icon size={15} />
-                      {label}
-                      {theme === id && <Check size={15} />}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </section>
-            <section className="settings-section">
-              <h2>Work item view</h2>
-              <p>
-                Choose how work items open. This preference is saved for your profile in this
-                browser.
-              </p>
-              <div className="settings-item-layout" role="group" aria-label="Work item view">
-                {[
-                  {
-                    id: 'side-panel',
-                    label: 'Side panel',
-                    description: 'Open along the right edge.',
-                  },
-                  {
-                    id: 'centered',
-                    label: 'Centered box',
-                    description: 'Open in the middle of the screen.',
-                  },
-                ].map(({ id, label, description }) => (
-                  <button
-                    key={id}
-                    type="button"
-                    aria-pressed={uiPreferences.itemLayout === id}
-                    className={`settings-layout-option ${uiPreferences.itemLayout === id ? 'selected' : ''}`}
-                    onClick={() =>
-                      updateUiPreferences({ itemLayout: id as 'side-panel' | 'centered' })
-                    }
-                  >
-                    <strong>{label}</strong>
-                    <span>{description}</span>
-                  </button>
-                ))}
-              </div>
-              <p className="settings-helper">On small screens, work items use the full screen.</p>
-            </section>
-            <section className="settings-section">
-              <h2>Zen mode</h2>
-              <p>
-                Hide the sidebar for more room to focus. Toggle it with{' '}
-                {formatShortcut(shortcuts.sidebar.keys[0])} or the sidebar button.
-              </p>
-              <label className="settings-checkbox">
-                <input
-                  type="checkbox"
-                  checked={uiPreferences.zenMode}
-                  onChange={(event) => updateUiPreferences({ zenMode: event.target.checked })}
-                />
-                Hide sidebar on desktop
-              </label>
-            </section>
-            <section className="settings-section">
-              <h2>Make yourself at home</h2>
-              <p>Keep ongoing responsibilities and projects together. Repositories are optional.</p>
-              <div className="settings-tip">
-                <Monitor size={19} />
-                <div>
-                  <strong>Start with Home</strong>
-                  <p>
-                    Capture tasks, ideas, and follow-ups in your personal inbox. They can stay
-                    there, or join a project when you need more structure. Home brings your work
-                    together.
-                  </p>
+          )}
+          {tab === 'appearance' && (
+            <>
+              <section className="settings-section">
+                <h2>Appearance</h2>
+                <p>Choose a comfortable space for focused work.</p>
+                <div className="settings-appearance">
+                  {[
+                    { id: 'light', label: 'Light', Icon: Sun },
+                    { id: 'dark', label: 'Dark', Icon: Moon },
+                  ].map(({ id, label, Icon }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      aria-pressed={theme === id}
+                      onClick={() => setAppearance(id)}
+                      className={`settings-theme ${theme === id ? 'selected' : ''}`}
+                    >
+                      <span className={`settings-theme-preview ${id}`}>
+                        <i />
+                        <i />
+                        <i />
+                      </span>
+                      <span>
+                        <Icon size={15} />
+                        {label}
+                        {theme === id && <Check size={15} />}
+                      </span>
+                    </button>
+                  ))}
                 </div>
-              </div>
-              <div className="settings-shortcuts">
-                <div>
-                  <span>Find anything or run a command</span>
-                  <kbd>⌘ / Ctrl K</kbd>
+              </section>
+              <section className="settings-section">
+                <h2>Work item view</h2>
+                <p>
+                  Choose how work items open. This preference is saved for your profile in this
+                  browser.
+                </p>
+                <div className="settings-item-layout" role="group" aria-label="Work item view">
+                  {[
+                    {
+                      id: 'side-panel',
+                      label: 'Side panel',
+                      description: 'Open along the right edge.',
+                    },
+                    {
+                      id: 'centered',
+                      label: 'Centered box',
+                      description: 'Open in the middle of the screen.',
+                    },
+                  ].map(({ id, label, description }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      aria-pressed={uiPreferences.itemLayout === id}
+                      className={`settings-layout-option ${uiPreferences.itemLayout === id ? 'selected' : ''}`}
+                      onClick={() =>
+                        updateUiPreferences({ itemLayout: id as 'side-panel' | 'centered' })
+                      }
+                    >
+                      <strong>{label}</strong>
+                      <span>{description}</span>
+                    </button>
+                  ))}
                 </div>
-                <div>
-                  <span>Create a work item</span>
-                  <kbd>C</kbd>
-                </div>
-                <div>
-                  <span>Focus search</span>
-                  <kbd>/</kbd>
-                </div>
-                <div>
-                  <span>Navigate work items</span>
-                  <kbd>J / K</kbd>
-                </div>
-                <div>
-                  <span>Open focused item</span>
-                  <kbd>Enter</kbd>
-                </div>
-                <div>
-                  <span>Close a dialog or preview</span>
-                  <kbd>Esc</kbd>
-                </div>
-              </div>
-            </section>
-          </>
-        )}
-        {tab === 'people' && <People />}
-        {tab === 'integrations' && <IntegrationSettings />}
-        {tab === 'api' && <ApiSettings />}
+                <p className="settings-helper">On small screens, work items use the full screen.</p>
+              </section>
+              <section className="settings-section">
+                <h2>Zen mode</h2>
+                <p>
+                  Hide the sidebar for more room to focus. Toggle it with{' '}
+                  {formatShortcut(shortcuts.sidebar.keys[0])} or the sidebar button.
+                </p>
+                <label className="settings-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={uiPreferences.zenMode}
+                    onChange={(event) => updateUiPreferences({ zenMode: event.target.checked })}
+                  />
+                  Hide sidebar on desktop
+                </label>
+              </section>
+            </>
+          )}
+          {tab === 'authentication' && <AuthenticationSettings />}
+          {tab === 'general' && <WorkspaceGeneral />}
+          {tab === 'people' && <WorkspacePeople />}
+          {tab === 'integrations' && <WorkspaceIntegrations />}
+          {tab === 'api' && <ApiSettings mode="export" />}
+          {tab === 'tokens' && <ApiSettings mode="tokens" />}
+        </div>
       </div>
       <footer className="settings-footer">
         Trestl <span>·</span> A steady place for work.
@@ -268,144 +263,26 @@ export default function Settings({ section = 'general' }: { section?: string }) 
   );
 }
 
-function People() {
-  const { data, refresh, toast } = useApp();
-  const [adding, setAdding] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  async function create(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const values = new FormData(form);
-    setBusy(true);
-    setError('');
-    try {
-      await post('/users', {
-        name: values.get('name'),
-        email: values.get('email'),
-        password: values.get('password'),
-      });
-      await refresh();
-      setAdding(false);
-      toast('Workspace member added');
-    } catch (error) {
-      setError(errorMessage(error));
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <section className="settings-section">
-      <div className="settings-section-header">
-        <div>
-          <h2>
-            Workspace members <span className="settings-count">{data.users.length}</span>
-          </h2>
-          <p>The people moving your work forward.</p>
-        </div>
-        {data.user.role === 'admin' && (
-          <button
-            className="button primary"
-            onClick={() => {
-              setAdding(!adding);
-              setError('');
-            }}
-          >
-            {adding ? <X size={15} /> : <Plus size={15} />}
-            {adding ? 'Cancel' : 'Add member'}
-          </button>
-        )}
-      </div>
-      {adding && (
-        <form className="settings-form" onSubmit={create}>
-          <div className="settings-form-grid">
-            <label className="field">
-              Full name
-              <input
-                className="input"
-                name="name"
-                autoComplete="name"
-                required
-                maxLength={100}
-                autoFocus
-                placeholder="Alex Morgan"
-              />
-            </label>
-            <label className="field">
-              Email address
-              <input
-                className="input"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                placeholder="alex@company.com"
-              />
-            </label>
-          </div>
-          <label className="field">
-            Initial password
-            <input
-              className="input"
-              name="password"
-              type="password"
-              minLength={10}
-              autoComplete="new-password"
-              required
-              placeholder="At least 10 characters"
-            />
-          </label>
-          <p className="settings-helper">
-            This creates an account immediately. Share the initial password securely; no invitation
-            email is sent.
-          </p>
-          {error && (
-            <div className="settings-error" role="alert">
-              {error}
-            </div>
-          )}
-          <div className="settings-form-actions">
-            <button type="submit" className="button primary" disabled={busy}>
-              {busy && <Loader2 size={14} className="settings-spin" />}Create account
-            </button>
-          </div>
-        </form>
-      )}
-      <div className="settings-member-list">
-        {data.users.map((user) => (
-          <div className="settings-member" key={user.id}>
-            <Avatar user={user} size={32} />
-            <div>
-              <strong>
-                {user.name}{' '}
-                {user.id === data.user.id && <span className="settings-you">(you)</span>}
-              </strong>
-              <span>{user.email}</span>
-            </div>
-            <span className="settings-badge">{user.role}</span>
-          </div>
-        ))}
-      </div>
-      {data.user.role !== 'admin' && (
-        <p className="settings-helper">A workspace administrator can add members.</p>
-      )}
-    </section>
-  );
-}
-
-function IntegrationSettings() {
+function WorkspaceIntegrations() {
   const { data } = useApp();
   const [connections, setConnections] = useState<GitConnection[]>([]);
   return (
     <>
+      <p className="settings-context-note">
+        Repository imports share issues with people who can access the destination project. New Git
+        connections are shared with everyone in this installation. Confluence search uses your
+        personal account and its permissions.
+      </p>
       <GitSettings onChange={setConnections} />
-      <DocumentationSettings />
-      {data.user.role === 'admin' && (
-        <Integrations
-          key={connections.map((connection) => connection.id).join(',')}
-          connections={connections}
-        />
+      {data.user.role === 'admin' ? (
+        <Integrations connections={connections} />
+      ) : (
+        <section className="settings-section">
+          <h2>Repository imports</h2>
+          <p>A workspace administrator can manage repository imports for {data.workspace?.name}.</p>
+        </section>
       )}
+      <DocumentationSettings />
     </>
   );
 }
@@ -683,8 +560,8 @@ function Integrations({ connections }: { connections: GitConnection[] }) {
   );
 }
 
-function ApiSettings() {
-  const { toast } = useApp();
+function ApiSettings({ mode = 'both' }: { mode?: 'tokens' | 'export' | 'both' }) {
+  const { data, toast } = useApp();
   const [tokens, setTokens] = useState<AccessToken[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
@@ -695,7 +572,11 @@ function ApiSettings() {
   const [confirmDelete, setConfirmDelete] = useState('');
   async function load() {
     try {
-      setTokens(rows(await api<{ data: AccessToken[] }>('/tokens')));
+      setTokens(
+        rows(await api<{ data: AccessToken[] }>('/tokens')).filter(
+          (token) => token.workspaceId === data.user.workspaceId,
+        ),
+      );
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -703,8 +584,8 @@ function ApiSettings() {
     }
   }
   useEffect(() => {
-    void load();
-  }, []);
+    if (mode !== 'export') void load();
+  }, [mode]);
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const values = new FormData(event.currentTarget);
@@ -772,168 +653,184 @@ function ApiSettings() {
   }
   return (
     <>
-      <section className="settings-section">
-        <div className="settings-section-header">
-          <div>
-            <h2>Personal API tokens</h2>
-            <p>Connect your scripts, CLI, and favorite tools.</p>
-          </div>
-          <button className="button primary" onClick={() => setAdding(!adding)}>
-            {adding ? <X size={15} /> : <Plus size={15} />}
-            {adding ? 'Cancel' : 'Create token'}
-          </button>
-        </div>
-        {error && (
-          <div className="settings-error" role="alert">
-            {error}
-          </div>
-        )}
-        {secret && (
-          <div className="settings-secret" role="status">
+      {mode !== 'export' && (
+        <section className="settings-section">
+          <div className="settings-section-header">
             <div>
-              <CheckCircle2 size={16} />
-              <strong>Your new API token</strong>
-              <button
-                className="button ghost"
-                onClick={() => setSecret('')}
-                aria-label="Dismiss new token"
-              >
-                <X size={15} />
-              </button>
+              <h2>{'Your API tokens'}</h2>
+              <p>
+                Connect CLI, Raycast, and other tools to {data.workspace?.name} using your account’s
+                permissions.
+              </p>
             </div>
-            <p>Copy this token now. You won't be able to see it again.</p>
-            <div>
-              <input
-                className="input"
-                readOnly
-                value={secret}
-                aria-label="New API token"
-                onFocus={(event) => event.currentTarget.select()}
-              />
-              <button className="button" onClick={() => void copy()}>
-                {copied ? <Check size={15} /> : <Copy size={15} />}
-                {copied ? 'Copied' : 'Copy'}
-              </button>
+            <button className="button primary" onClick={() => setAdding(!adding)}>
+              {adding ? <X size={15} /> : <Plus size={15} />}
+              {adding ? 'Cancel' : 'Create token'}
+            </button>
+          </div>
+          {error && (
+            <div className="settings-error" role="alert">
+              {error}
             </div>
-          </div>
-        )}
-        {adding && (
-          <form className="settings-form" onSubmit={create}>
-            <label className="field">
-              Token name
-              <input
-                className="input"
-                name="name"
-                required
-                autoFocus
-                maxLength={100}
-                placeholder="My CLI"
-              />
-            </label>
-            <label className="settings-checkbox">
-              <input type="checkbox" name="write" />
-              Allow creating and updating work
-            </label>
-            <p className="settings-helper">
-              All tokens can read the work you have access to. Leave this unchecked for read-only
-              integrations.
-            </p>
-            <div className="settings-form-actions">
-              <button className="button primary" disabled={!!busy}>
-                {busy === 'create' && <Loader2 className="settings-spin" size={14} />}Create token
-              </button>
-            </div>
-          </form>
-        )}
-        {loading ? (
-          <div className="settings-loading">
-            <Loader2 className="settings-spin" size={16} />
-            Loading tokens…
-          </div>
-        ) : !error && !tokens.length ? (
-          <div className="settings-empty">
-            <KeyRound size={25} strokeWidth={1.3} />
-            <strong>No API tokens yet</strong>
-            <p>Create a personal token when you're ready to connect another tool.</p>
-          </div>
-        ) : (
-          <div className="settings-token-list">
-            {tokens.map((token) => (
-              <div key={token.id} className="settings-token">
-                <div className="settings-token-main">
-                  <KeyRound size={16} />
-                  <div>
-                    <strong>{token.name}</strong>
-                    <span>Created {formatDate(token.createdAt)}</span>
-                  </div>
-                  <span className="settings-badge">
-                    {token.scope === 'admin'
-                      ? 'Admin'
-                      : token.scope === 'write'
-                        ? 'Read & write'
-                        : 'Read only'}
-                  </span>
-                  <button
-                    className="button ghost"
-                    aria-label={`Revoke ${token.name}`}
-                    onClick={() => setConfirmDelete(token.id)}
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                </div>
-                {confirmDelete === token.id && (
-                  <div className="settings-confirm">
-                    <span>Revoke this token? Connected tools will lose access immediately.</span>
-                    <button className="button" onClick={() => setConfirmDelete('')}>
-                      Cancel
-                    </button>
-                    <button
-                      className="button settings-danger"
-                      disabled={!!busy}
-                      onClick={() => void revoke(token.id)}
-                    >
-                      Revoke token
-                    </button>
-                  </div>
-                )}
+          )}
+          {secret && (
+            <div className="settings-secret" role="status">
+              <div>
+                <CheckCircle2 size={16} />
+                <strong>Your new API token</strong>
+                <button
+                  className="button ghost"
+                  onClick={() => setSecret('')}
+                  aria-label="Dismiss new token"
+                >
+                  <X size={15} />
+                </button>
               </div>
-            ))}
+              <p>Copy this token now. You won't be able to see it again.</p>
+              <div>
+                <input
+                  className="input"
+                  readOnly
+                  value={secret}
+                  aria-label="New API token"
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+                <button className="button" onClick={() => void copy()}>
+                  {copied ? <Check size={15} /> : <Copy size={15} />}
+                  {copied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+          )}
+          {adding && (
+            <form className="settings-form" onSubmit={create}>
+              <label className="field">
+                Token name
+                <input
+                  className="input"
+                  name="name"
+                  required
+                  autoFocus
+                  maxLength={100}
+                  placeholder="My CLI"
+                />
+              </label>
+              <label className="settings-checkbox">
+                <input type="checkbox" name="write" />
+                Allow creating and updating work
+              </label>
+              <p className="settings-helper">
+                This token accesses {data.workspace?.name} as you. Leave this unchecked for
+                read-only access.
+              </p>
+              <div className="settings-form-actions">
+                <button className="button primary" disabled={!!busy}>
+                  {busy === 'create' && <Loader2 className="settings-spin" size={14} />}Create token
+                </button>
+              </div>
+            </form>
+          )}
+          {loading ? (
+            <div className="settings-loading">
+              <Loader2 className="settings-spin" size={16} />
+              Loading tokens…
+            </div>
+          ) : !error && !tokens.length ? (
+            <div className="settings-empty">
+              <KeyRound size={25} strokeWidth={1.3} />
+              <strong>No API tokens yet</strong>
+              <p>Create a personal token when you’re ready to connect another tool.</p>
+            </div>
+          ) : (
+            <div className="settings-token-list">
+              {tokens.map((token) => (
+                <div key={token.id} className="settings-token">
+                  <div className="settings-token-main">
+                    <KeyRound size={16} />
+                    <div>
+                      <strong>{token.name}</strong>
+                      <span>
+                        {data.workspaces?.find((w) => w.id === token.workspaceId)?.name ??
+                          'Previous installation'}{' '}
+                        · Created {formatDate(token.createdAt)}
+                      </span>
+                    </div>
+                    <span className="settings-badge">
+                      {token.scope === 'admin'
+                        ? 'Admin'
+                        : token.scope === 'write'
+                          ? 'Read & write'
+                          : 'Read only'}
+                    </span>
+                    <button
+                      className="button ghost"
+                      aria-label={`Revoke ${token.name}`}
+                      onClick={() => setConfirmDelete(token.id)}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                  {confirmDelete === token.id && (
+                    <div className="settings-confirm">
+                      <span>Revoke this token? Connected tools will lose access immediately.</span>
+                      <button className="button" onClick={() => setConfirmDelete('')}>
+                        Cancel
+                      </button>
+                      <button
+                        className="button settings-danger"
+                        disabled={!!busy}
+                        onClick={() => void revoke(token.id)}
+                      >
+                        Revoke token
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="settings-tip">
+            <KeyRound size={18} />
+            <div>
+              <strong>One API for your whole workflow</strong>
+              <p>
+                Use <code>/api/v1</code> with an <code>Authorization: Bearer &lt;token&gt;</code>{' '}
+                header. Tokens follow your account’s permissions for the selected installation.
+              </p>
+              <a href="/api/v1/openapi.json" target="_blank" rel="noreferrer">
+                Open API specification <ExternalLink size={12} />
+              </a>
+            </div>
           </div>
-        )}
-        <div className="settings-tip">
-          <KeyRound size={18} />
-          <div>
-            <strong>One API for your whole workflow</strong>
-            <p>
-              Use <code>/api/v1</code> with an <code>Authorization: Bearer &lt;token&gt;</code>{' '}
-              header. Tokens inherit your account's access permissions.
+        </section>
+      )}
+      {mode !== 'tokens' && (
+        <section className="settings-section">
+          <div className="settings-section-header">
+            <div>
+              <h2>Your data, always yours</h2>
+              <p>Download the projects and work you have permission to access as JSON.</p>
+            </div>
+            <button className="button" disabled={!!busy} onClick={() => void download()}>
+              {busy === 'export' ? (
+                <Loader2 size={15} className="settings-spin" />
+              ) : (
+                <Download size={15} />
+              )}
+              Export data
+            </button>
+          </div>
+          <p className="settings-helper">
+            Includes accessible projects, work items, discussion, and supporting records.
+            Credentials and API tokens are excluded.
+          </p>
+          {error && (
+            <p className="settings-error" role="alert">
+              {error}
             </p>
-            <a href="/api/v1/openapi.json" target="_blank" rel="noreferrer">
-              Open API specification <ExternalLink size={12} />
-            </a>
-          </div>
-        </div>
-      </section>
-      <section className="settings-section">
-        <div className="settings-section-header">
-          <div>
-            <h2>Your data, always yours</h2>
-            <p>Download the workspace data you have permission to access as JSON.</p>
-          </div>
-          <button className="button" disabled={!!busy} onClick={() => void download()}>
-            {busy === 'export' ? (
-              <Loader2 size={15} className="settings-spin" />
-            ) : (
-              <Download size={15} />
-            )}
-            Export data
-          </button>
-        </div>
-        <p className="settings-helper">
-          Includes accessible projects, work items, discussion, and supporting records. Credentials
-          and API tokens are excluded.
-        </p>
-      </section>
+          )}
+        </section>
+      )}
     </>
   );
 }
@@ -994,10 +891,14 @@ function AccountSettings({
       <div className="settings-section-header">
         <div>
           <h2>Your account</h2>
-          <p>Your identity in this workspace.</p>
+          <p>
+            {data.authMode !== 'local'
+              ? 'Your name and email are managed by your organization’s sign-in provider.'
+              : 'Your profile in this installation.'}
+          </p>
         </div>
         <div className="settings-inline-actions">
-          {!editing && (
+          {!editing && data.authMode === 'local' && (
             <button className="button" onClick={beginEdit}>
               Edit account
             </button>
@@ -1014,7 +915,6 @@ function AccountSettings({
           <strong>{data.user.name}</strong>
           <span>{data.user.email}</span>
         </div>
-        <span className="settings-badge">{data.user.role}</span>
       </div>
       {editing && (
         <form className="settings-form" onSubmit={save}>

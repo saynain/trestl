@@ -619,13 +619,53 @@ textarea::placeholder {
   height: 48px;
   border-radius: 0;
 }
+.sidebar-account {
+  position: relative;
+}
+.sidebar-account-popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  box-shadow: 0 8px 32px #0002;
+  z-index: 40;
+}
+.sidebar-account-info {
+  padding: 9px 8px 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-account-info strong,
+.sidebar-account-info span {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.sidebar-account-info span {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
 .sidebar-user {
+  width: 100%;
+  text-align: left;
+  color: var(--text);
+  border-radius: 6px;
+
   display: flex;
   align-items: center;
   gap: 9px;
   padding: 17px 8px 19px;
   border-top: 1px solid var(--border);
   margin-top: 10px;
+}
+.sidebar-user:hover,
+.sidebar-user.active {
+  background: var(--hover);
 }
 .sidebar-user > div {
   flex: 1;
@@ -640,6 +680,9 @@ textarea::placeholder {
 }
 .sidebar-user small {
   display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 10px;
   color: var(--muted);
   margin-top: 3px;
@@ -2887,6 +2930,8 @@ textarea::placeholder {
   flex-shrink: 0;
 }
 .profile-popover {
+  max-height: calc(100dvh - 150px);
+  overflow-y: auto;
   position: absolute;
   top: calc(100% + 8px);
   left: 0;

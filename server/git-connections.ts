@@ -1,3 +1,5 @@
+import { installationCredential, registerGitHubInstallation } from './github-installation.ts';
+import { workspaceUser, workspaceOf } from './workspaces.ts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from './context.ts';
@@ -18,6 +20,9 @@ import {
 } from './integration-provider.ts';
 
 export interface GitConnection {
+  shared?: boolean;
+  workspaceId?: string;
+  githubInstallation?: { appId: string; installationId: string; encryptedPrivateKey: string };
   id: string;
   userId: string;
   provider: Provider;
@@ -42,6 +47,8 @@ export interface GitConnection {
 export function publicGitConnection(connection: GitConnection) {
   return {
     id: connection.id,
+    shared: !!connection.shared,
+    workspaceId: connection.workspaceId,
     userId: connection.userId,
     provider: connection.provider,
     name: connection.name,
@@ -49,7 +56,11 @@ export function publicGitConnection(connection: GitConnection) {
     createdAt: connection.createdAt,
     updatedAt: connection.updatedAt,
     configured: true,
-    authType: connection.githubApp ? 'github-app' : 'token',
+    authType: connection.githubInstallation
+      ? 'github-installation'
+      : connection.githubApp
+        ? 'github-app'
+        : 'token',
     ...(connection.githubApp
       ? {
           githubAccount: connection.githubApp.login,
@@ -62,13 +73,23 @@ export function gitToken(connection: GitConnection, secret: string) {
   return decryptToken(connection.encryptedToken, secret, connection.credentialId ?? connection.id);
 }
 export async function resolveGitCredential(ctx: AppContext, connection: GitConnection) {
+  if (connection.githubInstallation) return installationCredential(ctx, connection);
   if (connection.githubApp) return githubAppCredential(ctx, connection);
   return { connection, token: gitToken(connection, secretForGit()) };
 }
 const secretForGit = () => process.env.APP_SECRET ?? '';
 export async function ownGitConnection(ctx: AppContext, userId: string, id: string) {
   const connection = await ctx.store.get<GitConnection>('gitConnections', id);
-  if (!connection || connection.userId !== userId) ctx.fail(404, 'Git connection not found.');
+  if (
+    !connection ||
+    (connection.userId !== userId &&
+      !(
+        connection.shared &&
+        connection.workspaceId &&
+        (await workspaceUser(ctx.store, userId, connection.workspaceId))
+      ))
+  )
+    ctx.fail(404, 'Git connection not found.');
   return connection;
 }
 
@@ -123,6 +144,7 @@ export async function registerGitConnections(app: FastifyInstance, ctx: AppConte
   };
   const input = z
     .object({
+      shared: z.boolean().default(false),
       provider: z.enum(['github', 'gitea']),
       name: z.string().trim().min(1).max(100),
       baseUrl: z.string().trim().max(2000).optional(),
@@ -140,10 +162,11 @@ export async function registerGitConnections(app: FastifyInstance, ctx: AppConte
     return payload;
   });
   await registerGitHubApp(app, ctx);
+  registerGitHubInstallation(app, ctx);
   app.get('/api/v1/git/connections', async (request) => {
     const user = ctx.requireUser(request);
     return (await ctx.store.list<GitConnection>('gitConnections'))
-      .filter((c) => c.userId === user.id)
+      .filter((c) => c.userId === user.id || (c.shared && c.workspaceId === workspaceOf(user)))
       .map(publicGitConnection);
   });
   app.post('/api/v1/git/connections', async (request, reply) => {
@@ -151,6 +174,8 @@ export async function registerGitConnections(app: FastifyInstance, ctx: AppConte
     const parsed = input.safeParse(request.body);
     if (!parsed.success)
       ctx.fail(400, 'Provide a provider, connection name, base URL, and access token.');
+    if (parsed.data.shared && user.role !== 'admin')
+      ctx.fail(403, 'Only administrators can configure shared integrations.');
     if (secret().length < 32)
       ctx.fail(503, 'APP_SECRET must contain at least 32 characters before Git can be configured.');
     let baseUrl: string;
@@ -163,7 +188,9 @@ export async function registerGitConnections(app: FastifyInstance, ctx: AppConte
             (parsed.data.provider === 'github' ? 'https://api.github.com' : ''),
           repository: 'owner/repository',
         },
-        allowedOrigins,
+        parsed.data.shared && parsed.data.baseUrl
+          ? [...allowedOrigins, new URL(parsed.data.baseUrl).origin]
+          : allowedOrigins,
       ).baseUrl;
     } catch (error) {
       ctx.fail(400, error instanceof Error ? error.message : 'Invalid Git configuration.');
@@ -173,6 +200,8 @@ export async function registerGitConnections(app: FastifyInstance, ctx: AppConte
     const connection: GitConnection = {
       id,
       userId: user.id,
+      shared: parsed.data.shared,
+      workspaceId: workspaceOf(user),
       provider: parsed.data.provider,
       name: parsed.data.name,
       baseUrl,
@@ -186,6 +215,13 @@ export async function registerGitConnections(app: FastifyInstance, ctx: AppConte
   app.put<{ Params: { id: string } }>('/api/v1/git/connections/:id', async (request) => {
     const user = browserUser(request);
     const connection = await ownGitConnection(ctx, user.id, request.params.id);
+    if (
+      connection.shared &&
+      (user.role !== 'admin' || connection.workspaceId !== workspaceOf(user))
+    )
+      ctx.fail(403, 'Administrator access is required.');
+    if (connection.githubInstallation)
+      ctx.fail(400, 'Replace a GitHub App installation by reconnecting it.');
     if (connection.githubApp)
       ctx.fail(400, 'Use Reconnect GitHub to renew a GitHub App connection.');
     const parsed = input.pick({ name: true, token: true }).safeParse(request.body);
@@ -205,7 +241,12 @@ export async function registerGitConnections(app: FastifyInstance, ctx: AppConte
         "SELECT id FROM entities WHERE collection='system' AND id='mutation-lock' FOR UPDATE",
       );
       const current = await store.get<GitConnection>('gitConnections', connection.id);
-      if (!current || current.userId !== user.id) ctx.fail(404, 'Git connection not found.');
+      if (
+        !current ||
+        (current.userId !== user.id &&
+          !(current.shared && user.role === 'admin' && current.workspaceId === workspaceOf(user)))
+      )
+        ctx.fail(404, 'Git connection not found.');
       if (current.encryptedToken !== connection.encryptedToken)
         ctx.fail(409, 'This connection changed. Reload before replacing its token.');
       await store.put('gitConnections', updated);
@@ -214,7 +255,12 @@ export async function registerGitConnections(app: FastifyInstance, ctx: AppConte
   });
   app.delete<{ Params: { id: string } }>('/api/v1/git/connections/:id', async (request, reply) => {
     const user = browserUser(request);
-    await ownGitConnection(ctx, user.id, request.params.id);
+    const connection = await ownGitConnection(ctx, user.id, request.params.id);
+    if (
+      connection.shared &&
+      (user.role !== 'admin' || connection.workspaceId !== workspaceOf(user))
+    )
+      ctx.fail(403, 'Administrator access is required.');
     await ctx.db.transaction(async (db) => {
       const store = makeStore(db);
       await db.query(
@@ -241,6 +287,9 @@ export async function registerGitConnections(app: FastifyInstance, ctx: AppConte
     '/api/v1/git/connections/:id/issue',
     async (request) => {
       let connection = await ownGitConnection(ctx, ctx.requireUser(request).id, request.params.id);
+      const permittedOrigins = connection.shared
+        ? [...allowedOrigins, new URL(connection.baseUrl).origin]
+        : allowedOrigins;
       const parsed = z
         .object({
           repository: z.string().trim().min(1).max(300),
@@ -250,7 +299,7 @@ export async function registerGitConnections(app: FastifyInstance, ctx: AppConte
       if (!parsed.success)
         ctx.fail(400, 'Provide an owner/repository and a positive issue number.');
       try {
-        validateSource({ ...connection, repository: parsed.data.repository }, allowedOrigins);
+        validateSource({ ...connection, repository: parsed.data.repository }, permittedOrigins);
       } catch (error) {
         ctx.fail(400, error instanceof Error ? error.message : 'Invalid Git configuration.');
       }
@@ -271,7 +320,12 @@ export async function registerGitConnections(app: FastifyInstance, ctx: AppConte
           { ...connection, repository: parsed.data.repository },
           parsed.data.number,
           token,
-          { allowedOrigins, ...(connection.githubApp ? { fetch: ctx.githubFetch } : {}) },
+          {
+            allowedOrigins: permittedOrigins,
+            ...(connection.githubApp || connection.githubInstallation
+              ? { fetch: ctx.githubFetch }
+              : {}),
+          },
         );
       } catch (error) {
         if (

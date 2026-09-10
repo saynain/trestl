@@ -91,6 +91,7 @@ export async function openDatabase(
 }
 export function makeStore(db: Database) {
   return {
+    query: <T>(sql: string, params?: unknown[]) => db.query<T>(sql, params),
     async list<T>(collection: string): Promise<T[]> {
       return (
         await db.query<{ data: T }>('SELECT data FROM entities WHERE collection=$1 ORDER BY id', [

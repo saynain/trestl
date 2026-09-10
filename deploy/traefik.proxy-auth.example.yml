@@ -1,0 +1,85 @@
+# Traefik v3 dynamic file-provider configuration. Copy outside the repository.
+# The env calls are Traefik Go templates, not Docker Compose substitution.
+# Set these in Traefik's environment; do not place real deployment values here.
+http:
+  routers:
+    trestl-oauth:
+      rule: 'Host(`{{ env "TRESTL_PUBLIC_HOST" }}`) && PathPrefix(`/oauth2/`)'
+      priority: 300
+      entryPoints: [websecure]
+      tls: {}
+      service: trestl-oauth
+    trestl-api-token:
+      # Header presence selects a validation path, never grants access itself.
+      rule: 'Host(`{{ env "TRESTL_PUBLIC_HOST" }}`) && PathPrefix(`/api/v1/`) && HeaderRegexp(`Authorization`, `(?i)^Bearer .+$`)'
+      priority: 200
+      entryPoints: [websecure]
+      tls: {}
+      middlewares: [trestl-token-only]
+      service: trestl
+    trestl-browser-api:
+      rule: 'Host(`{{ env "TRESTL_PUBLIC_HOST" }}`) && PathPrefix(`/api/v1/`)'
+      priority: 150
+      entryPoints: [websecure]
+      tls: {}
+      middlewares: [trestl-strip-identity, trestl-google-api, trestl-trusted-proxy]
+      service: trestl
+    trestl-browser:
+      rule: 'Host(`{{ env "TRESTL_PUBLIC_HOST" }}`)'
+      priority: 100
+      entryPoints: [websecure]
+      tls: {}
+      middlewares: [trestl-strip-identity, trestl-google, trestl-trusted-proxy]
+      service: trestl
+  middlewares:
+    trestl-strip-identity:
+      headers:
+        customRequestHeaders:
+          X-Auth-Request-User: ''
+          X-Auth-Request-Email: ''
+          X-Auth-Request-Preferred-Username: ''
+          X-Trestl-Proxy-Secret: ''
+          X-Trestl-API-Only: ''
+    trestl-google:
+      forwardAuth:
+        # oauth2-proxy uses upstream=static://202 to redirect unauthenticated browsers.
+        address: http://oauth2-proxy:4180/
+        trustForwardHeader: false
+        authResponseHeaders:
+          - X-Auth-Request-User
+          - X-Auth-Request-Email
+          - X-Auth-Request-Preferred-Username
+        addAuthCookiesToResponse:
+          - _trestl_oauth
+    trestl-google-api:
+      forwardAuth:
+        # AJAX requests must receive 401 rather than HTML login redirects.
+        address: http://oauth2-proxy:4180/oauth2/auth
+        trustForwardHeader: false
+        authResponseHeaders:
+          - X-Auth-Request-User
+          - X-Auth-Request-Email
+          - X-Auth-Request-Preferred-Username
+        addAuthCookiesToResponse:
+          - _trestl_oauth
+    trestl-trusted-proxy:
+      headers:
+        customRequestHeaders:
+          X-Trestl-Proxy-Secret: '{{ env "TRESTL_PROXY_SECRET" }}'
+    trestl-token-only:
+      headers:
+        customRequestHeaders:
+          X-Auth-Request-User: ''
+          X-Auth-Request-Email: ''
+          X-Auth-Request-Preferred-Username: ''
+          X-Trestl-Proxy-Secret: ''
+          X-Trestl-API-Only: 'true'
+  services:
+    trestl:
+      loadBalancer:
+        servers:
+          - url: http://app:4317
+    trestl-oauth:
+      loadBalancer:
+        servers:
+          - url: http://oauth2-proxy:4180

@@ -2,11 +2,30 @@ import { useState, type FormEvent } from 'react';
 import { ArrowRight, Check, LoaderCircle, LockKeyhole } from 'lucide-react';
 import { post } from '../lib/api';
 import { Brand } from './ui';
-export default function Auth({ setup, onSuccess }: { setup: boolean; onSuccess: () => void }) {
+export default function Auth({
+  setup,
+  proxy = false,
+  mode = 'local',
+  installationName,
+  onSuccess,
+  defaultEmail = '',
+  invitationName,
+}: {
+  setup: boolean;
+  proxy?: boolean;
+  mode?: 'local' | 'google' | 'oidc' | 'proxy';
+  installationName?: string;
+  onSuccess: () => void;
+  defaultEmail?: string;
+  invitationName?: string;
+}) {
+  const [siteName, setSiteName] = useState('');
+  const [recovery, setRecovery] = useState(false);
+  const creating = setup;
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(defaultEmail);
   const [password, setPassword] = useState('');
-  const [demo, setDemo] = useState(true);
+  const [demo, setDemo] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   async function submit(e: FormEvent) {
@@ -17,7 +36,8 @@ export default function Auth({ setup, onSuccess }: { setup: boolean; onSuccess: 
       await post(`/auth/${setup ? 'setup' : 'login'}`, {
         email,
         password,
-        ...(setup ? { name, seedDemo: demo } : {}),
+        ...(creating ? { name } : {}),
+        ...(setup ? { seedDemo: demo, installationName: siteName } : {}),
       });
       onSuccess();
     } catch (e) {
@@ -26,6 +46,33 @@ export default function Auth({ setup, onSuccess }: { setup: boolean; onSuccess: 
       setBusy(false);
     }
   }
+  if (!setup && (proxy || mode !== 'local') && !recovery)
+    return (
+      <div className="auth-page">
+        <div className="auth-brand">
+          <Brand />
+        </div>
+        <main className="auth-card">
+          <div className="auth-symbol">
+            <LockKeyhole size={23} />
+          </div>
+          <h1>Sign in to {installationName || 'Trestl'}</h1>
+          <p>Use your organization’s sign-in to access this installation.</p>
+          <a
+            className="button primary auth-submit"
+            href={
+              proxy || mode === 'proxy' ? '/oauth2/start?rd=%2F' : '/api/v1/auth/provider/start'
+            }
+          >
+            {mode === 'google' ? 'Continue with Google' : 'Continue to sign in'}{' '}
+            <ArrowRight size={16} />
+          </a>
+          <button className="profile-mode" onClick={() => setRecovery(true)}>
+            Administrator recovery login
+          </button>
+        </main>
+      </div>
+    );
   return (
     <div className="auth-page">
       <div className="auth-brand">
@@ -35,23 +82,43 @@ export default function Auth({ setup, onSuccess }: { setup: boolean; onSuccess: 
         <div className="auth-symbol">
           <LockKeyhole size={23} />
         </div>
-        <h1>{setup ? 'Make room for good work.' : 'Welcome back.'}</h1>
+        <h1>
+          {invitationName
+            ? `Join ${invitationName}`
+            : creating
+              ? 'Set up your installation.'
+              : `Sign in to ${installationName || 'Trestl'}.`}
+        </h1>
         <p>
-          {setup
-            ? 'Your projects, ideas, and everything in between. Set up your workspace to get started.'
+          {creating
+            ? 'Give your installation a name and create its administrator account.'
             : 'A calmer place to pick up where you left off.'}
         </p>
         <form onSubmit={submit}>
           {setup && (
             <label className="field">
+              Installation name
+              <input
+                className="input"
+                required
+                maxLength={80}
+                value={siteName}
+                onChange={(e) => setSiteName(e.target.value)}
+                placeholder="Your team or workspace"
+                autoFocus
+              />
+            </label>
+          )}
+          {creating && (
+            <label className="field">
               Your name
               <input
                 required
-                autoFocus
+                autoFocus={!setup}
                 className="input"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Sindre"
+                placeholder="Your name"
                 autoComplete="name"
               />
             </label>
@@ -61,7 +128,7 @@ export default function Auth({ setup, onSuccess }: { setup: boolean; onSuccess: 
             <input
               className="input"
               type="email"
-              autoFocus={!setup}
+              autoFocus={!creating}
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -75,11 +142,11 @@ export default function Auth({ setup, onSuccess }: { setup: boolean; onSuccess: 
               className="input"
               type="password"
               required
-              minLength={setup ? 10 : 1}
+              minLength={creating ? 10 : 1}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder={setup ? 'At least 10 characters' : 'Your password'}
-              autoComplete={setup ? 'new-password' : 'current-password'}
+              placeholder={creating ? 'At least 10 characters' : 'Your password'}
+              autoComplete={creating ? 'new-password' : 'current-password'}
             />
           </label>
           {setup && (
@@ -100,7 +167,7 @@ export default function Auth({ setup, onSuccess }: { setup: boolean; onSuccess: 
           )}
           <button disabled={busy} className="button primary auth-submit">
             {busy ? <LoaderCircle size={17} className="spin" /> : null}
-            {setup ? 'Create workspace' : 'Sign in'}
+            {creating ? 'Create installation' : 'Sign in'}
             <ArrowRight size={16} />
           </button>
         </form>

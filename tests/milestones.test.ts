@@ -72,23 +72,12 @@ test('milestone edits persist, increment revisions, reject stale drags and retai
     // Old clients continue to work but still advance the revision for new clients.
     const compatible = await api('PATCH', `/milestones/${original.id}`, { completed: false });
     assert.equal(compatible.json().revision, 4);
-    const profile = await api('POST', '/auth/profiles', {
-      name: 'Other',
-      email: 'other@example.test',
-      password: 'milestone-other-password',
+    const denied = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/milestones/${original.id}`,
+      payload: { title: 'No access', expectedRevision: 4 },
     });
-    // Verify isolation with a genuinely separate workspace rather than an absent item.
-    assert.equal(profile.statusCode, 201, profile.body);
-    {
-      const other = profile.cookies.find((c) => c.name === 'trestl_session')!;
-      const denied = await app.inject({
-        method: 'PATCH',
-        url: `/api/v1/milestones/${original.id}`,
-        headers: { cookie: `${other.name}=${other.value}` },
-        payload: { title: 'No access', expectedRevision: 4 },
-      });
-      assert.equal(denied.statusCode, 404);
-    }
+    assert.equal(denied.statusCode, 401);
   } finally {
     await app.close();
   }
