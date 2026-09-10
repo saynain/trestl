@@ -1,0 +1,247 @@
+.home-page {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 38px 40px 48px;
+}
+.home-heading {
+  margin-bottom: 28px;
+}
+.home-heading h1 {
+  font-size: 28px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.7px;
+}
+.home-heading p {
+  color: var(--muted);
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.home-capture {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 30px;
+}
+.home-capture-title {
+  width: 100%;
+  font-size: 14px;
+  min-height: 44px;
+}
+.home-capture-options {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+}
+.home-capture-kinds {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.home-capture-kinds button {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  padding: 9px 12px;
+  border-radius: 5px;
+  color: var(--muted);
+}
+.home-capture-kinds button[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.home-capture-date {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  font-size: 12px;
+}
+.home-capture-date input {
+  width: 145px;
+}
+.home-capture-hint {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 13px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.home-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  gap: 18px;
+  overflow-x: auto;
+}
+.home-tabs button {
+  padding: 12px 4px;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+.home-tabs button.active {
+  border-color: var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}
+.home-tabs button span {
+  font-size: 11px;
+  font-weight: 400;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: var(--surface);
+}
+.home-tabs button.active span {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.home-section-description {
+  color: var(--muted);
+  margin: 16px 0 20px;
+  line-height: 1.5;
+}
+.home-work-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.home-work-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 72px;
+  padding: 12px 16px;
+}
+.home-work-row + .home-work-row {
+  border-top: 1px solid var(--border);
+}
+.home-work-row:hover {
+  background: var(--surface);
+}
+.home-complete {
+  width: 26px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  position: relative;
+  flex-shrink: 0;
+  border-radius: 4px;
+}
+.home-complete-check {
+  display: none;
+}
+.home-complete:hover > :first-child {
+  visibility: hidden;
+}
+.home-complete:hover .home-complete-check {
+  display: block;
+  position: absolute;
+  color: var(--accent);
+}
+.home-item-main {
+  text-align: left;
+  flex: 1;
+  min-width: 0;
+  padding: 5px 0;
+}
+.home-item-main strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.5;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.home-item-main > span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+  margin-top: 2px;
+}
+.home-item-dates {
+  text-align: right;
+  font-size: 11px;
+  color: var(--muted);
+  display: grid;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.home-review-ready {
+  color: var(--accent);
+}
+.home-row-action {
+  font-size: 11px;
+}
+.home-scope-note {
+  margin-top: 20px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+@media (max-width: 1050px) {
+  .home-page {
+    padding: 28px 24px;
+  }
+  .home-capture-date {
+    margin-left: 0;
+  }
+}
+@media (max-width: 600px) {
+  .home-page {
+    padding: 26px 16px;
+  }
+  .home-heading h1 {
+    font-size: 25px;
+  }
+  .home-capture {
+    padding: 14px;
+  }
+  .home-capture-kinds {
+    width: 100%;
+  }
+  .home-capture-kinds button {
+    flex: 1;
+    justify-content: center;
+    padding: 9px 7px;
+  }
+  .home-capture-date {
+    flex: 1;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .home-capture-date input {
+    width: 140px;
+  }
+  .home-capture-options > .button {
+    align-self: flex-end;
+  }
+  .home-tabs {
+    gap: 13px;
+  }
+  .home-work-row {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+    gap: 6px 10px;
+    padding: 10px;
+  }
+  .home-item-main {
+    grid-column: 2 / -1;
+  }
+  .home-item-dates {
+    grid-column: 2;
+    text-align: left;
+  }
+  .home-row-action {
+    grid-column: 3;
+  }
+}

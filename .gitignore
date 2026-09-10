@@ -1,0 +1,23 @@
+node_modules/
+dist/
+.data/
+.env
+.env.*
+!.env.example
+*.log
+test-results/
+.DS_Store
+
+# Locally packed CLI distributions
+*.tgz
+
+.backups/
+.pnpm-store/
+.playwright-mcp/
+playwright-report/
+coverage/
+output/
+
+# Local design and verification notes, not product documentation.
+design-qa.md
+docs/design/verification.md

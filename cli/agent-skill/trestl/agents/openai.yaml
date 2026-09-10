@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Trestl'
+  short_description: 'Use Trestl work across repositories and chats'
+  default_prompt: 'Use $trestl to find the referenced work and use it as context for this task.'

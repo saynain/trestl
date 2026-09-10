@@ -1,0 +1,128 @@
+.modal-panel.shortcut-help-modal {
+  width: 720px;
+}
+.shortcut-help-intro {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 24px 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.shortcut-help-search {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 24px 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--muted);
+}
+.shortcut-help-search input {
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+}
+.shortcut-help-search input:focus {
+  box-shadow: none;
+}
+.shortcut-help-search:focus-within {
+  border-color: var(--accent);
+}
+.shortcut-help-sections {
+  padding: 10px 24px 22px;
+  columns: 2;
+  column-gap: 32px;
+}
+.shortcut-help-sections section {
+  break-inside: avoid;
+  margin-bottom: 20px;
+}
+.shortcut-help-sections h3 {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 550;
+  margin: 8px 0 10px;
+}
+.shortcut-help-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 30px;
+  font-size: 12px;
+}
+.shortcut-keys,
+.shortcut-keys > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.shortcut-keys kbd {
+  font-size: 10px;
+  min-width: 23px;
+  text-align: center;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+}
+.shortcut-keys small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.shortcut-help-note {
+  padding: 15px 24px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.shortcut-empty {
+  color: var(--muted);
+  padding: 20px 0;
+}
+.shortcut-sequence {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 150;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 15px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+}
+.shortcut-sequence small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.sidebar-shortcuts > kbd {
+  margin-left: auto;
+}
+.picker-shortcut {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10px;
+  font-family: inherit;
+}
+@media (max-width: 620px) {
+  .shortcut-help-sections {
+    columns: 1;
+  }
+  .shortcut-help-modal {
+    max-height: calc(100dvh - 24px);
+  }
+}

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trestl-config
+data:
+  APP_ORIGIN: https://projects.example.com
+  INTEGRATION_SYNC_INTERVAL_MS: '300000'

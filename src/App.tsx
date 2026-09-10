@@ -1,0 +1,758 @@
+import Canvases from './components/Canvases';
+import GanttView from './components/GanttView';
+import ShortcutHelp from './components/ShortcutHelp';
+import Home from './components/Home';
+import { useShortcuts } from './lib/keyboard';
+import { formatShortcut, shortcuts, type ItemAction } from './lib/shortcuts';
+import RoadmapView from './components/Roadmap';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ArrowRight,
+  Box,
+  CalendarDays,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  FolderOpen,
+  Inbox,
+  Layers,
+  Lightbulb,
+  LoaderCircle,
+  LockKeyhole,
+  MoreHorizontal,
+  PanelLeft,
+  Plus,
+  Search,
+  Settings as SettingsIcon,
+  X,
+  AlertCircle,
+  Hourglass,
+  Pencil,
+  Trash2,
+  Archive,
+  RefreshCw,
+} from 'lucide-react';
+import type { Bootstrap, Project, Status, User } from '../shared/types';
+import { api, ApiError, patch, remove } from './lib/api';
+import {
+  readTheme,
+  readUiPreferences,
+  saveUiPreferences,
+  defaultUiPreferences,
+  type UiPreferences,
+} from './lib/preferences';
+import { AppContext } from './lib/context';
+import {
+  filterWorkItems,
+  filteredItems,
+  isDone,
+  navigate,
+  readRoute,
+  shortDate,
+  type Route,
+} from './lib/model';
+import { Avatar, EmptyState, Logo, Modal, ProjectIcon } from './components/ui';
+import Auth from './components/Auth';
+import Sidebar from './components/Sidebar';
+import CommandPalette from './components/CommandPalette';
+import WorkList from './components/WorkList';
+import { AllProjects, Overview, Resources } from './components/ProjectViews';
+import ItemDetail from './components/ItemDetail';
+import ItemForm from './components/ItemForm';
+import ProjectForm from './components/ProjectForm';
+import Settings from './components/Settings';
+export default function App() {
+  const [auth, setAuth] = useState<{ needsSetup: boolean; authenticated: boolean } | null>(null);
+  const [data, setData] = useState<Bootstrap | null>(null);
+  const [error, setError] = useState('');
+  const [route, setRoute] = useState<Route>(readRoute);
+  const [workspaceMenu, setWorkspaceMenu] = useState(false);
+  const [command, setCommand] = useState(false);
+  const [commandMode, setCommandMode] = useState<'all' | 'items' | 'projects' | 'accounts'>('all');
+  const [commandItemId, setCommandItemId] = useState<string>();
+  const [help, setHelp] = useState(false);
+  const [itemAction, setItemAction] = useState<ItemAction>();
+  const [mobileNav, setMobileNav] = useState(false);
+  const [profilePreferences, setProfilePreferences] = useState<{
+    userId: string;
+    value: UiPreferences;
+  } | null>(null);
+  const uiPreferences = profilePreferences?.value ?? defaultUiPreferences;
+  const updateUiPreferences = (changes: Partial<UiPreferences>) => {
+    if (!data) return;
+    const value = { ...uiPreferences, ...changes };
+    saveUiPreferences(data.user, value);
+    setProfilePreferences({ userId: data.user.id, value });
+  };
+  const toggleSidebar = () => {
+    if (window.matchMedia('(max-width: 760px)').matches) {
+      setMobileNav((open) => !open);
+    } else {
+      updateUiPreferences({ zenMode: !uiPreferences.zenMode });
+      setMobileNav(false);
+      // Keep keyboard focus reachable when hiding a focused navigation control.
+      if (document.activeElement?.closest('.sidebar')) {
+        document.querySelector<HTMLButtonElement>('.sidebar-toggle')?.focus();
+      }
+    }
+  };
+  const [newItem, setNewItem] = useState<{
+    projectId?: string | null;
+    status?: Status;
+    parentId?: string;
+  } | null>(null);
+  const [newProject, setNewProject] = useState<{ parentId?: string; project?: Project } | null>(
+    null,
+  );
+  const [message, setMessage] = useState<{ text: string; kind: string } | null>(null);
+  const [projectMenu, setProjectMenu] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const toastTimer = useRef<number | undefined>(undefined);
+  const loadSequence = useRef(0);
+  const toast = useCallback((text: string, kind = 'success') => {
+    setMessage({ text, kind });
+    clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setMessage(null), 5000);
+  }, []);
+  const refresh = useCallback(async () => {
+    const sequence = ++loadSequence.current;
+    try {
+      const next = await api<Bootstrap>('/bootstrap');
+      if (sequence === loadSequence.current) {
+        document.documentElement.dataset.theme = readTheme(next.user);
+        setProfilePreferences((current) =>
+          current?.userId === next.user.id
+            ? current
+            : { userId: next.user.id, value: readUiPreferences(next.user) },
+        );
+        setData(next);
+        setError('');
+      }
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) {
+        setData(null);
+        setAuth({ needsSetup: false, authenticated: false });
+      } else throw e;
+    }
+  }, []);
+  const checkAuth = useCallback(async () => {
+    try {
+      setError('');
+      const state = await api<{ needsSetup: boolean; authenticated: boolean }>('/auth/status');
+      setAuth(state);
+      if (state.authenticated) await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, [refresh]);
+  useEffect(() => {
+    void checkAuth();
+    let acceptedHash = window.location.hash;
+    const fn = () => {
+      if (
+        window.location.hash !== acceptedHash &&
+        !window.dispatchEvent(new Event('trestl:before-navigate', { cancelable: true }))
+      ) {
+        window.history.replaceState(
+          null,
+          '',
+          window.location.pathname + window.location.search + acceptedHash,
+        );
+        return;
+      }
+      acceptedHash = window.location.hash;
+      setRoute(readRoute());
+      setProjectMenu(false);
+    };
+    window.addEventListener('hashchange', fn);
+    return () => window.removeEventListener('hashchange', fn);
+  }, [checkAuth]);
+  useEffect(() => {
+    if (!data) return;
+    if (route.page === 'home') {
+      const url = new URL(location.href);
+      const requested = url.searchParams.get('item');
+      if (requested) {
+        url.searchParams.delete('item');
+        history.replaceState(null, '', url);
+        navigate('item', requested);
+      }
+    }
+  }, [data, route.page]);
+  useEffect(() => {
+    if (!auth?.authenticated) return;
+    const check = () => {
+      if (document.visibilityState === 'visible') void refresh().catch(() => {});
+    };
+    const interval = window.setInterval(check, 30000);
+    window.addEventListener('focus', check);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', check);
+    };
+  }, [auth?.authenticated, refresh]);
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [route.page, route.id, route.tab]);
+  const createItem = useCallback(
+    (projectId?: string | null, status?: Status, parentId?: string) => {
+      setNewItem({ projectId, status, parentId });
+    },
+    [],
+  );
+  const createProject = useCallback((parentId?: string) => setNewProject({ parentId }), []);
+  const editProject = useCallback((project: Project) => setNewProject({ project }), []);
+  const openItem = useCallback(
+    (id: string, action?: ItemAction) => {
+      setItemAction(action);
+      const current = readRoute();
+      const saved = data?.views.find((v) => v.id === current.id);
+      const effectiveTab =
+        current.page === 'view' &&
+        saved &&
+        !new URLSearchParams(location.hash.split('?')[1] || '').has('tab')
+          ? saved.layout
+          : current.tab;
+      navigate(
+        current.page === 'item' ? 'my-work' : current.page,
+        current.page === 'item' ? undefined : current.id,
+        effectiveTab,
+        id,
+      );
+    },
+    [data?.views],
+  );
+  const showCommands = (mode: 'all' | 'items' | 'projects' | 'accounts' = 'all') => {
+    setWorkspaceMenu(false);
+    setCommandMode(mode);
+    const focused = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>(
+      '[data-item-id]',
+    );
+    const hovered = document.querySelector<HTMLElement>('[data-item-id]:hover');
+    setCommandItemId(route.itemId || focused?.dataset.itemId || hovered?.dataset.itemId);
+    setCommand(true);
+  };
+  useShortcuts(
+    'global',
+    {
+      command: () => {
+        if (command) setCommand(false);
+        else showCommands();
+      },
+      search: () => showCommands(),
+      switchWorkspace: () => showCommands('accounts'),
+      sidebar: toggleSidebar,
+      dismiss: () => {
+        setMobileNav(false);
+        if (projectMenu) {
+          setProjectMenu(false);
+          document.querySelector<HTMLButtonElement>('[aria-label="Project options"]')?.focus();
+        }
+      },
+      help: () => setHelp((value) => !value),
+      create: () => createItem(route.page === 'project' ? route.id : undefined),
+      inbox: () => {
+        setMobileNav(false);
+        navigate('inbox');
+      },
+      myWork: () => {
+        setMobileNav(false);
+        navigate('my-work');
+      },
+      projects: () => {
+        setMobileNav(false);
+        navigate('projects');
+      },
+      settings: () => {
+        setMobileNav(false);
+        navigate('settings');
+      },
+      findItem: () => showCommands('items'),
+      findProject: () => showCommands('projects'),
+    },
+    { enabled: !!data && route.tab !== 'roadmap-present' },
+  );
+  if (error && !data)
+    return (
+      <div className="loading-screen">
+        <Logo />
+        <h2>Couldn’t connect to your workspace</h2>
+        <p>{error}</p>
+        <button className="button primary" onClick={() => checkAuth()}>
+          Try again
+        </button>
+      </div>
+    );
+  if (!auth || (auth.authenticated && !data))
+    return (
+      <div className="loading-screen">
+        <Logo />
+        <LoaderCircle className="spin" size={22} />
+        <p>Opening your workspace…</p>
+      </div>
+    );
+  if (!auth.authenticated)
+    return <Auth setup={auth.needsSetup} onSuccess={() => void checkAuth()} />;
+  if (!data) return null;
+  const project =
+    route.page === 'project' ? data.projects.find((p) => p.id === route.id) : undefined;
+  const view = route.page === 'view' ? data.views.find((v) => v.id === route.id) : undefined;
+  const items = filteredItems(data, route);
+  const headingItems = view ? filterWorkItems(items, data.user.id, view.filters) : items;
+  const title =
+    project?.name ||
+    view?.name ||
+    (route.page === 'home'
+      ? 'Home'
+      : route.page === 'projects'
+        ? 'All projects'
+        : route.page === 'my-work'
+          ? 'My work'
+          : route.page === 'settings'
+            ? 'Settings'
+            : route.page === 'inbox'
+              ? 'Inbox'
+              : 'Work items');
+  const description =
+    route.page === 'projects'
+      ? 'A little structure for everything you’re moving forward.'
+      : route.page === 'my-work'
+        ? 'Your work, across projects and your personal inbox.'
+        : route.page === 'inbox'
+          ? 'Tasks, ideas, and follow-ups. No project needed.'
+          : view
+            ? 'A saved perspective on your work.'
+            : '';
+  const parent = project?.parentId
+    ? data.projects.find((p) => p.id === project.parentId)
+    : undefined;
+  const closeItem = () =>
+    navigate(
+      route.page === 'item' ? 'my-work' : route.page,
+      route.page === 'item' ? undefined : route.id,
+      isBoard ? 'board' : route.tab,
+    );
+  const presentingRoadmap = !!project && route.tab === 'roadmap-present';
+  const isBoard =
+    route.tab === 'board' ||
+    (view?.layout === 'board' &&
+      !new URLSearchParams(location.hash.split('?')[1] || '').has('tab'));
+  async function deleteProject() {
+    if (!project) return;
+    setDeleteBusy(true);
+    try {
+      await remove(`/projects/${project.id}`);
+      await refresh();
+      setConfirmDelete(false);
+      navigate('projects');
+      toast('Project deleted');
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+  return (
+    <AppContext.Provider
+      value={{
+        data,
+        refresh,
+        toast,
+        openItem,
+        createItem,
+        createProject,
+        editProject,
+        uiPreferences,
+        updateUiPreferences,
+      }}
+    >
+      <div
+        className={`app-shell ${mobileNav ? 'nav-open' : ''} ${uiPreferences.zenMode ? 'zen-mode' : ''} ${presentingRoadmap ? 'roadmap-presenting' : ''}`}
+      >
+        <Sidebar
+          workspaceMenu={workspaceMenu}
+          setWorkspaceMenu={setWorkspaceMenu}
+          route={route}
+          command={() => showCommands()}
+          onShortcuts={() => setHelp(true)}
+          onDismiss={() => setMobileNav(false)}
+        />
+        {mobileNav && (
+          <button
+            className="nav-scrim"
+            aria-label="Close navigation"
+            onClick={() => setMobileNav(false)}
+          />
+        )}
+        <main className="main-area">
+          <header className="topbar">
+            <button
+              className="icon-button sidebar-toggle"
+              aria-label={uiPreferences.zenMode ? 'Show sidebar' : 'Hide sidebar'}
+              aria-expanded={!uiPreferences.zenMode}
+              title={`${uiPreferences.zenMode ? 'Show sidebar' : 'Hide sidebar'} (${formatShortcut(shortcuts.sidebar.keys[0])})`}
+              onClick={toggleSidebar}
+            >
+              <PanelLeft size={19} />
+            </button>
+            <button
+              className="icon-button mobile-only"
+              aria-label="Open navigation"
+              onClick={() => setMobileNav(true)}
+            >
+              <PanelLeft size={19} />
+            </button>
+            <div className="breadcrumbs">
+              <button onClick={() => navigate('projects')}>Workspace</button>
+              <ChevronRight size={12} />
+              {parent && (
+                <>
+                  <button onClick={() => navigate('project', parent.id)}>{parent.name}</button>
+                  <ChevronRight size={12} />
+                </>
+              )}
+              <span>{title}</span>
+            </div>
+            <div className="topbar-actions">
+              <div className="member-stack">
+                {data.users.slice(0, 3).map((u) => (
+                  <Avatar key={u.id} user={u} size={25} />
+                ))}
+              </div>
+              {route.page === 'settings' ? (
+                <button
+                  className="icon-button"
+                  aria-label="Search workspace"
+                  onClick={() => showCommands()}
+                >
+                  <Search size={17} />
+                </button>
+              ) : (
+                <button
+                  className="button primary new-item-button"
+                  onClick={() =>
+                    route.page === 'projects' ? createProject() : createItem(project?.id)
+                  }
+                >
+                  <Plus size={15} />
+                  {route.page === 'projects' ? 'New project' : 'New item'}
+                  <kbd>{route.page === 'projects' ? '+' : 'C'}</kbd>
+                </button>
+              )}
+            </div>
+          </header>
+          {route.page === 'settings' ? (
+            <Settings section={route.tab} />
+          ) : route.page === 'home' ? (
+            <Home tab={route.tab} />
+          ) : (
+            <>
+              <div className="page-heading">
+                <div
+                  className={`page-project-icon ${!project ? 'generic-icon' : ''}`}
+                  style={project ? { background: project.color } : undefined}
+                >
+                  {project ? (
+                    <ProjectIcon project={project} size={29} />
+                  ) : route.page === 'inbox' ? (
+                    <Inbox size={28} />
+                  ) : route.page === 'projects' ? (
+                    <FolderOpen size={28} />
+                  ) : view?.filters.type === 'idea' ? (
+                    <Lightbulb size={28} />
+                  ) : view?.filters.followUp ? (
+                    <Hourglass size={28} />
+                  ) : (
+                    <Layers size={28} />
+                  )}
+                </div>
+                <div className="page-title-block">
+                  <h1>
+                    {title}
+                    {project?.visibility === 'private' && <LockKeyhole size={16} />}
+                  </h1>
+                  {description && <p>{description}</p>}
+                  <div className="page-meta">
+                    {project && (
+                      <>
+                        <span className="lifecycle-meta">
+                          <span className="tiny-dot" />
+                          {project.lifecycle === 'ongoing'
+                            ? 'Ongoing'
+                            : project.status === 'completed'
+                              ? 'Completed'
+                              : 'Time-bound'}
+                        </span>
+                        <span>·</span>
+                        <span>{project.visibility === 'private' ? 'Private' : 'Workspace'}</span>
+                        <span>·</span>
+                      </>
+                    )}
+                    <span>
+                      {route.page === 'projects'
+                        ? `${data.projects.filter((p) => p.status !== 'archived').length} active projects`
+                        : `${headingItems.filter((i) => !isDone(i)).length} active items`}
+                    </span>
+                    {project?.dueDate && (
+                      <>
+                        <span>·</span>
+                        <span>
+                          <CalendarDays size={12} />
+                          {shortDate(project.dueDate)}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                {project && (
+                  <div className="popover-parent project-menu">
+                    <button
+                      className="icon-button"
+                      aria-label="Project options"
+                      onClick={() => setProjectMenu(!projectMenu)}
+                    >
+                      <MoreHorizontal size={20} />
+                    </button>
+                    {projectMenu && (
+                      <>
+                        <button
+                          className="popover-dismiss"
+                          aria-label="Close project options"
+                          onClick={() => setProjectMenu(false)}
+                        />
+                        <div className="popover menu-popover">
+                          <button
+                            onClick={() => {
+                              editProject(project);
+                              setProjectMenu(false);
+                            }}
+                          >
+                            <Pencil size={15} />
+                            Edit project
+                          </button>
+                          <button
+                            onClick={() => {
+                              createProject(project.id);
+                              setProjectMenu(false);
+                            }}
+                          >
+                            <Plus size={15} />
+                            Add subproject
+                          </button>
+                          <button
+                            onClick={async () => {
+                              try {
+                                await patch(`/projects/${project.id}`, {
+                                  status: project.status === 'archived' ? 'active' : 'archived',
+                                });
+                                await refresh();
+                                setProjectMenu(false);
+                                toast(
+                                  project.status === 'archived'
+                                    ? 'Project restored'
+                                    : 'Project archived',
+                                );
+                              } catch (e) {
+                                toast((e as Error).message, 'error');
+                              }
+                            }}
+                          >
+                            <Archive size={15} />
+                            {project.status === 'archived' ? 'Restore project' : 'Archive project'}
+                          </button>
+                          <button
+                            className="danger-text"
+                            onClick={() => {
+                              setConfirmDelete(true);
+                              setProjectMenu(false);
+                            }}
+                          >
+                            <Trash2 size={15} />
+                            Delete project
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+              {route.page !== 'projects' && (
+                <nav className="page-tabs">
+                  {project && (
+                    <button
+                      className={route.tab === 'overview' ? 'active' : ''}
+                      onClick={() => navigate(route.page, route.id, 'overview')}
+                    >
+                      Overview
+                    </button>
+                  )}
+                  <button
+                    className={route.tab === 'list' && !isBoard ? 'active' : ''}
+                    onClick={() => navigate(route.page, route.id, 'list')}
+                  >
+                    Work items
+                  </button>
+                  <button
+                    className={isBoard ? 'active' : ''}
+                    onClick={() => navigate(route.page, route.id, 'board')}
+                  >
+                    Board
+                  </button>
+                  {project && (
+                    <button
+                      className={route.tab === 'gantt' ? 'active' : ''}
+                      onClick={() => navigate(route.page, route.id, 'gantt')}
+                    >
+                      Gantt
+                    </button>
+                  )}
+                  {project && (
+                    <button
+                      className={route.tab === 'resources' ? 'active' : ''}
+                      onClick={() => navigate(route.page, route.id, 'resources')}
+                    >
+                      Resources
+                    </button>
+                  )}
+                  {project && (
+                    <button
+                      className={route.tab.startsWith('canvases') ? 'active' : ''}
+                      onClick={() => navigate(route.page, route.id, 'canvases')}
+                    >
+                      Canvases
+                    </button>
+                  )}
+                  {project && (
+                    <button
+                      className={route.tab.startsWith('roadmap') ? 'active' : ''}
+                      onClick={() => navigate(route.page, route.id, 'roadmap')}
+                    >
+                      Roadmap
+                    </button>
+                  )}
+                  {view && (
+                    <button
+                      className="delete-view"
+                      title="Remove saved view"
+                      onClick={async () => {
+                        try {
+                          await remove(`/views/${view.id}`);
+                          await refresh();
+                          navigate('my-work');
+                          toast('View removed');
+                        } catch (e) {
+                          toast((e as Error).message, 'error');
+                        }
+                      }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </nav>
+              )}
+              <div className="page-body">
+                {route.page === 'projects' ? (
+                  <AllProjects />
+                ) : project && route.tab === 'gantt' ? (
+                  <GanttView key={project.id} project={project} items={items} />
+                ) : project && route.tab === 'overview' ? (
+                  <Overview project={project} items={items} />
+                ) : project && (route.tab === 'roadmap' || presentingRoadmap) ? (
+                  <RoadmapView key={project.id} project={project} presenting={presentingRoadmap} />
+                ) : project && (route.tab === 'canvases' || route.tab.startsWith('canvases/')) ? (
+                  <Canvases
+                    key={`${data.user.id}:${project.id}`}
+                    project={project}
+                    canvasId={route.tab.split('/')[1]}
+                  />
+                ) : project && route.tab === 'resources' ? (
+                  <Resources project={project} />
+                ) : route.page === 'project' && !project ? (
+                  <EmptyState
+                    title="Project not found"
+                    description="It may have been removed, or you may not have access."
+                    action={
+                      <button className="button" onClick={() => navigate('projects')}>
+                        All projects
+                      </button>
+                    }
+                  />
+                ) : (
+                  <WorkList
+                    key={`${route.page}-${route.id}-${isBoard}`}
+                    items={items}
+                    projectId={project?.id}
+                    board={isBoard}
+                    initialFilters={view?.filters}
+                    baseFilters={
+                      route.page === 'my-work'
+                        ? { scope: 'my-work' }
+                        : route.page === 'inbox'
+                          ? { scope: 'inbox' }
+                          : {}
+                    }
+                  />
+                )}
+              </div>
+            </>
+          )}
+        </main>
+      </div>
+      {route.itemId && (
+        <ItemDetail
+          key={route.itemId}
+          id={route.itemId}
+          onClose={closeItem}
+          initialAction={itemAction}
+          onActionHandled={() => setItemAction(undefined)}
+        />
+      )}
+      {newItem && <ItemForm {...newItem} onClose={() => setNewItem(null)} />}
+      {newProject && <ProjectForm {...newProject} onClose={() => setNewProject(null)} />}
+      {command && (
+        <CommandPalette
+          mode={commandMode}
+          itemId={commandItemId}
+          onHelp={() => setHelp(true)}
+          onClose={() => setCommand(false)}
+        />
+      )}
+      {help && <ShortcutHelp onClose={() => setHelp(false)} />}
+      {confirmDelete && project && (
+        <Modal title="Delete project?" onClose={() => setConfirmDelete(false)}>
+          <div className="simple-form">
+            <p>
+              This permanently removes <strong>{project.name}</strong>. Move or delete its work
+              items and subprojects first.
+            </p>
+            <div className="form-actions">
+              <button className="button" onClick={() => setConfirmDelete(false)}>
+                Cancel
+              </button>
+              <button className="button danger" disabled={deleteBusy} onClick={deleteProject}>
+                Delete project
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {message && (
+        <div
+          role={message.kind === 'error' ? 'alert' : 'status'}
+          className={`toast ${message.kind}`}
+        >
+          {message.kind === 'error' ? <AlertCircle size={17} /> : <Check size={17} />}
+          <span>{message.text}</span>
+          <button
+            className="icon-button"
+            aria-label="Dismiss notification"
+            onClick={() => setMessage(null)}
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
+    </AppContext.Provider>
+  );
+}

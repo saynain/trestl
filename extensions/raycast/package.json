@@ -1,0 +1,101 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "trestl",
+  "title": "Trestl",
+  "description": "Search, plan, and capture work in your self-hosted Trestl workspace.",
+  "icon": "icon.png",
+  "author": "trestl",
+  "license": "MIT",
+  "categories": [
+    "Productivity",
+    "Developer Tools"
+  ],
+  "platforms": [
+    "macOS"
+  ],
+  "commands": [
+    {
+      "name": "search-items",
+      "title": "Search Work Items",
+      "description": "Find and open work in Trestl",
+      "mode": "view",
+      "arguments": [
+        {
+          "name": "query",
+          "type": "text",
+          "placeholder": "Search work items",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "create-item",
+      "title": "Create Work Item",
+      "description": "Capture a task, idea, bug, or follow-up",
+      "mode": "view",
+      "arguments": [
+        {
+          "name": "title",
+          "type": "text",
+          "placeholder": "Work item title",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "my-work",
+      "title": "My Work",
+      "description": "Browse and update work assigned to you",
+      "mode": "view"
+    },
+    {
+      "name": "search-projects",
+      "title": "Search Projects",
+      "description": "Browse projects and capture work in a project",
+      "mode": "view"
+    }
+  ],
+  "preferences": [
+    {
+      "name": "serverUrl",
+      "title": "Server URL",
+      "description": "API server origin, e.g. http://localhost:4317 or https://projects.example.com",
+      "type": "textfield",
+      "required": true,
+      "default": "http://localhost:4317"
+    },
+    {
+      "name": "webUrl",
+      "title": "Web URL",
+      "description": "Optional web app origin; defaults to Server URL. For local development use http://127.0.0.1:5173",
+      "type": "textfield",
+      "required": false
+    },
+    {
+      "name": "token",
+      "title": "Personal API Token",
+      "description": "Create a personal token in Trestl Settings. Read scope supports browsing; write scope enables creating and editing.",
+      "type": "password",
+      "required": true
+    }
+  ],
+  "scripts": {
+    "dev": "ray develop",
+    "build": "ray build -e dist -o dist",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "format:check": "prettier --check src tests package.json README.md"
+  },
+  "dependencies": {
+    "@raycast/api": "^1.103.0",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "typescript": "^5.9.0",
+    "tsx": "^4.20.5",
+    "prettier": "^3.9.6"
+  },
+  "packageManager": "pnpm@10.7.1"
+}

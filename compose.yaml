@@ -1,0 +1,39 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 4317
+      DATABASE_URL: postgresql://${POSTGRES_USER:-trestl}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-trestl}
+      APP_SECRET: ${APP_SECRET:?Set APP_SECRET in .env}
+      SECURE_COOKIES: ${SECURE_COOKIES:-false}
+      APP_ORIGIN: ${APP_ORIGIN:-}
+      GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID:-}
+      GITHUB_APP_CLIENT_SECRET: ${GITHUB_APP_CLIENT_SECRET:-}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      INTEGRATION_ALLOWED_ORIGINS: ${INTEGRATION_ALLOWED_ORIGINS:-}
+      CONFLUENCE_ALLOWED_ORIGINS: ${CONFLUENCE_ALLOWED_ORIGINS:-}
+      INTEGRATION_SYNC_INTERVAL_MS: ${INTEGRATION_SYNC_INTERVAL_MS:-300000}
+    ports:
+      - '127.0.0.1:${PORT:-4317}:4317'
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-trestl}
+      POSTGRES_USER: ${POSTGRES_USER:-trestl}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB']
+      interval: 5s
+      timeout: 5s
+      retries: 15
+volumes:
+  postgres-data:

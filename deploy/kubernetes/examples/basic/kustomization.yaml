@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: trestl
+resources:
+  - ../../base
+  - namespace.yaml
+  - configmap.yaml
+patches:
+  - target:
+      kind: Deployment
+      name: trestl
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          configMapRef:
+            name: trestl-config
+images:
+  - name: trestl
+    newName: registry.example.com/trestl
+    newTag: v0.1.0

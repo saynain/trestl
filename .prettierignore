@@ -1,0 +1,6 @@
+node_modules
+dist
+.data
+pnpm-lock.yaml
+extensions/raycast/pnpm-lock.yaml
+extensions/raycast/dist
