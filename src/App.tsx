@@ -60,6 +60,7 @@ import { AllProjects, Overview, Resources } from './components/ProjectViews';
 import ItemDetail from './components/ItemDetail';
 import ItemForm from './components/ItemForm';
 import ProjectForm from './components/ProjectForm';
+import ProjectAccess from './components/ProjectAccess';
 import Settings from './components/Settings';
 export default function App() {
   const [auth, setAuth] = useState<{ needsSetup: boolean; authenticated: boolean } | null>(null);
@@ -485,7 +486,11 @@ export default function App() {
                               : 'Time-bound'}
                         </span>
                         <span>·</span>
-                        <span>{project.visibility === 'private' ? 'Private' : 'Workspace'}</span>
+                        {project.visibility === 'private' ? (
+                          <ProjectAccess key={project.id} project={project} />
+                        ) : (
+                          <span>Workspace</span>
+                        )}
                         <span>·</span>
                       </>
                     )}

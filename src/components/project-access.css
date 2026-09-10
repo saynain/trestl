@@ -1,0 +1,65 @@
+.project-access-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.project-access-trigger:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.project-access-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.project-access-avatars {
+  display: inline-flex;
+  padding-left: 3px;
+}
+.project-access-avatars .avatar + .avatar {
+  margin-left: -4px;
+}
+.project-access-summary {
+  padding: 0 24px 24px;
+  font-size: 13px;
+}
+.project-access-dialog {
+  color: var(--text);
+}
+.project-access-summary p {
+  line-height: 1.6;
+  margin: 12px 0;
+}
+.project-access-list {
+  list-style: none;
+  padding: 0;
+  margin: 20px 0;
+}
+.project-access-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.project-access-identity {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.project-access-identity strong {
+  font-weight: 500;
+}
+.project-access-identity > span {
+  color: var(--muted);
+}
