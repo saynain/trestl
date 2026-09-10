@@ -67,7 +67,7 @@ Store the dump encrypted alongside a separately secured copy of `APP_SECRET`. Da
 pg_restore --no-owner --dbname "$RESTORE_DATABASE_URL" trestl.dump
 ```
 
-Use a separate application instance pointed at the restored database and the same `APP_SECRET`, with periodic synchronization disabled. Verify login, projects, private item visibility, comments, and integration configuration before adopting the backup as a recovery point. This repository does not yet automate restoration drills or migrate local PGlite data into PostgreSQL.
+Use a separate application instance pointed at the restored database and the same `APP_SECRET`, with periodic synchronization disabled. Verify login, projects, private item visibility, comments, and integration configuration before adopting the backup as a recovery point. This repository does not yet automate restoration drills. To copy selected projects from PGlite into a PostgreSQL-backed installation, use [project export/import](../docs/project-transfer.md); this does not migrate server configuration or accounts.
 
 For a local PGlite installation, stop the application cleanly before copying the whole `.data` directory. Restore by placing the directory into a stopped, compatible installation and retaining its original integration encryption key. An API JSON export is useful for portability and inspection but does not contain all users' private data, credentials, or the database schema and cannot replace a database backup.
 

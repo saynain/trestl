@@ -4,6 +4,7 @@ import { Select } from './Select';
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
   ArrowUpRight,
+  Download,
   CircleAlert,
   GitFork,
   Github,
@@ -799,7 +800,8 @@ export default function ItemDetail({
               <div className="item-event">
                 <span className="item-event-dot" />
                 <span>
-                  <strong>{creator?.name || 'A member'}</strong> created this work item
+                  <strong>{item.importedFrom?.authorName || creator?.name || 'A member'}</strong>{' '}
+                  created this work item{item.importedFrom && ' (imported)'}
                 </span>
                 <time dateTime={item.createdAt}>{shortDate(item.createdAt)}</time>
               </div>
@@ -811,7 +813,9 @@ export default function ItemDetail({
                   <div key={entry.id} className="item-event">
                     <span className="item-event-dot" />
                     <span>
-                      <strong>{user?.name || 'A member'}</strong> {activityText(entry.body, data)}
+                      <strong>{entry.importedFrom?.authorName || user?.name || 'A member'}</strong>{' '}
+                      {activityText(entry.body, data)}
+                      {entry.importedFrom && ' (imported)'}
                     </span>
                     <time
                       title={new Date(entry.createdAt).toLocaleString()}
@@ -822,7 +826,11 @@ export default function ItemDetail({
                   </div>
                 ) : (
                   <article key={entry.id} className="item-comment">
-                    {entry.source ? (
+                    {entry.importedFrom ? (
+                      <span className="item-source-avatar">
+                        <Download size={15} aria-hidden="true" />
+                      </span>
+                    ) : entry.source ? (
                       <span className="item-source-avatar">
                         <CommentSourceIcon size={15} aria-hidden="true" />
                       </span>
@@ -831,8 +839,15 @@ export default function ItemDetail({
                     )}
                     <div className="item-comment-content">
                       <header>
-                        <strong>{entry.source?.author || user?.name || 'A member'}</strong>
-                        {entry.source ? (
+                        <strong>
+                          {entry.importedFrom?.authorName ||
+                            entry.source?.author ||
+                            user?.name ||
+                            'A member'}
+                        </strong>
+                        {entry.importedFrom ? (
+                          <span className="item-comment-origin">Imported</span>
+                        ) : entry.source ? (
                           <span className="item-comment-origin">{commentProvider}</span>
                         ) : source ? (
                           <span className="item-comment-origin">Internal note</span>
@@ -1069,6 +1084,12 @@ export default function ItemDetail({
               Created {shortDate(item.createdAt)}
               <br />
               Updated {shortDate(item.updatedAt)}
+              {item.importedFrom?.identifier && (
+                <>
+                  <br />
+                  Imported from {item.importedFrom.identifier}
+                </>
+              )}
             </p>
             {confirmDelete ? (
               <div className="item-delete-confirm" role="alert">

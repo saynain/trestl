@@ -1,4 +1,14 @@
+import { z } from 'zod';
+import { projectPackage, importOptions } from './project-transfer-schema.ts';
+
 const string = { type: 'string' };
+const importedFrom = {
+  type: 'object',
+  readOnly: true,
+  description: 'Provenance from a project file, not a verified local author identity.',
+  properties: { authorName: string, identifier: string },
+  required: ['authorName'],
+};
 const nullableString = { type: ['string', 'null'] };
 const date = { type: ['string', 'null'], format: 'date' };
 const uuid = { type: 'string', format: 'uuid' };
@@ -113,6 +123,7 @@ const schemas: Record<string, unknown> = {
   WorkItem: {
     type: 'object',
     properties: {
+      importedFrom,
       revision: {
         type: 'integer',
         minimum: 0,
@@ -148,6 +159,7 @@ const schemas: Record<string, unknown> = {
   Activity: {
     type: 'object',
     properties: {
+      importedFrom,
       id: uuid,
       itemId: uuid,
       userId: uuid,
@@ -600,6 +612,41 @@ operation(
     },
   },
 );
+// Keep the portable format's published fields aligned with its runtime validator.
+schemas.ProjectPackage = z.toJSONSchema(projectPackage);
+schemas.ProjectImportOptions = z.toJSONSchema(importOptions);
+schemas.ProjectImportResult = object({
+  projectId: uuid,
+  projectIds: { type: 'array', items: uuid },
+  itemCount: { type: 'integer' },
+});
+operation(
+  '/projects/{id}/export',
+  'get',
+  'Download a portable project and accessible subprojects (32 MB maximum)',
+  ref('ProjectPackage'),
+);
+operation(
+  '/project-import/preview',
+  'post',
+  'Validate a project file and suggest names, keys, and private access without writing',
+  object({
+    options: ref('ProjectImportOptions'),
+    people: { type: 'array', items: object({ id: uuid, name: string }) },
+    counts: { type: 'object', additionalProperties: { type: 'integer' } },
+    warnings: { type: 'array', items: string },
+  }),
+  object({ package: ref('ProjectPackage') }),
+);
+operation(
+  '/project-import',
+  'post',
+  'Import as new projects atomically; reuse requestId and body for safe retries',
+  ref('ProjectImportResult'),
+  object({ package: ref('ProjectPackage'), options: ref('ProjectImportOptions'), requestId: uuid }),
+  { created: true },
+);
+
 schemas.Integration = object({
   id: string,
   connectionId: string,

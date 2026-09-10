@@ -96,6 +96,7 @@ configuration outside the product repository.
 ## Documentation
 
 - [User guide](docs/user-guide.md)
+- [Transfer projects between installations](docs/project-transfer.md)
 - [Development and checks](docs/development.md)
 - [Docker, configuration, backups, and upgrades](deploy/README.md)
 - [Kubernetes deployment](deploy/kubernetes/README.md)
@@ -113,9 +114,9 @@ while substantial filtering and authorization use application memory over
 PostgreSQL JSONB documents. Large installations need further query and load
 work. Kubernetes support is a deployment path, not a high-availability claim.
 
-Git issue synchronization is inbound. Email/push notification delivery,
-native SSO, and a JSON import workflow are not implemented. JSON exports aid
-portability but do not replace database backups. Database migrations run at
+Git issue synchronization is inbound. Email/push notification delivery and
+installation-wide JSON restore are not implemented. Project export/import supports
+portability but does not replace database backups. Database migrations run at
 startup; back up before upgrading and retain your `APP_SECRET`.
 
 The CLI and container image can be built from source. This repository does

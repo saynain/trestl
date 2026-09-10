@@ -1,3 +1,4 @@
+import { ExportProject, ImportProject } from './ProjectTransfer';
 import { Select } from './Select';
 import { useState, type FormEvent } from 'react';
 import {
@@ -36,6 +37,7 @@ export function AllProjects() {
     <div className="projects-content">
       <div className="section-title">
         <span>{projects.length} projects</span>
+        <ImportProject />
         <label className="check-field">
           <input
             type="checkbox"
@@ -153,6 +155,7 @@ export function Overview({ project, items }: { project: Project; items: WorkItem
         <section className="overview-section">
           <div className="section-heading">
             <h2>About this project</h2>
+            <ExportProject project={project} />
             <button
               className="icon-button"
               aria-label="Edit project"

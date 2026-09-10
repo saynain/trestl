@@ -7,6 +7,7 @@ import {
   type ProxyAuthConfig,
 } from './proxy-auth.ts';
 import { createsDependencyCycle, scheduleConflicts } from '../shared/dependencies.ts';
+import { registerProjectTransfer } from './project-transfer.ts';
 import { registerCanvases } from './canvases.ts';
 import { roadmapUpdate } from './roadmap.ts';
 import Fastify, { type FastifyRequest } from 'fastify';
@@ -1518,6 +1519,7 @@ export async function createApp(
       ),
     };
   });
+  registerProjectTransfer(app, ctx, mutate);
   registerCanvases(app, ctx, mutate);
   if (options.integrations !== false) {
     await registerIntegrations(app, ctx);

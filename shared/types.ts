@@ -76,6 +76,7 @@ export interface IssueSource {
   connected: boolean;
 }
 export interface WorkItem {
+  importedFrom?: { authorName: string; identifier?: string };
   revision?: number;
   workspaceId?: string;
   id: string;
@@ -104,6 +105,7 @@ export interface WorkItem {
   source?: IssueSource;
 }
 export interface Activity {
+  importedFrom?: { authorName: string; identifier?: string };
   id: string;
   itemId: string;
   userId: string;

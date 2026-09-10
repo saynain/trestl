@@ -1,0 +1,75 @@
+.transfer-body {
+  padding: 24px;
+  display: grid;
+  gap: 18px;
+  overflow: auto;
+}
+.transfer-body p {
+  margin: 0;
+  line-height: 1.6;
+}
+.transfer-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.transfer-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  padding-block: 12px;
+  border-block: 1px solid var(--border);
+}
+.transfer-summary span {
+  font-size: 12px;
+}
+.transfer-fields {
+  padding: 0;
+  margin: 0;
+  border: 0;
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.transfer-fields legend {
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+.transfer-fields h3 {
+  font-size: 14px;
+  margin: 8px 0 0;
+}
+.transfer-project {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 100px 150px;
+  gap: 12px;
+}
+.transfer-notes {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.transfer-notes summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.transfer-notes ul {
+  padding-left: 20px;
+  display: grid;
+  gap: 8px;
+}
+.transfer-error {
+  color: var(--danger, #c33);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .transfer-project {
+    grid-template-columns: 100px minmax(0, 1fr);
+  }
+  .transfer-project > :first-child {
+    grid-column: 1 / -1;
+  }
+  .transfer-body {
+    padding: 16px;
+  }
+}
