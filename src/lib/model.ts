@@ -83,6 +83,7 @@ export interface Route {
   itemId?: string;
 }
 export function readRoute(): Route {
+  if (window.location.pathname === '/cli-login') return { page: 'cli-login', tab: 'list' };
   const [path, search] = window.location.hash.replace(/^#\/?/, '').split('?');
   const [page, id] = path.split('/');
   const query = new URLSearchParams(search || '');

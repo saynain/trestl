@@ -20,6 +20,20 @@ still developing.
 
 See the [user guide](docs/user-guide.md) for the complete workflows.
 
+## Install the CLI
+
+Download the tarball and checksum from [GitHub Releases](https://github.com/saynain/trestl/releases/latest), or pull the identical artifact from `ghcr.io/saynain/trestl-cli:v0.1.0` using ORAS. Node.js 22.9+ is required on macOS, Linux and Windows.
+
+```sh
+gh release download v0.1.0 --repo saynain/trestl --pattern 'trestl-cli-*.tgz' --pattern SHA256SUMS
+shasum -a 256 -c SHA256SUMS  # Linux: sha256sum -c SHA256SUMS
+npm install --global ./trestl-cli-0.1.0.tgz --ignore-scripts
+trestl login --profile work --url https://projects.example.com
+trestl auth status --profile work
+```
+
+Sign in in your browser and approve the code displayed in your terminal. Your CLI uses the same user and permissions as the app. Use `--scope read` for read-only access. See the [CLI guide](cli/README.md) for Windows checksums, GHCR installation, automation and token revocation. Downloads require access while the repository/packages are private.
+
 ## Choose how to run it
 
 | Mode                                      | Best for                                  | Data                                     |
@@ -119,8 +133,7 @@ installation-wide JSON restore are not implemented. Project export/import suppor
 portability but does not replace database backups. Database migrations run at
 startup; back up before upgrading and retain your `APP_SECRET`.
 
-The CLI and container image can be built from source. This repository does
-not yet publish an npm package, a hosted SaaS, or a public container release.
+The CLI and container image can be built from source or published through the release workflows. The CLI is distributed through GitHub Releases and GHCR, not the npm registry. This project does not provide a hosted SaaS. Private artifacts require access until their visibility is explicitly changed for an open-source launch.
 
 ### Authentication proxy deployments
 

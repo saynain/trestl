@@ -1,3 +1,8 @@
+import {
+  initializeCliLogin,
+  registerCliDeviceEndpoints,
+  registerCliApproval,
+} from './cli-login.ts';
 import { authSettings, configuredProxy, registerAuthSettings } from './auth-settings.ts';
 import { createInstallation, installation, migrateInstallation } from './installation.ts';
 import {
@@ -240,6 +245,7 @@ export async function createApp(
     databaseUrl: options.databaseUrl ?? process.env.DATABASE_URL,
     dataDir: options.dataDir ?? process.env.DATA_DIR,
   });
+  await initializeCliLogin(db);
   const store = makeStore(db);
   await store.put('system', { id: 'mutation-lock' });
   await migrateWorkspaces(db);
@@ -608,6 +614,12 @@ export async function createApp(
   app.post('/api/v1/auth/switch', async () => fail(410, 'This server has one installation.'));
   registerWorkspaceRoutes(app, ctx);
   registerAuthSettings(app, ctx, session);
+  registerCliApproval(app, ctx);
+  registerCliDeviceEndpoints(
+    app,
+    db,
+    () => process.env.APP_ORIGIN || `http://localhost:${process.env.PORT ?? 4317}`,
+  );
 
   app.post('/api/v1/auth/logout', async (request, reply) => {
     if (request.cookies.trestl_session)

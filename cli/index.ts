@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { browserLogin } from './browser-login.js';
 import { parseArgs } from 'node:util';
 import { readFile } from 'node:fs/promises';
 import {
@@ -19,7 +20,7 @@ const help = `Trestl — project work from your terminal
 Usage: trestl <command> [arguments] [options]
 
 Commands:
-  login                         Validate and save a personal API token
+  login                         Sign in using your browser
   logout                        Remove the saved token for a profile
   auth status                   Check authentication (never prints the token)
   profiles list                 Discover saved profiles locally (no network)
@@ -50,7 +51,11 @@ Options:
   --version                     Show CLI version
   --profile <name>              Saved account profile (default: default)
   --url <server-url>            Server URL; saved during login
-  --token-stdin                 Read login token from standard input
+  --no-browser                  Print the approval URL without opening it
+  --name <name>                 Name this CLI session for later revocation
+  --scope <read|write>           CLI access (default: write)
+  --token                       Enter an existing API token using a hidden prompt
+  --token-stdin                 Read an existing token from standard input
   --project <id-or-key>          Filter or set project (use "none" to clear)
   --status <status>             backlog|todo|in_progress|in_review|done|canceled
   --priority <priority>         none|low|medium|high|urgent
@@ -109,7 +114,7 @@ const filters = [
   'page',
 ];
 const commandOptions: Record<string, string[]> = {
-  login: ['token-stdin'],
+  login: ['token-stdin', 'token', 'no-browser', 'name', 'scope'],
   logout: [],
   auth: [],
   profiles: [],
@@ -130,7 +135,17 @@ const commandOptions: Record<string, string[]> = {
   update: [...fields, 'title', 'expected-revision'],
   comment: ['idempotency-key'],
 };
-const booleanOptions = ['json', 'help', 'version', 'token-stdin', 'no-config', 'page', 'completed'];
+const booleanOptions = [
+  'json',
+  'help',
+  'version',
+  'token-stdin',
+  'token',
+  'no-browser',
+  'no-config',
+  'page',
+  'completed',
+];
 const stringOptions = [...new Set([...common, ...Object.values(commandOptions).flat()])].filter(
   (key) => !booleanOptions.includes(key),
 );
@@ -273,6 +288,13 @@ async function main() {
     });
     return;
   }
+  if (
+    command === 'login' &&
+    (values.token || values['token-stdin']) &&
+    (values['no-browser'] || values.name || values.scope)
+  )
+    throw usage('Browser options cannot be combined with --token or --token-stdin.');
+  if (values.token && values['token-stdin']) throw usage('Choose --token or --token-stdin.');
   const saved = await loadCredentials(path);
   const url = serverUrl(
     String(values.url || process.env.TRESTL_URL || saved?.url || 'http://localhost:4317'),
@@ -281,7 +303,13 @@ async function main() {
   if (environmentToken) secrets.add(environmentToken);
   const token =
     command === 'login'
-      ? await readToken(Boolean(values['token-stdin']))
+      ? values.token || values['token-stdin']
+        ? await readToken(Boolean(values['token-stdin']))
+        : await browserLogin(url, {
+            noBrowser: Boolean(values['no-browser']),
+            name: values.name as string | undefined,
+            scope: values.scope as string | undefined,
+          })
       : environmentToken || (saved?.url === url ? saved.token : undefined);
   if (!token) {
     if (saved && saved.url !== url)

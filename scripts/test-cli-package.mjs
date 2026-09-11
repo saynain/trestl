@@ -17,13 +17,16 @@ const environment = {
   TRESTL_PROFILE: '',
   TRESTL_CONFIG_DIR: join(temporary, 'credentials'),
 };
-const run = (executable, args, { cwd = outside, input, expected = 0 } = {}) =>
+const run = (executable, args, { cwd = outside, input, expected = 0, onStderr } = {}) =>
   new Promise((resolve, reject) => {
     const child = spawn(executable, args, { cwd, env: environment, stdio: 'pipe' });
     let stdout = '',
       stderr = '';
     child.stdout.on('data', (chunk) => (stdout += chunk));
-    child.stderr.on('data', (chunk) => (stderr += chunk));
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+      onStderr?.(stderr);
+    });
     child.on('error', reject);
     child.on('close', (code) => {
       try {
@@ -76,6 +79,7 @@ try {
   assert.equal(JSON.parse((await cli(['--version', '--json'])).stdout).version, '0.1.0');
   app = await createApp({ dataDir: ':memory:', integrations: false });
   const url = await app.listen({ host: '127.0.0.1', port: 0 });
+  process.env.APP_ORIGIN = url;
   const setup = await app.inject({
     method: 'POST',
     url: '/api/v1/auth/setup',
@@ -104,6 +108,31 @@ try {
   await cli(['login', '--profile', 'test', '--url', url, '--token-stdin', '--json'], {
     input: token,
   });
+  let approval;
+  const browser = await cli(
+    ['login', '--profile', 'browser', '--url', url, '--no-browser', '--scope', 'read', '--json'],
+    {
+      onStderr: (text) => {
+        const code = text.match(/Confirm code ([A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4})/);
+        if (code && !approval)
+          approval = app.inject({
+            method: 'POST',
+            url: '/api/v1/auth/cli/approve',
+            headers: { cookie },
+            payload: { code: code[1] },
+          });
+      },
+    },
+  );
+  assert.equal((await approval).statusCode, 200);
+  assert.equal(browser.stdout.includes('ep_'), false);
+  assert.equal(
+    JSON.parse((await cli(['auth', 'status', '--profile', 'browser', '--json'])).stdout)
+      .authenticated,
+    true,
+  );
+  await cli(['create', 'Denied', '--profile', 'browser'], { expected: 3 });
+  await cli(['logout', '--profile', 'browser']);
   await cli(['init', '--profile', 'test', '--project', 'PKG']);
   const discovery = JSON.parse((await cli(['profiles', 'list', '--json'])).stdout);
   assert.deepEqual(discovery, {

@@ -9,13 +9,20 @@ http:
       entryPoints: [websecure]
       tls: {}
       service: trestl-oauth
+    trestl-cli-login:
+      rule: 'Host(`{{ env "TRESTL_PUBLIC_HOST" }}`) && (Path(`/cli-auth/device`) || Path(`/cli-auth/token`))'
+      priority: 250
+      entryPoints: [websecure]
+      tls: {}
+      middlewares: [trestl-strip-identity]
+      service: trestl-token-gateway
     trestl-api-token:
       # Header presence selects a validation path, never grants access itself.
       rule: 'Host(`{{ env "TRESTL_PUBLIC_HOST" }}`) && PathPrefix(`/api/v1/`) && HeaderRegexp(`Authorization`, `(?i)^Bearer .+$`)'
       priority: 200
       entryPoints: [websecure]
       tls: {}
-      middlewares: [trestl-token-only]
+      middlewares: [trestl-token-only, trestl-validate-token]
       service: trestl
     trestl-browser-api:
       rule: 'Host(`{{ env "TRESTL_PUBLIC_HOST" }}`) && PathPrefix(`/api/v1/`)'
@@ -32,6 +39,11 @@ http:
       middlewares: [trestl-strip-identity, trestl-google, trestl-trusted-proxy]
       service: trestl
   middlewares:
+    trestl-validate-token:
+      forwardAuth:
+        address: http://token-gateway:4318/verify
+        trustForwardHeader: false
+        authRequestHeaders: [Authorization]
     trestl-strip-identity:
       headers:
         customRequestHeaders:
@@ -75,6 +87,10 @@ http:
           X-Trestl-Proxy-Secret: ''
           X-Trestl-API-Only: 'true'
   services:
+    trestl-token-gateway:
+      loadBalancer:
+        servers:
+          - url: http://token-gateway:4318
     trestl:
       loadBalancer:
         servers:

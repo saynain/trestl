@@ -1,3 +1,4 @@
+import CliLoginApproval from './components/CliLoginApproval';
 import Canvases from './components/Canvases';
 import GanttView from './components/GanttView';
 import ShortcutHelp from './components/ShortcutHelp';
@@ -323,6 +324,7 @@ export default function App() {
       />
     );
   if (!data) return null;
+  if (route.page === 'cli-login') return <CliLoginApproval email={data.user.email} />;
   const project =
     route.page === 'project' ? data.projects.find((p) => p.id === route.id) : undefined;
   const view = route.page === 'view' ? data.views.find((v) => v.id === route.id) : undefined;

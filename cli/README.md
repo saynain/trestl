@@ -2,33 +2,57 @@
 
 A standalone Node.js client for Trestl. Run it from any repository or directory; the installed package has no runtime dependencies. Node.js 22.9 or newer is required. Run a server built from the same release to use revision checks and idempotency keys.
 
-## Build and install
+## Download and install
 
-From the Trestl source repository:
+Install [Node.js 22.9 or newer](https://nodejs.org/), then download the `.tgz` and `SHA256SUMS` from the [latest GitHub release](https://github.com/saynain/trestl/releases/latest). The same package works on macOS, Linux and Windows and contains no runtime dependencies.
+
+For version 0.1.0, using the GitHub CLI (also works while the repository is private):
 
 ```sh
-pnpm install
-pnpm build:cli
-npm pack ./cli
-npm install --global ./trestl-cli-0.1.0.tgz
+gh release download v0.1.0 --repo saynain/trestl --pattern 'trestl-cli-*.tgz' --pattern SHA256SUMS
+# macOS; on Linux use sha256sum -c SHA256SUMS
+shasum -a 256 -c SHA256SUMS
+npm install --global ./trestl-cli-0.1.0.tgz --ignore-scripts
+trestl --version
 ```
 
-The tarball can also be copied and installed on another machine without the Trestl source. This package is not published to npm. During development, `pnpm cli` runs the same CLI from source. Use `pnpm -s cli` to suppress pnpm's banner when processing JSON.
+On Windows, compare `(Get-FileHash .\trestl-cli-0.1.0.tgz -Algorithm SHA256).Hash` with `SHA256SUMS`, then run the same npm install command. npm must have a writable global prefix; use a Node version manager or a user-owned prefix if needed.
+
+The identical tarball is also distributed as an OCI artifact in GHCR. With [ORAS](https://oras.land/docs/installation/) installed:
+
+```sh
+oras pull ghcr.io/saynain/trestl-cli:v0.1.0
+shasum -a 256 -c SHA256SUMS
+npm install --global ./trestl-cli-0.1.0.tgz --ignore-scripts
+```
+
+This is a downloadable package artifact, not a Docker image. Registry mirrors can copy it with `oras copy`; use a digest reference for reproducible installs. While private, GHCR requires `oras login ghcr.io` with a GitHub account/token that can read the package. GitHub source/release visibility and GHCR package visibility are separate settings. This package is not published to npm.
 
 ## Log in once
-
-Create a personal API token in the application's Settings, then paste it into the hidden prompt:
 
 ```sh
 trestl login --profile work --url https://projects.example.com
 trestl auth status --profile work --json
 ```
 
-Read tokens can retrieve context and export. Write tokens are required for creating work, updating fields, and adding internal comments. For noninteractive setup, pipe a token from a password manager into `trestl login --token-stdin --profile work --url <server-url>`. Tokens cannot be passed as command-line arguments. This is API-token login, not email/password login.
+The CLI opens your installation in the browser. Sign in normally (Google, OIDC or a local account), compare the short code with your terminal, then click **Approve CLI access**. No extra Google OAuth client is required. This is Trestl's own browser pairing flow, not Google's device authorization grant.
 
-Credentials are stored as plaintext in `~/.config/trestl/<profile>.json`, with owner-only permissions on Unix (directory `700`, file `600`). They are not encrypted in an OS keychain. `TRESTL_CONFIG_DIR` overrides that directory. `trestl logout --profile work` removes local credentials; revoke the token in Settings to invalidate it on the server.
+The token belongs to your existing Trestl user. It defaults to write access within your current permissions; use `--scope read` for read-only access or `--name "Work laptop"` to identify it in Settings. Use `--no-browser` to open the displayed URL manually. Requests expire after ten minutes and can be redeemed only once, by the CLI that started them.
 
-Profile selection: `--profile`, then `TRESTL_PROFILE`, then repository config, then `default`. Server selection: `--url`, then `TRESTL_URL`, then the selected saved profile's URL, then `http://localhost:4317`. `TRESTL_TOKEN` remains an optional override. Saved tokens are never sent to a different server URL. Remote URLs require HTTPS; loopback HTTP is supported. Logout does not unset environment overrides.
+Tokens remain valid until revoked. Revoke a lost machine's token in **Settings → API tokens**, or disable its user in Administration. `trestl logout --profile work` removes only the local credential; it does not revoke the server token. Provider offboarding alone does not revoke an existing Trestl token.
+
+For automation or an older server, create a personal API token in Settings and use `trestl login --token` for a hidden prompt, or `--token-stdin` for a secret manager pipeline. Do not put tokens in command arguments. Existing `TRESTL_TOKEN` automation remains supported. The CLI stores credentials in an owner-only file and will not reuse a saved token with another server URL.
+
+## Build from source
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build:cli
+node scripts/package-cli.mjs
+npm install --global ./dist/cli-release/trestl-cli-0.1.0.tgz --ignore-scripts
+```
+
+During development, `pnpm cli` runs the same CLI from source. Use `pnpm -s cli` to suppress pnpm's banner when processing JSON. See [CLI releases](../docs/cli-releases.md) for publishing and [proxy deployment](../docs/proxy-auth.md) for gateway configuration.
 
 ## Discover profiles
 

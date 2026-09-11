@@ -237,7 +237,7 @@ test('login rejects insecure remote URLs, unsafe profiles and missing piped toke
     assert.equal(login(directory, args).status, 1);
   }
   assert.equal(login(directory, [], { input: '' }).status, 1);
-  assert.equal(authRun(directory, ['login']).status, 1);
+  assert.equal(authRun(directory, ['login', '--token']).status, 1);
   assert.equal(existsSync(join(directory, 'default.json')), false);
 });
 

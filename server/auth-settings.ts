@@ -206,6 +206,9 @@ export function registerAuthSettings(
       "DELETE FROM entities WHERE collection='signInStates' AND (data->>'expiresAt')::bigint < $1",
       [Date.now()],
     );
+    const cliCode = new URL(request.url, settings.origin).searchParams.get('cli_code');
+    if (cliCode !== null && !/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/.test(cliCode))
+      ctx.fail(400, 'Invalid CLI sign-in code.');
     const config = await configuration(settings);
     const state = oidc.randomState(),
       verifier = oidc.randomPKCECodeVerifier(),
@@ -217,6 +220,7 @@ export function registerAuthSettings(
       nonce,
       expiresAt: Date.now() + 600000,
       linkUserId: request.user?.id,
+      cliCode,
     });
     reply.setCookie('trestl_signin', state, {
       path: '/api/v1/auth/provider',
@@ -250,6 +254,7 @@ export function registerAuthSettings(
           nonce: string;
           expiresAt: number;
           linkUserId?: string;
+          cliCode?: string;
         };
       }>("DELETE FROM entities WHERE collection='signInStates' AND id=$1 RETURNING data", [
         hash(state),
@@ -328,6 +333,10 @@ export function registerAuthSettings(
       return (await workspaceUser(s, u.id, site.workspaceId))!;
     });
     await session(user, reply, 'oidc');
-    return reply.redirect('/');
+    return reply.redirect(
+      stored.cliCode && /^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/.test(stored.cliCode)
+        ? `/cli-login?code=${stored.cliCode}`
+        : '/',
+    );
   });
 }
