@@ -490,7 +490,12 @@ export default function ItemDetail({
               <>
                 <h1 className="item-detail-title">{item.title}</h1>
                 {item.description ? (
-                  <MarkdownBody>{item.description}</MarkdownBody>
+                  <MarkdownBody
+                    onChange={source ? undefined : (description) => void update({ description })}
+                    saving={saving}
+                  >
+                    {item.description}
+                  </MarkdownBody>
                 ) : source ? (
                   <p className="item-section-empty">No description in {providerName}.</p>
                 ) : (
