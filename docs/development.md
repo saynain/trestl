@@ -39,6 +39,18 @@ configured, it takes precedence over `DATA_DIR`; use a separate disposable
 PostgreSQL database instead. Also clear any production `APP_ORIGIN` override
 when testing locally.
 
+## CLI browser login
+
+Use the frontend origin shown by `pnpm dev`, so the browser and CLI reach the same installation:
+
+```sh
+pnpm -s cli login --profile local --url http://127.0.0.1:5173
+```
+
+Sign in with your local account and approve the matching code. The development launcher sets `APP_ORIGIN` to the frontend URL; Vite forwards both `/api` and `/cli-auth` to the backend. No Google configuration or separate token gateway is required. If you change `WEB_PORT`, use that port in the CLI URL too.
+
+For the built app or default Docker Compose setup, use `http://localhost:4317` instead. When changing the Docker host/port or serving it behind HTTPS, set `APP_ORIGIN` to the same origin passed to `trestl login --url`.
+
 ## Built application
 
 ```sh
