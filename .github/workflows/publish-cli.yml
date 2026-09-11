@@ -67,14 +67,14 @@ jobs:
           SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
         run: |
           set -euo pipefail
-          printf '%s' "$GHCR_TOKEN" | oras login ghcr.io --username "$GHCR_USERNAME" --password-stdin
-          oras push "$REFERENCE" --artifact-type application/vnd.trestl.cli.v1 \
+          printf '%s' "$GHCR_TOKEN" | oras login --registry-config "$REGISTRY_AUTH_FILE" ghcr.io --username "$GHCR_USERNAME" --password-stdin
+          oras push --registry-config "$REGISTRY_AUTH_FILE" "$REFERENCE" --artifact-type application/vnd.trestl.cli.v1 \
             --annotation "org.opencontainers.image.source=${SOURCE_URL}" \
             --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
             --annotation org.opencontainers.image.licenses=MIT \
             "$FILENAME:application/gzip" SHA256SUMS:text/plain
-          digest="$(oras resolve "$REFERENCE")"
-          oras pull "${REFERENCE%:*}@${digest}" --output "$RUNNER_TEMP/trestl-cli-pull"
+          digest="$(oras resolve --registry-config "$REGISTRY_AUTH_FILE" "$REFERENCE")"
+          oras pull --registry-config "$REGISTRY_AUTH_FILE" "${REFERENCE%:*}@${digest}" --output "$RUNNER_TEMP/trestl-cli-pull"
           (cd "$RUNNER_TEMP/trestl-cli-pull" && sha256sum -c SHA256SUMS)
           cmp "$FILENAME" "$RUNNER_TEMP/trestl-cli-pull/$FILENAME"
           {
