@@ -317,6 +317,103 @@
 .settings-member:last-child {
   border-bottom: 0;
 }
+.people-toolbar,
+.people-filters,
+.people-confirm-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.people-toolbar {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin: 8px 0 20px;
+}
+.people-filters .button[aria-pressed='true'] {
+  background: var(--surface-alt, #efede8);
+  color: var(--text);
+}
+.people-toolbar .people-search {
+  width: 240px;
+  max-width: 100%;
+}
+.people-list-heading,
+.settings-member.people-member {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 76px 104px 94px;
+  align-items: center;
+  gap: 12px;
+}
+.people-list-heading {
+  font-size: 11px;
+  color: var(--muted);
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--border);
+}
+.people-list-heading > :first-child {
+  grid-column: span 2;
+}
+.people-identity {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.people-access {
+  font-size: 11px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.people-access::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #7c9b87;
+}
+.people-access.is-disabled::before {
+  background: var(--muted);
+}
+.people-role {
+  width: 100%;
+}
+.people-member > .people-role-badge {
+  margin-left: 0;
+  justify-self: start;
+}
+.people-access-action {
+  justify-self: end;
+}
+.people-protected {
+  font-size: 10px;
+  text-align: right;
+  color: var(--muted);
+}
+.people-empty {
+  padding: 24px 0;
+  color: var(--muted);
+}
+.people-confirm-actions {
+  justify-content: flex-end;
+}
+@media (max-width: 700px) {
+  .people-list-heading {
+    display: none;
+  }
+  .settings-member.people-member {
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+  }
+  .people-member > .picker,
+  .people-member > .people-role-badge {
+    grid-column: 2;
+    justify-self: start;
+    width: auto;
+    margin-left: 0;
+  }
+  .people-toolbar .people-search {
+    width: 100%;
+  }
+}
 .settings-you {
   color: var(--muted, #8e949c);
   font-size: 11px;

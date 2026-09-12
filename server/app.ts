@@ -899,7 +899,7 @@ export async function createApp(
     });
     return reply.code(204).send();
   });
-  const validateItem = async (s: Store, u: User, item: WorkItem) => {
+  const validateItem = async (s: Store, u: User, item: WorkItem, previous?: WorkItem) => {
     if (item.startDate && item.dueDate && item.startDate > item.dueDate)
       fail(400, 'Start date must be on or before the due date');
     if (item.projectId) await checkedProject(s, u, item.projectId);
@@ -907,6 +907,8 @@ export async function createApp(
       const assignee = await workspaceUser(s, item.assigneeId, workspaceOf(u));
       if (!assignee || !sameWorkspace(u, assignee))
         fail(400, 'Assignee does not exist in this workspace');
+      if (assignee.disabledAt && item.assigneeId !== previous?.assigneeId)
+        fail(400, 'This account is disabled. Choose an active assignee.');
     }
     if (item.parentId) {
       await checkedItem(s, u, item.parentId);
@@ -1094,7 +1096,7 @@ export async function createApp(
         fail(403, 'Only the creator can change item visibility');
       const item: WorkItem = { ...old, ...input, updatedAt: now() };
       item.completedAt = item.status === 'done' ? (old.completedAt ?? now()) : null;
-      await validateItem(s, u, item);
+      await validateItem(s, u, item, old);
       if (item.startDate !== old.startDate || item.dueDate !== old.dueDate) {
         const conflicts = scheduleConflicts(
           item,
@@ -1162,6 +1164,12 @@ export async function createApp(
           const { source: _source, externalUrl: _externalUrl, ...nativeItem } = item;
           const next = {
             ...nativeItem,
+            // Keep historical ownership, but do not assign new recurring work to disabled accounts.
+            assigneeId:
+              item.assigneeId &&
+              !(await workspaceUser(s, item.assigneeId, workspaceOf(u)))?.disabledAt
+                ? item.assigneeId
+                : null,
             id: id(),
             identifier: await nextItemIdentifier(tx, item.projectId, workspaceOf(item)),
             status: 'todo' as const,
