@@ -1,4 +1,3 @@
-import { ExportProject, ImportProject } from './ProjectTransfer';
 import { Select } from './Select';
 import { useState, type FormEvent } from 'react';
 import {
@@ -30,14 +29,13 @@ import ConfluenceSearch from './ConfluenceSearch';
 import GitIssueSearch from './GitIssueSearch';
 import { MarkdownBody } from './MarkdownBody';
 export function AllProjects() {
-  const { data, createProject } = useApp();
+  const { data, createProject, editProject } = useApp();
   const [showArchived, setShowArchived] = useState(false);
   const projects = data.projects.filter((p) => showArchived || p.status !== 'archived');
   return (
     <div className="projects-content">
       <div className="section-title">
         <span>{projects.length} projects</span>
-        <ImportProject />
         <label className="check-field">
           <input
             type="checkbox"
@@ -60,44 +58,53 @@ export function AllProjects() {
           const items = data.items.filter((i) => i.projectId && ids.has(i.projectId));
           const done = items.filter(isDone).length;
           return (
-            <button
-              className="project-table-row"
-              key={project.id}
-              onClick={() => navigate('project', project.id, 'overview')}
-            >
-              <span className="project-table-name">
-                <span className="project-small-icon" style={{ background: `${project.color}15` }}>
-                  <ProjectIcon project={project} size={22} />
+            <div className="project-table-entry" key={project.id}>
+              <button
+                className="project-table-row"
+                onClick={() => navigate('project', project.id, 'overview')}
+              >
+                <span className="project-table-name">
+                  <span className="project-small-icon" style={{ background: `${project.color}15` }}>
+                    <ProjectIcon project={project} size={22} />
+                  </span>
+                  <span>
+                    <strong>{project.name}</strong>
+                    <small>
+                      {project.parentId
+                        ? data.projects.find((p) => p.id === project.parentId)?.name
+                        : project.key}
+                      {project.visibility === 'private' && <> · Private</>}
+                    </small>
+                  </span>
                 </span>
-                <span>
-                  <strong>{project.name}</strong>
+                <span className="lifecycle-badge">
+                  <span className={`tiny-dot ${project.status}`} />
+                  {project.lifecycle === 'ongoing'
+                    ? 'Ongoing'
+                    : project.status === 'completed'
+                      ? 'Completed'
+                      : 'Time-bound'}
+                </span>
+                <span className="project-progress">
+                  <span className="progress-track">
+                    <span style={{ width: `${items.length ? (done / items.length) * 100 : 0}%` }} />
+                  </span>
                   <small>
-                    {project.parentId
-                      ? data.projects.find((p) => p.id === project.parentId)?.name
-                      : project.key}
-                    {project.visibility === 'private' && <> · Private</>}
+                    {done}/{items.length}
                   </small>
                 </span>
-              </span>
-              <span className="lifecycle-badge">
-                <span className={`tiny-dot ${project.status}`} />
-                {project.lifecycle === 'ongoing'
-                  ? 'Ongoing'
-                  : project.status === 'completed'
-                    ? 'Completed'
-                    : 'Time-bound'}
-              </span>
-              <span className="project-progress">
-                <span className="progress-track">
-                  <span style={{ width: `${items.length ? (done / items.length) * 100 : 0}%` }} />
-                </span>
-                <small>
-                  {done}/{items.length}
-                </small>
-              </span>
-              <span className="muted">{shortDate(project.dueDate) || '—'}</span>
-              <Avatar user={data.users.find((u) => u.id === project.ownerId)} />
-            </button>
+                <span className="muted">{shortDate(project.dueDate) || '—'}</span>
+                <Avatar user={data.users.find((u) => u.id === project.ownerId)} />
+              </button>
+              <button
+                className="icon-button project-table-edit"
+                aria-label={`Edit ${project.name}`}
+                title="Edit project"
+                onClick={() => editProject(project)}
+              >
+                <Pencil size={15} />
+              </button>
+            </div>
           );
         })}
       </div>
@@ -155,7 +162,6 @@ export function Overview({ project, items }: { project: Project; items: WorkItem
         <section className="overview-section">
           <div className="section-heading">
             <h2>About this project</h2>
-            <ExportProject project={project} />
             <button
               className="icon-button"
               aria-label="Edit project"

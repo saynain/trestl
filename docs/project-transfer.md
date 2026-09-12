@@ -5,7 +5,7 @@ server, or between two self-hosted installations. It works across PGlite and
 PostgreSQL because the file contains application records, not a database dump.
 Both installations must run a release supporting project transfer version 1.
 
-1. On the source, open the project's **Overview → Export project** and choose
+1. On the source, open the project's **⋯ Project options → Export project** and choose
    **Download project**. The file ends in `.trestl-project.json`.
 2. On the destination, open **Projects → Import project** and select the file.
 3. Review the proposed project names and keys, visibility, and assignee mappings.

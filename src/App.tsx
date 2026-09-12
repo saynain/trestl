@@ -15,6 +15,7 @@ import {
   ChevronDown,
   ChevronRight,
   FolderOpen,
+  Download,
   Inbox,
   Layers,
   Lightbulb,
@@ -62,6 +63,7 @@ import ItemDetail from './components/ItemDetail';
 import ItemForm from './components/ItemForm';
 import ProjectForm from './components/ProjectForm';
 import ProjectAccess from './components/ProjectAccess';
+import { ExportProject, ImportProject } from './components/ProjectTransfer';
 import Settings from './components/Settings';
 export default function App() {
   const [auth, setAuth] = useState<{
@@ -112,6 +114,7 @@ export default function App() {
   );
   const [message, setMessage] = useState<{ text: string; kind: string } | null>(null);
   const [projectMenu, setProjectMenu] = useState(false);
+  const [exportProject, setExportProject] = useState<Project | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const toastTimer = useRef<number | undefined>(undefined);
@@ -467,16 +470,19 @@ export default function App() {
                   <Search size={17} />
                 </button>
               ) : (
-                <button
-                  className="button primary new-item-button"
-                  onClick={() =>
-                    route.page === 'projects' ? createProject() : createItem(project?.id)
-                  }
-                >
-                  <Plus size={15} />
-                  {route.page === 'projects' ? 'New project' : 'New item'}
-                  <kbd>{route.page === 'projects' ? '+' : 'C'}</kbd>
-                </button>
+                <div className="topbar-create-actions">
+                  {route.page === 'projects' && <ImportProject />}
+                  <button
+                    className="button primary new-item-button"
+                    onClick={() =>
+                      route.page === 'projects' ? createProject() : createItem(project?.id)
+                    }
+                  >
+                    <Plus size={15} />
+                    {route.page === 'projects' ? 'New project' : 'New item'}
+                    <kbd>{route.page === 'projects' ? '+' : 'C'}</kbd>
+                  </button>
+                </div>
               )}
             </div>
           </header>
@@ -585,6 +591,15 @@ export default function App() {
                           >
                             <Plus size={15} />
                             Add subproject
+                          </button>
+                          <button
+                            onClick={() => {
+                              setExportProject(project);
+                              setProjectMenu(false);
+                            }}
+                          >
+                            <Download size={15} />
+                            Export project
                           </button>
                           <button
                             onClick={async () => {
@@ -753,6 +768,9 @@ export default function App() {
           initialAction={itemAction}
           onActionHandled={() => setItemAction(undefined)}
         />
+      )}
+      {exportProject && (
+        <ExportProject project={exportProject} onClose={() => setExportProject(null)} />
       )}
       {newItem && <ItemForm {...newItem} onClose={() => setNewItem(null)} />}
       {newProject && <ProjectForm {...newProject} onClose={() => setNewProject(null)} />}
