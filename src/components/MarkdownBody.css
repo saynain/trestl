@@ -30,6 +30,9 @@
   margin-right: 8px;
   accent-color: var(--accent);
 }
+.item-markdown .task-list-item input:enabled {
+  cursor: pointer;
+}
 .item-markdown a {
   color: var(--accent);
   text-decoration: underline;
