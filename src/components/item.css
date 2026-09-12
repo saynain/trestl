@@ -714,36 +714,47 @@
 }
 .item-tag-list {
   display: flex;
-  gap: 5px;
+  gap: 6px;
   flex-wrap: wrap;
   margin-top: 8px;
 }
-.item-tag-list .badge {
+.item-tag {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   max-width: 100%;
-  overflow-wrap: anywhere;
+  min-width: 0;
+  min-height: 28px;
+  padding: 3px 4px 3px 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  border-radius: 6px;
   background: color-mix(in srgb, var(--accent) 10%, var(--bg));
   color: var(--accent);
-  font-size: 9px;
+  font-size: 11px;
+  line-height: 16px;
 }
-.item-tag-list .badge button {
+.item-tag-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.item-tag button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  padding: 2px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
   border: 0;
   border-radius: 3px;
   background: transparent;
   color: inherit;
   cursor: pointer;
 }
-.item-tag-list .badge button:hover {
+.item-tag button:hover {
   background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
-.item-tag-list .badge button:focus-visible {
+.item-tag button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -860,8 +871,7 @@
   .item-property-divider {
     grid-column: 1/-1;
   }
-  .item-tag-editor,
-  .item-tag-list {
+  .item-tags {
     grid-column: 1/-1;
   }
   .item-conversation {
