@@ -30,6 +30,7 @@ export default function ItemForm({
   const [priority, setPriority] = useState<Priority>('none');
   const [type, setType] = useState<ItemType>('task');
   const [assigneeId, setAssignee] = useState(project || parentId ? '' : data.user.id);
+  const [startDate, setStartDate] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [followUpDate, setFollowUpDate] = useState('');
   const [visibility, setVisibility] = useState<Visibility>(
@@ -41,6 +42,7 @@ export default function ItemForm({
     e?.preventDefault();
     if (!title.trim() || saving || !formRef.current?.reportValidity()) return;
     const formData = new FormData(formRef.current);
+    const submittedStartDate = String(formData.get('startDate') || '');
     const submittedDueDate = String(formData.get('dueDate') || '');
     const submittedFollowUpDate = String(formData.get('followUpDate') || '');
     setSaving(true);
@@ -55,6 +57,7 @@ export default function ItemForm({
         priority,
         type,
         assigneeId: assigneeId || null,
+        startDate: submittedStartDate || null,
         dueDate: submittedDueDate || null,
         followUpDate: submittedFollowUpDate || null,
         visibility,
@@ -196,6 +199,17 @@ export default function ItemForm({
                 </option>
               ))}
             </Select>
+          </label>
+          <label className="field">
+            Start date
+            <input
+              type="date"
+              name="startDate"
+              className="input"
+              value={startDate}
+              onInput={(e) => setStartDate(e.currentTarget.value)}
+              onChange={(e) => setStartDate(e.target.value)}
+            />
           </label>
           <label className="field">
             Due date
