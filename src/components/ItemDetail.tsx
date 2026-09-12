@@ -245,7 +245,7 @@ export default function ItemDetail({
     }
   }
   const item = detail?.item;
-  async function addTags() {
+  async function saveTags(removeTag?: string) {
     if (!item || saving) return;
     const draft = tagDraft;
     const next = [...item.labels];
@@ -255,7 +255,11 @@ export default function ItemDetail({
       .filter(Boolean)) {
       if (!next.some((existing) => existing.toLowerCase() === tag.toLowerCase())) next.push(tag);
     }
-    if (next.length === item.labels.length || (await update({ labels: next }))) {
+    const labels = next.filter((tag) => tag !== removeTag);
+    const unchanged =
+      labels.length === item.labels.length &&
+      labels.every((tag, index) => tag === item.labels[index]);
+    if (unchanged || (await update({ labels }))) {
       setTagDraft((current) => (current === draft ? '' : current));
     }
   }
@@ -1056,37 +1060,42 @@ export default function ItemDetail({
                   <option value="private">Private</option>
                 </Select>
               </Property>
-              <label className="item-tag-editor">
-                <span>Tags</span>
-                <input
-                  data-shortcut="l"
-                  placeholder="Add tags, separated by commas"
-                  value={tagDraft}
-                  onChange={(e) => setTagDraft(e.target.value)}
-                  onBlur={() => void addTags()}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                      e.preventDefault();
-                      e.currentTarget.blur();
-                    }
-                  }}
-                />
-              </label>
-              <div className="item-tag-list">
-                {item.labels.map((tag) => (
-                  <span className="badge" key={tag}>
-                    {tag}
-                    <button
-                      type="button"
-                      aria-label={`Remove tag ${tag}`}
-                      onClick={() =>
-                        void update({ labels: item.labels.filter((value) => value !== tag) })
+              <div
+                className="item-tags"
+                onBlur={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget)) void saveTags();
+                }}
+              >
+                <label className="item-tag-editor">
+                  <span>Tags</span>
+                  <input
+                    data-shortcut="l"
+                    placeholder="Add tags, separated by commas"
+                    value={tagDraft}
+                    onChange={(e) => setTagDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                        e.preventDefault();
+                        e.currentTarget.blur();
                       }
-                    >
-                      <X size={10} aria-hidden="true" />
-                    </button>
-                  </span>
-                ))}
+                    }}
+                  />
+                </label>
+                <div className="item-tag-list">
+                  {item.labels.map((tag) => (
+                    <span className="item-tag" key={tag}>
+                      <span className="item-tag-name">{tag}</span>
+                      <button
+                        type="button"
+                        aria-label={`Remove tag ${tag}`}
+                        title={`Remove tag ${tag}`}
+                        onClick={() => void saveTags(tag)}
+                      >
+                        <X size={12} aria-hidden="true" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
               </div>
             </fieldset>
             <div className="item-property-divider" />
