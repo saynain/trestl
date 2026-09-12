@@ -443,6 +443,17 @@ export default function ItemDetail({
               <form
                 className="item-inline-editor"
                 onKeyDown={(event) => {
+                  if (
+                    event.key === 'Enter' &&
+                    (event.metaKey || event.ctrlKey) &&
+                    !event.altKey &&
+                    !event.shiftKey &&
+                    !event.nativeEvent.isComposing
+                  ) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (!event.repeat && !saving) event.currentTarget.requestSubmit();
+                  }
                   if (event.key === 'Escape') {
                     event.preventDefault();
                     event.stopPropagation();
@@ -481,6 +492,8 @@ export default function ItemDetail({
                     className="button primary"
                     type="submit"
                     disabled={saving || !title.trim()}
+                    title="Save changes (Cmd+Enter / Ctrl+Enter)"
+                    aria-keyshortcuts="Meta+Enter Control+Enter"
                   >
                     Save changes
                   </button>
