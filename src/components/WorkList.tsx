@@ -1,6 +1,14 @@
 import { useShortcuts, activateItemControl } from '../lib/keyboard';
 import { itemActions, formatShortcut, type ItemAction } from '../lib/shortcuts';
 import { Select } from './Select';
+import { BoardSettings } from './BoardSettings';
+import {
+  boardMoveUpdates,
+  moveColumn,
+  readBoardPreferences,
+  saveBoardPreferences,
+  type BoardPreferences,
+} from '../lib/board';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Search,
@@ -15,6 +23,7 @@ import {
   X,
   Layers,
   Tag,
+  GripVertical,
 } from 'lucide-react';
 import type { Priority, Status, WorkItem } from '../../shared/types';
 import { useApp } from '../lib/context';
@@ -87,13 +96,38 @@ export default function WorkList({
   const [groupBy, setGroupBy] = useState(
     initialFilters.groupBy || (initialFilters.due || initialFilters.followUp ? 'none' : 'status'),
   );
-  const [showDone, setShowDone] = useState(initialFilters.showDone === 'true');
+  const route = readRoute();
+  const boardKey = `trestl.board.v1.${data.user.id}.${data.user.workspaceId || 'default'}.${route.page}.${route.id || projectId || ''}`;
+  const [boardPreferences, setBoardPreferences] = useState(() =>
+    readBoardPreferences(boardKey, initialFilters.board, initialFilters.showDone === 'true'),
+  );
+  const [listShowDone, setListShowDone] = useState(initialFilters.showDone === 'true');
+  const showDone = board ? boardPreferences.showDone : listShowDone;
+  const [boardSettingsOpen, setBoardSettingsOpen] = useState(false);
+  const [columnDragging, setColumnDragging] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ status: Status; beforeId: string | null } | null>(
+    null,
+  );
+  function customizeBoard(value: BoardPreferences) {
+    setBoardPreferences(value);
+    saveBoardPreferences(boardKey, value);
+  }
+  function setShowDone(value: boolean) {
+    if (board) customizeBoard({ ...boardPreferences, showDone: value });
+    else setListShowDone(value);
+  }
   const [collapsed, setCollapsed] = useState(new Set<string>());
   const [saving, setSaving] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
   const [viewName, setViewName] = useState('');
   const [dragging, setDragging] = useState<string | null>(null);
-  const pointerDrag = useRef<{ id: string; x: number; y: number; moved: boolean } | null>(null);
+  const pointerDrag = useRef<{
+    id: string;
+    kind: 'card' | 'column';
+    x: number;
+    y: number;
+    moved: boolean;
+  } | null>(null);
   const suppressClick = useRef(false);
   const searchInput = useRef<HTMLInputElement>(null);
   const filterPanel = useRef<HTMLDivElement>(null);
@@ -130,10 +164,11 @@ export default function WorkList({
           },
           showDone,
         ),
-        initialFilters,
+        board ? {} : initialFilters,
       ),
     [
       items,
+      board,
       showDone,
       statusFilter,
       priorityFilter,
@@ -148,8 +183,9 @@ export default function WorkList({
       initialFilters.followUp,
     ],
   );
-  const groupOptions =
-    board || groupBy === 'status'
+  const groupOptions = board
+    ? boardPreferences.columns.filter((column) => !column.hidden || column.id === statusFilter)
+    : groupBy === 'status'
       ? statuses.map((s) => ({ id: s.id, name: s.name }))
       : groupBy === 'priority'
         ? priorities.map((p) => ({ id: p.id, name: p.name }))
@@ -189,32 +225,80 @@ export default function WorkList({
               ? showDone || g.id === statusFilter || !['done', 'canceled'].includes(g.id)
               : g.items.length > 0,
           );
+  function pointerTarget(x: number, y: number, draggedId: string) {
+    const column = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-board-status]');
+    if (!column || !listRef.current?.contains(column)) return null;
+    const cards = Array.from(column.querySelectorAll<HTMLElement>('[data-item-id]')).filter(
+      (card) => card.dataset.itemId !== draggedId,
+    );
+    const before = cards.find((card) => {
+      const rect = card.getBoundingClientRect();
+      return y < rect.top + rect.height / 2;
+    });
+    return {
+      status: column.dataset.boardStatus as Status,
+      beforeId: before?.dataset.itemId || null,
+    };
+  }
+  async function moveCard(item: WorkItem, status: Status, beforeId: string | null) {
+    const updates = boardMoveUpdates(items, item, status, beforeId);
+    if (!updates.length || saving) return;
+    setSaving(true);
+    try {
+      for (const entry of updates)
+        await patch(`/items/${entry.item.id}`, { status: entry.status, position: entry.position });
+    } catch (error) {
+      toast((error as Error).message, 'error');
+    } finally {
+      try {
+        await refresh();
+      } finally {
+        setSaving(false);
+      }
+    }
+  }
   useEffect(() => {
+    if (!board) return;
     const move = (e: PointerEvent) => {
       const drag = pointerDrag.current;
       if (!drag) return;
       if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 6) {
         drag.moved = true;
-        setDragging(drag.id);
+        if (drag.kind === 'card') {
+          setDragging(drag.id);
+          setDropTarget(pointerTarget(e.clientX, e.clientY, drag.id));
+        } else setColumnDragging(drag.id);
         document.body.classList.add('board-dragging');
+        const bounds = listRef.current?.getBoundingClientRect();
+        if (bounds && e.clientY >= bounds.top && e.clientY <= bounds.bottom) {
+          if (e.clientX > bounds.right - 45) listRef.current!.scrollLeft += 18;
+          if (e.clientX < bounds.left + 45) listRef.current!.scrollLeft -= 18;
+        }
       }
     };
     const end = (e: PointerEvent) => {
       const drag = pointerDrag.current;
       pointerDrag.current = null;
       setDragging(null);
+      setColumnDragging(null);
+      setDropTarget(null);
       document.body.classList.remove('board-dragging');
       if (e.type === 'pointercancel' || !drag?.moved) return;
       suppressClick.current = true;
       window.setTimeout(() => {
         suppressClick.current = false;
       }, 50);
-      const column = document
-        .elementFromPoint(e.clientX, e.clientY)
-        ?.closest<HTMLElement>('[data-board-status]');
-      const item = items.find((i) => i.id === drag.id);
-      if (column?.dataset.boardStatus && item && item.status !== column.dataset.boardStatus)
-        void update(item, { status: column.dataset.boardStatus as Status });
+      const target = pointerTarget(e.clientX, e.clientY, drag.id);
+      if (!target) return;
+      if (drag.kind === 'column') {
+        customizeBoard({
+          ...boardPreferences,
+          columns: moveColumn(boardPreferences.columns, drag.id, target.status),
+        });
+      } else {
+        const item = items.find((entry) => entry.id === drag.id);
+        if (item) void moveCard(item, target.status, target.beforeId);
+      }
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', end);
@@ -225,7 +309,7 @@ export default function WorkList({
       window.removeEventListener('pointercancel', end);
       document.body.classList.remove('board-dragging');
     };
-  }, [items]);
+  }, [board, items, boardPreferences, saving]);
   function activeRow() {
     const focused = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>(
       '[data-item-id]',
@@ -343,6 +427,7 @@ export default function WorkList({
       ...(projectId ? { projectId } : {}),
       showDone: String(showDone),
       groupBy,
+      ...(board ? { board: JSON.stringify(boardPreferences) } : {}),
     };
     for (const key of [
       'status',
@@ -491,7 +576,9 @@ export default function WorkList({
     );
   }
   return (
-    <div className={`work-view ${board ? 'board-view' : ''}`}>
+    <div
+      className={`work-view ${board ? 'board-view' : ''} ${board && boardPreferences.compact ? 'board-compact' : ''}`}
+    >
       <div className="work-toolbar">
         <div className="popover-parent">
           <button
@@ -699,6 +786,12 @@ export default function WorkList({
             <ChevronDown size={13} />
           </label>
         )}
+        {board && (
+          <button className="button" onClick={() => setBoardSettingsOpen(true)}>
+            <SlidersHorizontal size={14} />
+            Customize board
+          </button>
+        )}
         <div className="popover-parent">
           <button
             className="button display-button"
@@ -746,21 +839,48 @@ export default function WorkList({
           )}
         </div>
       </div>
+      {boardSettingsOpen && (
+        <BoardSettings
+          value={boardPreferences}
+          onSave={customizeBoard}
+          onClose={() => setBoardSettingsOpen(false)}
+        />
+      )}
+      {board && (
+        <p className="board-hint">
+          Drag column handles to rearrange. Drag cards to move or reorder; use Alt + ↑ / ↓ on a
+          focused card to reorder with the keyboard.
+        </p>
+      )}
       <div ref={listRef} className={board ? 'board-columns' : 'work-groups'}>
-        {!board && visible.length === 0 ? (
+        {(board ? groups.length === 0 : visible.length === 0) ? (
           <EmptyState
             icon={<Layers size={27} />}
-            title={items.length ? 'No matching work items' : 'A clear space for what’s next'}
+            title={
+              board
+                ? 'No visible columns'
+                : items.length
+                  ? 'No matching work items'
+                  : 'A clear space for what’s next'
+            }
             description={
-              items.length
-                ? 'Try another search or adjust your filters.'
-                : 'Capture a task, an idea, or something to follow up on.'
+              board
+                ? 'Choose the columns you want to see in Customize board.'
+                : items.length
+                  ? 'Try another search or adjust your filters.'
+                  : 'Capture a task, an idea, or something to follow up on.'
             }
             action={
-              <button className="button primary" onClick={() => createItem(projectId)}>
-                <Plus size={15} />
-                Create work item
-              </button>
+              board ? (
+                <button className="button primary" onClick={() => setBoardSettingsOpen(true)}>
+                  Customize board
+                </button>
+              ) : (
+                <button className="button primary" onClick={() => createItem(projectId)}>
+                  <Plus size={15} />
+                  Create work item
+                </button>
+              )
             }
           />
         ) : (
@@ -769,17 +889,30 @@ export default function WorkList({
               <section
                 key={group.id}
                 data-board-status={group.id}
-                className={`board-column ${dragging ? 'drop-ready' : ''}`}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const id = e.dataTransfer.getData('text/plain');
-                  const item = items.find((i) => i.id === id);
-                  setDragging(null);
-                  if (item) update(item, { status: group.id as Status });
-                }}
+                className={`board-column ${dropTarget?.status === group.id ? 'drop-ready' : ''} ${columnDragging === group.id ? 'column-dragging' : ''}`}
               >
                 <header>
+                  <button
+                    className="icon-button board-column-handle"
+                    aria-label={`Rearrange ${group.name} column`}
+                    title="Drag to rearrange, or press Enter to customize"
+                    onClick={() => {
+                      if (!suppressClick.current) setBoardSettingsOpen(true);
+                    }}
+                    onPointerDown={(event) => {
+                      if (event.button !== 0) return;
+                      event.currentTarget.setPointerCapture(event.pointerId);
+                      pointerDrag.current = {
+                        id: group.id,
+                        kind: 'column',
+                        x: event.clientX,
+                        y: event.clientY,
+                        moved: false,
+                      };
+                    }}
+                  >
+                    <GripVertical size={14} />
+                  </button>
                   <StatusIcon status={group.id as Status} />
                   <strong>{group.name}</strong>
                   <span>{group.items.length}</span>
@@ -794,15 +927,18 @@ export default function WorkList({
                 {group.items.map((item) => (
                   <article
                     key={item.id}
-                    className={`board-card ${dragging === item.id ? 'dragging' : ''}`}
+                    className={`board-card ${dragging === item.id ? 'dragging' : ''} ${dropTarget?.beforeId === item.id ? 'board-drop-before' : ''}`}
                     onPointerDown={(e) => {
                       if (
+                        saving ||
                         e.button !== 0 ||
                         (e.target as HTMLElement).closest('select,input,button,a')
                       )
                         return;
+                      e.currentTarget.setPointerCapture(e.pointerId);
                       pointerDrag.current = {
                         id: item.id,
+                        kind: 'card',
                         x: e.clientX,
                         y: e.clientY,
                         moved: false,
@@ -812,6 +948,18 @@ export default function WorkList({
                       if (!suppressClick.current) openItem(item.id);
                     }}
                     onKeyDown={(e) => {
+                      if (
+                        e.target === e.currentTarget &&
+                        e.altKey &&
+                        ['ArrowUp', 'ArrowDown'].includes(e.key)
+                      ) {
+                        e.preventDefault();
+                        const index = group.items.findIndex((entry) => entry.id === item.id);
+                        if (e.key === 'ArrowUp' && index > 0)
+                          void moveCard(item, item.status, group.items[index - 1].id);
+                        if (e.key === 'ArrowDown' && index < group.items.length - 1)
+                          void moveCard(item, item.status, group.items[index + 2]?.id || null);
+                      }
                       if (e.target === e.currentTarget && e.key === 'Enter') {
                         e.preventDefault();
                         openItem(item.id);
@@ -828,7 +976,7 @@ export default function WorkList({
                     </div>
                     <h3>{item.title}</h3>
                     <SourceBadge item={item} />
-                    {item.labels.length > 0 && (
+                    {boardPreferences.showLabels && item.labels.length > 0 && (
                       <div className="board-labels">
                         {item.labels.slice(0, 2).map((l) => (
                           <span className="label-tag" key={l}>
@@ -850,7 +998,7 @@ export default function WorkList({
                   </article>
                 ))}
                 <button
-                  className="board-add"
+                  className={`board-add ${dropTarget?.status === group.id && !dropTarget.beforeId ? 'board-drop-before' : ''}`}
                   onClick={() => createItem(projectId, group.id as Status)}
                 >
                   <Plus size={15} />

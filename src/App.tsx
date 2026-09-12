@@ -726,7 +726,7 @@ export default function App() {
                   />
                 ) : (
                   <WorkList
-                    key={`${route.page}-${route.id}-${isBoard}`}
+                    key={`${data.user.id}-${data.user.workspaceId}-${route.page}-${route.id}-${isBoard}`}
                     items={items}
                     projectId={project?.id}
                     board={isBoard}
