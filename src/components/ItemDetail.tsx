@@ -6,6 +6,11 @@ import {
   ArrowUpRight,
   Download,
   CircleAlert,
+  CircleDot,
+  Tag,
+  UserRound,
+  CalendarDays,
+  ArrowRightLeft,
   GitFork,
   Github,
   ChevronRight,
@@ -135,6 +140,23 @@ function activityText(body: string, data: Bootstrap) {
     .join(' · ');
 }
 
+function ActivityIcon({ body }: { body: string }) {
+  const field = body.split(': ')[0];
+  const Icon =
+    field === 'status'
+      ? CircleDot
+      : field === 'assigneeId'
+        ? UserRound
+        : field === 'labels'
+          ? Tag
+          : ['startDate', 'dueDate', 'followUpDate'].includes(field)
+            ? CalendarDays
+            : ['projectId', 'parentId', 'position'].includes(field)
+              ? ArrowRightLeft
+              : Pencil;
+  return <Icon size={16} aria-hidden="true" />;
+}
+
 export default function ItemDetail({
   id,
   onClose,
@@ -156,6 +178,7 @@ export default function ItemDetail({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [comment, setComment] = useState('');
+  const [commentPreview, setCommentPreview] = useState(false);
   const [tagDraft, setTagDraft] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showLink, setShowLink] = useState(false);
@@ -176,6 +199,7 @@ export default function ItemDetail({
     setError('');
     setEditing(false);
     setComment('');
+    setCommentPreview(false);
     setTagDraft('');
     setConfirmDelete(false);
     setShowRelation(false);
@@ -228,7 +252,10 @@ export default function ItemDetail({
     if (comment.trim())
       await mutate(
         () => post(`/items/${id}/comments`, { body: comment.trim() }),
-        () => setComment(''),
+        () => {
+          setComment('');
+          setCommentPreview(false);
+        },
       );
   }
   async function deleteItem() {
@@ -793,100 +820,150 @@ export default function ItemDetail({
               <div className="item-section-heading">
                 <h3>Activity</h3>
                 <span className="muted">
-                  <MessageSquare size={13} />
-                  {detail!.activity.filter((a) => a.kind === 'comment').length}
+                  <MessageSquare size={16} aria-hidden="true" />
+                  {detail!.activity.filter((a) => a.kind === 'comment').length}{' '}
+                  {detail!.activity.filter((a) => a.kind === 'comment').length === 1
+                    ? 'comment'
+                    : 'comments'}
                 </span>
               </div>
-              <div className="item-event">
-                <span className="item-event-dot" />
-                <span>
-                  <strong>{item.importedFrom?.authorName || creator?.name || 'A member'}</strong>{' '}
-                  created this work item{item.importedFrom && ' (imported)'}
-                </span>
-                <time dateTime={item.createdAt}>{shortDate(item.createdAt)}</time>
-              </div>
-              {detail!.activity.map((entry) => {
-                const user = data.users.find((u) => u.id === entry.userId);
-                const commentProvider = entry.source?.provider === 'github' ? 'GitHub' : 'Gitea';
-                const CommentSourceIcon = entry.source?.provider === 'github' ? Github : GitFork;
-                return entry.kind === 'event' ? (
-                  <div key={entry.id} className="item-event">
-                    <span className="item-event-dot" />
-                    <span>
-                      <strong>{entry.importedFrom?.authorName || user?.name || 'A member'}</strong>{' '}
-                      {activityText(entry.body, data)}
-                      {entry.importedFrom && ' (imported)'}
-                    </span>
-                    <time
-                      title={new Date(entry.createdAt).toLocaleString()}
-                      dateTime={entry.createdAt}
-                    >
-                      {shortDate(entry.createdAt)}
-                    </time>
-                  </div>
-                ) : (
-                  <article key={entry.id} className="item-comment">
-                    {entry.importedFrom ? (
-                      <span className="item-source-avatar">
-                        <Download size={15} aria-hidden="true" />
+              <ol className="item-timeline" aria-label="Activity timeline">
+                <li className="item-event">
+                  <span className="item-event-icon">
+                    <CircleDot size={16} aria-hidden="true" />
+                  </span>
+                  <span>
+                    <strong>{item.importedFrom?.authorName || creator?.name || 'A member'}</strong>{' '}
+                    created this work item{item.importedFrom && ' (imported)'}
+                  </span>
+                  <time title={new Date(item.createdAt).toLocaleString()} dateTime={item.createdAt}>
+                    {shortDate(item.createdAt)}
+                  </time>
+                </li>
+                {detail!.activity.map((entry) => {
+                  const user = data.users.find((u) => u.id === entry.userId);
+                  const commentProvider = entry.source?.provider === 'github' ? 'GitHub' : 'Gitea';
+                  const CommentSourceIcon = entry.source?.provider === 'github' ? Github : GitFork;
+                  return entry.kind === 'event' ? (
+                    <li key={entry.id} className="item-event">
+                      <span className="item-event-icon">
+                        <ActivityIcon body={entry.body} />
                       </span>
-                    ) : entry.source ? (
-                      <span className="item-source-avatar">
-                        <CommentSourceIcon size={15} aria-hidden="true" />
-                      </span>
-                    ) : (
-                      <Avatar user={user} size={27} />
-                    )}
-                    <div className="item-comment-content">
-                      <header>
+                      <span>
                         <strong>
-                          {entry.importedFrom?.authorName ||
-                            entry.source?.author ||
-                            user?.name ||
-                            'A member'}
-                        </strong>
-                        {entry.importedFrom ? (
-                          <span className="item-comment-origin">Imported</span>
-                        ) : entry.source ? (
-                          <span className="item-comment-origin">{commentProvider}</span>
-                        ) : source ? (
-                          <span className="item-comment-origin">Internal note</span>
-                        ) : null}
-                        <time
-                          title={new Date(entry.createdAt).toLocaleString()}
-                          dateTime={entry.createdAt}
-                        >
-                          {new Date(entry.createdAt).toLocaleString(undefined, {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </time>
-                      </header>
-                      <MarkdownBody>{entry.body}</MarkdownBody>
-                    </div>
-                  </article>
-                );
-              })}
+                          {entry.importedFrom?.authorName || user?.name || 'A member'}
+                        </strong>{' '}
+                        {activityText(entry.body, data)}
+                        {entry.importedFrom && ' (imported)'}
+                      </span>
+                      <time
+                        title={new Date(entry.createdAt).toLocaleString()}
+                        dateTime={entry.createdAt}
+                      >
+                        {shortDate(entry.createdAt)}
+                      </time>
+                    </li>
+                  ) : (
+                    <li key={entry.id} className="item-comment">
+                      {entry.importedFrom ? (
+                        <span className="item-source-avatar">
+                          <Download size={15} aria-hidden="true" />
+                        </span>
+                      ) : entry.source ? (
+                        <span className="item-source-avatar">
+                          <CommentSourceIcon size={15} aria-hidden="true" />
+                        </span>
+                      ) : (
+                        <span className="item-timeline-avatar">
+                          <Avatar user={user} size={36} />
+                        </span>
+                      )}
+                      <article className="item-comment-content">
+                        <header>
+                          <strong>
+                            {entry.importedFrom?.authorName ||
+                              entry.source?.author ||
+                              user?.name ||
+                              'A member'}
+                          </strong>
+                          {entry.importedFrom ? (
+                            <span className="item-comment-origin">Imported</span>
+                          ) : entry.source ? (
+                            <span className="item-comment-origin">{commentProvider}</span>
+                          ) : source ? (
+                            <span className="item-comment-origin">Internal note</span>
+                          ) : null}
+                          <time
+                            title={new Date(entry.createdAt).toLocaleString()}
+                            dateTime={entry.createdAt}
+                          >
+                            {new Date(entry.createdAt).toLocaleString(undefined, {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </time>
+                        </header>
+                        <MarkdownBody>{entry.body}</MarkdownBody>
+                      </article>
+                    </li>
+                  );
+                })}
+              </ol>
+              <h4 className="item-comment-heading">
+                {source ? 'Add an internal note' : 'Add a comment'}
+              </h4>
               <form className="item-comment-form" onSubmit={sendComment}>
-                <Avatar user={data.user} size={27} />
+                <Avatar user={data.user} size={36} />
                 <div>
-                  <textarea
-                    className="input"
-                    aria-label={source ? 'Internal note' : 'Comment'}
-                    placeholder={source ? 'Add an internal note…' : 'Leave a comment or an update…'}
-                    rows={3}
-                    data-shortcut="m"
-                    value={comment}
-                    onChange={(e) => setComment(e.target.value)}
-                    onKeyDown={(e) => {
-                      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                        e.preventDefault();
-                        void sendComment();
+                  <div
+                    className="item-comment-toolbar"
+                    role="group"
+                    aria-label="Comment editor mode"
+                  >
+                    <button
+                      type="button"
+                      aria-pressed={!commentPreview}
+                      onClick={() => setCommentPreview(false)}
+                    >
+                      Write
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={commentPreview}
+                      onClick={() => setCommentPreview(true)}
+                    >
+                      Preview
+                    </button>
+                  </div>
+                  {commentPreview ? (
+                    <div className="item-comment-preview" aria-label="Comment preview">
+                      {comment.trim() ? (
+                        <MarkdownBody>{comment}</MarkdownBody>
+                      ) : (
+                        <p className="muted">Nothing to preview yet.</p>
+                      )}
+                    </div>
+                  ) : (
+                    <textarea
+                      className="input"
+                      aria-label={source ? 'Internal note' : 'Comment'}
+                      placeholder={
+                        source ? 'Add an internal note…' : 'Leave a comment or an update…'
                       }
-                    }}
-                  />
+                      rows={3}
+                      data-shortcut="m"
+                      value={comment}
+                      onChange={(e) => setComment(e.target.value)}
+                      onKeyDown={(e) => {
+                        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                          e.preventDefault();
+                          void sendComment();
+                        }
+                      }}
+                    />
+                  )}
                   {source && (
                     <p className="item-comment-scope">
                       Internal notes stay in Trestl and are never posted to {providerName}.
