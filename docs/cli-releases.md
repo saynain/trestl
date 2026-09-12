@@ -8,7 +8,7 @@ Manual runs on `main` publish a unique `sha-<commit>-<run>-<attempt>` registry t
 
 For a new release:
 
-1. Update the root and CLI package versions together, lockfile metadata as needed, and the README's pinned examples. Run CI on `main`.
+1. Update the root and CLI package versions together, lockfile metadata as needed, and the README's pinned examples. Add release notes at `docs/releases/v<version>.md`; the workflow uses this file as the GitHub Release description. Run CI on `main`.
 2. Tag that exact commit `v<version>` and push the tag. Both the application image and CLI workflows run.
 3. Verify the release assets and registry digest in Actions. Install the downloaded tarball and test browser login against a server running the matching version.
 

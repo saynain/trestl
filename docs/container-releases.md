@@ -31,12 +31,12 @@ automatic deployment and no mutable `latest` tag.
 After merging and verifying a release commit on `main`, push a new version tag:
 
 ```sh
-git tag v0.1.0 <release-commit>
-git push origin v0.1.0
+git tag v0.2.0 <release-commit>
+git push origin v0.2.0
 ```
 
 Use the next unused version, optionally with a prerelease suffix such as
-`v0.1.0-rc.1`. The workflow rejects other tag formats and commits outside main's
+`v0.2.0-rc.1`. The workflow rejects other tag formats and commits outside main's
 history. Treat release tags as immutable: never move or reuse one. Deployment
 repositories must pin digests, not rely on tags being technically immutable.
 

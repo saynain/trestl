@@ -1149,7 +1149,7 @@ export const openapi = {
   openapi: '3.1.0',
   info: {
     title: 'Trestl API',
-    version: '0.1.0',
+    version: '0.2.0',
     description:
       'Repository-independent project planning. Authenticate with a browser session or a scoped personal token. Core collection responses use data arrays; /integrations returns a direct array; item pagination uses opaque cursor values returned as nextCursor. Private project access is inherited by descendants. All dates are ISO YYYY-MM-DD and timestamps are UTC ISO 8601. The bootstrap endpoint is intended for small self-hosted workspaces. Repository imports require an admin account. Git and Confluence connections use individual credentials and explicit allowed origins. Work mutations never post to external providers; GitHub App authorization and refresh exchange credentials with GitHub.',
   },

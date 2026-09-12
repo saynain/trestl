@@ -95,10 +95,14 @@ jobs:
           set -euo pipefail
           # Existing assets are never silently overwritten on a rerun.
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            printf '%s\n' 'Trestl CLI and application release. See the README for installation and browser sign-in instructions.' > "$RUNNER_TEMP/release-notes.md"
+            notes="docs/releases/${RELEASE_TAG}.md"
+            if [[ ! -f "$notes" ]]; then
+              notes="$RUNNER_TEMP/release-notes.md"
+              printf '%s\n' 'Trestl CLI and application release. See the README for installation and browser sign-in instructions.' > "$notes"
+            fi
             args=()
             if [[ "$RELEASE_TAG" == *-* ]]; then args+=(--prerelease); fi
-            gh release create "$RELEASE_TAG" --verify-tag --title "Trestl $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md" "${args[@]}"
+            gh release create "$RELEASE_TAG" --verify-tag --title "Trestl $RELEASE_TAG" --notes-file "$notes" "${args[@]}"
           fi
           gh release upload "$RELEASE_TAG" "dist/cli-release/$FILENAME" dist/cli-release/SHA256SUMS
       - name: Remove registry credentials

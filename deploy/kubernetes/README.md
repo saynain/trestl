@@ -23,8 +23,8 @@ example's Namespace resource into a second application.
 1. Build the image from a selected Trestl revision and push it to your registry:
 
    ```sh
-   docker build -t registry.example.com/trestl:v0.1.0 .
-   docker push registry.example.com/trestl:v0.1.0
+   docker build -t registry.example.com/trestl:v0.2.0 .
+   docker push registry.example.com/trestl:v0.2.0
    ```
 
    Build for your cluster's CPU architecture, for example with

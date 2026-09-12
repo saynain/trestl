@@ -97,7 +97,7 @@ The CLI is independently installable and runs from any directory:
 ```sh
 pnpm build:cli
 npm pack ./cli
-npm install --global ./trestl-cli-0.1.0.tgz
+npm install --global ./trestl-cli-0.2.0.tgz
 trestl login --profile work --url https://projects.example.com
 ```
 

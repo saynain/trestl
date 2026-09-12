@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -76,7 +76,10 @@ try {
       : join(prefix, 'lib', 'node_modules', '@trestl', 'cli', 'dist', 'index.js');
   const cli = (args, options) => run(process.execPath, [installed, ...args], options);
   assert.match((await cli(['--help'])).stdout, /Usage: trestl/);
-  assert.equal(JSON.parse((await cli(['--version', '--json'])).stdout).version, '0.1.0');
+  const { version } = JSON.parse(
+    await readFile(new URL('../package.json', import.meta.url), 'utf8'),
+  );
+  assert.equal(JSON.parse((await cli(['--version', '--json'])).stdout).version, version);
   app = await createApp({ dataDir: ':memory:', integrations: false });
   const url = await app.listen({ host: '127.0.0.1', port: 0 });
   process.env.APP_ORIGIN = url;
