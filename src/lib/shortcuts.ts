@@ -44,6 +44,16 @@ export const shortcuts = {
     repeat: true,
   },
   open: { keys: ['enter'], label: 'Open focused work item', group: 'Lists & boards' },
+  expandTree: {
+    keys: ['arrowright'],
+    label: 'Expand subtasks / focus first child',
+    group: 'Lists & boards',
+  },
+  collapseTree: {
+    keys: ['arrowleft'],
+    label: 'Collapse subtasks / focus parent',
+    group: 'Lists & boards',
+  },
   status: { keys: ['s'], label: 'Change status', group: 'Work items' },
   priority: { keys: ['p'], label: 'Change priority', group: 'Work items' },
   assignee: { keys: ['a'], label: 'Change assignee', group: 'Work items' },
