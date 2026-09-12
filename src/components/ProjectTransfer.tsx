@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Download, Upload } from 'lucide-react';
+import { Upload } from 'lucide-react';
 import type { Project } from '../../shared/types';
 import type {
   ProjectImportOptions,
@@ -13,9 +13,8 @@ import { Modal } from './ui';
 import { Select } from './Select';
 import './project-transfer.css';
 
-export function ExportProject({ project }: { project: Project }) {
+export function ExportProject({ project, onClose }: { project: Project; onClose: () => void }) {
   const { toast } = useApp();
-  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   async function download() {
     setBusy(true);
@@ -29,7 +28,7 @@ export function ExportProject({ project }: { project: Project }) {
       anchor.download = `${project.key.toLowerCase()}.trestl-project.json`;
       anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 10000);
-      setOpen(false);
+      onClose();
       toast('Project export downloaded');
     } catch (error) {
       toast((error as Error).message, 'error');
@@ -38,44 +37,36 @@ export function ExportProject({ project }: { project: Project }) {
     }
   }
   return (
-    <>
-      <button className="text-button" onClick={() => setOpen(true)}>
-        <Download size={15} />
-        Export project
-      </button>
-      {open && (
-        <Modal
-          title="Export project"
-          onClose={() => {
-            if (!busy) setOpen(false);
-          }}
-        >
-          <div className="transfer-body">
-            <p>
-              Download <strong>{project.name}</strong> and its subprojects as a file you can import
-              into another Trestl installation.
-            </p>
-            <p>
-              Includes accessible work items, discussion, roadmaps, milestones, links,
-              relationships, and canvases. Private content you cannot access and references outside
-              this project tree are excluded.
-            </p>
-            <p>
-              Accounts, memberships, and integration credentials are excluded. The file contains
-              project content, so share it only with people who should have access.
-            </p>
-            <div className="transfer-actions">
-              <button className="button" disabled={busy} onClick={() => setOpen(false)}>
-                Cancel
-              </button>
-              <button className="button primary" disabled={busy} onClick={() => void download()}>
-                {busy ? 'Preparing…' : 'Download project'}
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
-    </>
+    <Modal
+      title="Export project"
+      onClose={() => {
+        if (!busy) onClose();
+      }}
+    >
+      <div className="transfer-body">
+        <p>
+          Download <strong>{project.name}</strong> and its subprojects as a file you can import into
+          another Trestl installation.
+        </p>
+        <p>
+          Includes accessible work items, discussion, roadmaps, milestones, links, relationships,
+          and canvases. Private content you cannot access and references outside this project tree
+          are excluded.
+        </p>
+        <p>
+          Accounts, memberships, and integration credentials are excluded. The file contains project
+          content, so share it only with people who should have access.
+        </p>
+        <div className="transfer-actions">
+          <button className="button" disabled={busy} onClick={() => onClose()}>
+            Cancel
+          </button>
+          <button className="button primary" disabled={busy} onClick={() => void download()}>
+            {busy ? 'Preparing…' : 'Download project'}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -169,14 +160,17 @@ export function ImportProject() {
   return (
     <>
       <button
-        className="button"
+        className="button new-item-button import-project-button"
+        aria-label="Import project"
         onClick={() => {
           if (!open && !submitted) reset();
           setOpen(true);
         }}
       >
         <Upload size={15} />
-        Import project
+        <span>
+          Import<span className="import-project-noun"> project</span>
+        </span>
       </button>
       {open && (
         <Modal
