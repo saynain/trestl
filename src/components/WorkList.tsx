@@ -1,7 +1,9 @@
 import { useShortcuts, activateItemControl } from '../lib/keyboard';
 import { itemActions, formatShortcut, type ItemAction } from '../lib/shortcuts';
 import { Select } from './Select';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { buildWorkTree, flattenWorkTree } from '../lib/work-tree';
+import './work-tree.css';
 import {
   Search,
   SlidersHorizontal,
@@ -89,6 +91,8 @@ export default function WorkList({
   );
   const [showDone, setShowDone] = useState(initialFilters.showDone === 'true');
   const [collapsed, setCollapsed] = useState(new Set<string>());
+  const [expandedItems, setExpandedItems] = useState(new Set<string>());
+  const appliedTreeFilter = useRef<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
   const [viewName, setViewName] = useState('');
@@ -148,6 +152,36 @@ export default function WorkList({
       initialFilters.followUp,
     ],
   );
+  const treeFiltered = filterCount > 0 || !!search.trim();
+  const treeFilterKey = JSON.stringify([
+    search.trim(),
+    statusFilter,
+    priorityFilter,
+    assigneeFilter,
+    typeFilter,
+    sourceFilter,
+    tagFilter,
+  ]);
+  const tree = useMemo(
+    () => buildWorkTree(items, visible, sortWorkItems(data.items, initialFilters), treeFiltered),
+    [items, visible, data.items, treeFiltered, initialFilters.due, initialFilters.followUp],
+  );
+  useEffect(() => {
+    if (board) return;
+    if (!treeFiltered) {
+      appliedTreeFilter.current = null;
+      return;
+    }
+    if (appliedTreeFilter.current === treeFilterKey) return;
+    appliedTreeFilter.current = treeFilterKey;
+    setCollapsed(new Set());
+    setExpandedItems(
+      new Set(
+        [...tree.nodes.values()].filter((node) => node.children.length).map((node) => node.item.id),
+      ),
+    );
+  }, [tree, treeFiltered, treeFilterKey, board]);
+  const groupedItems = board ? visible : tree.roots.map((node) => node.item);
   const groupOptions =
     board || groupBy === 'status'
       ? statuses.map((s) => ({ id: s.id, name: s.name }))
@@ -170,11 +204,11 @@ export default function WorkList({
             ];
   const groups =
     groupBy === 'tag' && !board
-      ? groupWorkItemsByTag(visible)
+      ? groupWorkItemsByTag(groupedItems)
       : groupOptions
           .map((g) => ({
             ...g,
-            items: visible.filter((i) =>
+            items: groupedItems.filter((i) =>
               groupBy === 'none' && !board
                 ? true
                 : (board || groupBy === 'status'
@@ -235,7 +269,43 @@ export default function WorkList({
       : listRef.current?.querySelector<HTMLElement>('[data-item-id]:hover') || null;
   }
   function activeItem() {
-    return items.find((item) => item.id === activeRow()?.dataset.itemId);
+    return data.items.find((item) => item.id === activeRow()?.dataset.itemId);
+  }
+  function toggleItem(id: string) {
+    setExpandedItems((previous) => {
+      const next = new Set(previous);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+  function navigateTree(direction: 'open' | 'close') {
+    if (board) return false;
+    const row = activeRow();
+    if (!row) return false;
+    const focused = document.activeElement as HTMLElement | null;
+    if (row.contains(focused) && focused !== row && !focused?.closest('.tree-toggle')) return false;
+    const id = row.dataset.itemId!;
+    const node = tree.nodes.get(id);
+    if (!node) return false;
+    if (direction === 'open' && node.children.length) {
+      if (!expandedItems.has(id)) {
+        toggleItem(id);
+        row.focus();
+      } else {
+        const child = row.nextElementSibling as HTMLElement | null;
+        if (child?.dataset.treeParent === id) child.focus();
+      }
+    } else if (direction === 'close') {
+      if (node.children.length && expandedItems.has(id)) {
+        toggleItem(id);
+        row.focus();
+      } else if (row.dataset.treeParent) {
+        const rows = row.closest('.work-group')?.querySelectorAll<HTMLElement>('[data-item-id]');
+        Array.from(rows || [])
+          .find((entry) => entry.dataset.itemId === row.dataset.treeParent)
+          ?.focus();
+      }
+    }
   }
   function moveFocus(direction: number) {
     const rendered = Array.from(
@@ -293,6 +363,8 @@ export default function WorkList({
       },
       next: () => moveFocus(1),
       previous: () => moveFocus(-1),
+      expandTree: () => navigateTree('open'),
+      collapseTree: () => navigateTree('close'),
       open: () => {
         const focused = document.activeElement as HTMLElement | null;
         if (
@@ -402,14 +474,28 @@ export default function WorkList({
       </span>
     );
   }
-  function itemRow(item: WorkItem) {
+  function itemRow({
+    node,
+    depth,
+    parentId,
+    position,
+    setSize,
+  }: ReturnType<typeof flattenWorkTree>[number]) {
+    const { item } = node;
+    const expanded = expandedItems.has(item.id);
     return (
       <div
-        className="work-row"
+        className={`work-row work-tree-row ${depth ? 'work-tree-child' : ''} ${!node.matches && treeFiltered ? 'work-tree-context' : ''}`}
         key={item.id}
         data-item-id={item.id}
+        data-tree-parent={parentId}
+        style={{ '--tree-depth': Math.min(depth, 4) } as CSSProperties}
         tabIndex={0}
-        role="button"
+        role="treeitem"
+        aria-level={depth + 1}
+        aria-posinset={position}
+        aria-setsize={setSize}
+        aria-expanded={node.children.length ? expanded : undefined}
         aria-label={`${item.identifier} ${item.title}`}
         onClick={() => openItem(item.id)}
         onKeyDown={(e) => {
@@ -424,24 +510,74 @@ export default function WorkList({
           }
         }}
       >
-        {statusControl(item)}
-        <span className="item-identifier">{item.identifier}</span>
-        <div className={`item-name ${item.source ? 'has-source' : ''}`}>
-          <div className="item-title-line">
-            <span className={isDone(item) ? 'completed-title' : ''}>{item.title}</span>
-            {item.visibility === 'private' && <LockKeyhole size={12} className="muted" />}
-            <span className="row-labels">
-              {item.labels.slice(0, 2).map((label) => (
-                <span
-                  key={label}
-                  className={`label-tag label-${label.toLowerCase().replace(/[^a-z]/g, '')}`}
+        <div className="work-tree-main">
+          {node.childCount > 0 ? (
+            <button
+              className="tree-toggle tree-chevron"
+              aria-label={`${expanded ? 'Collapse' : 'Expand'} subtasks of ${item.identifier}`}
+              aria-expanded={node.children.length ? expanded : undefined}
+              disabled={!node.children.length}
+              title={
+                node.children.length
+                  ? `${expanded ? 'Collapse' : 'Expand'} subtasks (← / →)`
+                  : 'No subtasks match the current filters'
+              }
+              onClick={(event) => {
+                event.stopPropagation();
+                toggleItem(item.id);
+              }}
+            >
+              {expanded && node.children.length ? (
+                <ChevronDown size={14} />
+              ) : (
+                <ChevronRight size={14} />
+              )}
+            </button>
+          ) : (
+            <span className="tree-spacer" aria-hidden="true" />
+          )}
+          {statusControl(item)}
+          <span className="item-identifier">{item.identifier}</span>
+          <div className={`item-name ${item.source ? 'has-source' : ''}`}>
+            <div className="item-title-line">
+              <span className={isDone(item) ? 'completed-title' : ''}>{item.title}</span>
+              {node.childCount > 0 && (
+                <button
+                  className="tree-toggle tree-count"
+                  aria-label={`${node.completedChildren} of ${node.childCount} subtasks completed for ${item.identifier}`}
+                  aria-expanded={node.children.length ? expanded : undefined}
+                  disabled={!node.children.length}
+                  title={`${node.completedChildren} of ${node.childCount} subtasks completed${treeFiltered ? ` · ${node.children.length} shown by filters` : ''}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    toggleItem(item.id);
+                  }}
                 >
-                  {label}
-                </span>
-              ))}
-            </span>
+                  {node.completedChildren}/{node.childCount}
+                </button>
+              )}
+              {item.visibility === 'private' && <LockKeyhole size={12} className="muted" />}
+              <span className="row-labels">
+                {item.labels.slice(0, 2).map((label) => (
+                  <span
+                    key={label}
+                    className={`label-tag label-${label.toLowerCase().replace(/[^a-z]/g, '')}`}
+                  >
+                    {label}
+                  </span>
+                ))}
+              </span>
+            </div>
+            <SourceBadge item={item} />
+            {depth > 0 && (
+              <span className="tree-status">
+                {statuses.find((status) => status.id === item.status)?.name}
+              </span>
+            )}
+            {!node.matches && treeFiltered && (
+              <span className="tree-context-label">Parent context</span>
+            )}
           </div>
-          <SourceBadge item={item} />
         </div>
         <span className="inline-control priority-cell" onClick={(e) => e.stopPropagation()}>
           <PriorityIcon priority={item.priority} />
@@ -885,7 +1021,9 @@ export default function WorkList({
                       ) : null}
                     </span>
                     <strong>{group.name}</strong>
-                    <small>{group.items.length}</small>
+                    <small title={`${group.items.length} top-level items`}>
+                      {group.items.length}
+                    </small>
                   </button>
                   <span className="group-col-priority">Priority</span>
                   <span className="group-col-assignee">Assignee</span>
@@ -895,7 +1033,15 @@ export default function WorkList({
                 </div>
                 {!collapsed.has(group.id) && (
                   <>
-                    {group.items.map(itemRow)}
+                    <div
+                      role="tree"
+                      aria-label={groupBy === 'none' ? group.name : `${group.name} work items`}
+                    >
+                      {flattenWorkTree(
+                        group.items.map((item) => tree.nodes.get(item.id)!),
+                        expandedItems,
+                      ).map(itemRow)}
+                    </div>
                     <button
                       className="add-item-row"
                       onClick={() =>
@@ -931,6 +1077,13 @@ export default function WorkList({
             <>
               <kbd>J</kbd>
               <kbd>K</kbd> navigate <span className="footer-divider">·</span> <kbd>↵</kbd> open
+              {!board && (
+                <>
+                  {' '}
+                  <span className="footer-divider">·</span> <kbd>←</kbd>
+                  <kbd>→</kbd> subtasks
+                </>
+              )}
             </>
           )}
         </span>
