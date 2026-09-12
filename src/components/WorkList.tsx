@@ -1,3 +1,4 @@
+import { assigneeOptions } from '../lib/assignees';
 import { useShortcuts, activateItemControl } from '../lib/keyboard';
 import { itemActions, formatShortcut, type ItemAction } from '../lib/shortcuts';
 import { Select } from './Select';
@@ -555,9 +556,9 @@ export default function WorkList({
             onChange={(e) => update(item, { assigneeId: e.target.value || null })}
           >
             <option value="">Unassigned</option>
-            {data.users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name}
+            {assigneeOptions(data.users, item.assigneeId).map((u) => (
+              <option key={u.id} value={u.id} disabled={u.disabled}>
+                {u.label}
               </option>
             ))}
           </Select>

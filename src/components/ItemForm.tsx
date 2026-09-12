@@ -1,3 +1,4 @@
+import { assigneeOptions } from '../lib/assignees';
 import { Select } from './Select';
 import { useShortcuts, activateItemControl } from '../lib/keyboard';
 import { useRef, useState, type FormEvent } from 'react';
@@ -193,9 +194,9 @@ export default function ItemForm({
               onChange={(e) => setAssignee(e.target.value)}
             >
               <option value="">Unassigned</option>
-              {data.users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
+              {assigneeOptions(data.users).map((u) => (
+                <option key={u.id} value={u.id} disabled={u.disabled}>
+                  {u.label}
                 </option>
               ))}
             </Select>
