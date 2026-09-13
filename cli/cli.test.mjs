@@ -44,6 +44,20 @@ globalThis.fetch = async (input, options) => {
     return Response.json({id:'milestone-id',...body},{status:201});
   }
   if(path.endsWith('/milestones'))return Response.json({data:[{id:'milestone-id',projectId:'project-id',title:'Launch',dueDate:'2026-10-01',completed:false},{id:'other',projectId:'other-project',title:'Other',completed:false}]});
+  if(path.includes('/projects/project-id/canvases')) {
+    const canvas={id:'canvas-id',title:'Architecture',revision:2,updatedAt:'2026-09-13T00:00:00Z'};
+    if(path.endsWith('/show')) return Response.json({...canvas,url:'/#/project/project-id?tab=canvases%2Fcanvas-id'});
+    if(options.method==='DELETE') {
+      if(JSON.parse(options.body).expectedRevision!==2)return Response.json({message:'Canvas changed'},{status:409});
+      return new Response(null,{status:204});
+    }
+    if(options.method==='POST') {
+      const body=JSON.parse(options.body);
+      if(path.endsWith('/import') && body.document?.type!=='excalidraw')throw new Error('Missing native document');
+      return Response.json({...canvas,...body},{status:201});
+    }
+    return Response.json({data:[canvas]});
+  }
   if(path.endsWith('/projects'))return Response.json({data:[{id:'project-id',key:'K8S',name:'Kubernetes'}]});
   if(path.endsWith('/projects/K8S'))return Response.json({id:'project-id',key:'K8S',name:'Kubernetes'});
   if(path.endsWith('/items') && options.method==='GET') {
@@ -547,4 +561,57 @@ test('milestone updates require the observed revision and propagate conflicts', 
   assert.equal(ok.status, 0, ok.stderr);
   assert.equal(JSON.parse(ok.stdout).dueDate, '2026-10-15');
   assert.equal(JSON.parse(ok.stdout).revision, 3);
+});
+
+test('canvas commands resolve project keys, import native files, show links, and require revision-safe deletes', () => {
+  const file = join(testRoot, 'architecture.excalidraw');
+  writeFileSync(
+    file,
+    JSON.stringify({ type: 'excalidraw', elements: [], appState: {}, files: {} }),
+  );
+  const runCanvas = (args) => run(['canvases', ...args, '--project', 'K8S', '--json']);
+  let r = runCanvas(['list']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout)[0].id, 'canvas-id');
+  r = runCanvas(['create', 'New canvas', '--collection', 'collection-id']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).title, 'New canvas');
+  assert.equal(JSON.parse(r.stdout).collectionId, 'collection-id');
+  r = runCanvas(['import', file]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).title, 'architecture');
+  assert.equal(JSON.parse(r.stdout).document.type, 'excalidraw');
+  r = runCanvas(['import', file, '--title', 'Renamed']);
+  assert.equal(JSON.parse(r.stdout).title, 'Renamed');
+  r = runCanvas(['show', 'canvas-id']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(
+    JSON.parse(r.stdout).url,
+    'http://localhost:3001/#/project/project-id?tab=canvases%2Fcanvas-id',
+  );
+  r = run(['canvases', 'show', 'canvas-id', '--project', 'K8S']);
+  assert.equal(
+    r.stdout.trim(),
+    'http://localhost:3001/#/project/project-id?tab=canvases%2Fcanvas-id',
+  );
+  assert.equal(runCanvas(['delete', 'canvas-id']).status, 2);
+  assert.equal(runCanvas(['delete', 'canvas-id', '--expected-revision', '1']).status, 5);
+  r = runCanvas(['delete', 'canvas-id', '--expected-revision', '2']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).deleted, true);
+  writeFileSync(file, 'invalid JSON');
+  assert.equal(runCanvas(['import', file]).status, 2);
+  assert.equal(runCanvas(['import', file + '.missing']).status, 2);
+  assert.equal(run(['canvases', 'list', '--no-config']).status, 2);
+  assert.equal(runCanvas(['show', 'canvas-id', '--title', 'Ignored']).status, 2);
+  assert.equal(runCanvas(['unknown']).status, 2);
+});
+
+test('canvas commands respect repository project defaults', () => {
+  const directory = join(testRoot, 'canvas-repo');
+  mkdirSync(directory);
+  writeFileSync(join(directory, '.trestl.json'), JSON.stringify({ project: 'K8S' }));
+  const r = run(['canvases', 'list', '--json'], 'test-token', { cwd: directory });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout)[0].id, 'canvas-id');
 });
