@@ -1066,6 +1066,49 @@ operation(
   { created: true },
 );
 operation(
+  '/projects/{projectId}/canvases/import',
+  'post',
+  'Import a native .excalidraw document as one new canvas (8 MiB request limit); editor-only preferences are discarded',
+  ref('ProjectCanvas'),
+  object(
+    {
+      title: canvasMetadata.title,
+      collectionId: canvasMetadata.collectionId,
+      document: {
+        type: 'object',
+        required: ['type', 'elements'],
+        additionalProperties: true,
+        properties: {
+          type: { type: 'string', const: 'excalidraw' },
+          elements: canvasSceneSchema.properties.elements,
+          appState: {
+            type: 'object',
+            additionalProperties: true,
+            properties: {
+              viewBackgroundColor: { type: 'string', maxLength: 100 },
+              gridSize: { type: ['number', 'null'], exclusiveMinimum: 0 },
+            },
+          },
+          files: canvasSceneSchema.properties.files,
+        },
+      },
+    },
+    ['title', 'document'],
+  ),
+  { created: true },
+);
+operation(
+  '/projects/{projectId}/canvases/{canvasId}/show',
+  'get',
+  'Return a browser link and current revision; URL is relative to the installation origin and requires project access',
+  object({ id: uuid, title: string, revision: { type: 'integer' }, url: string }, [
+    'id',
+    'title',
+    'revision',
+    'url',
+  ]),
+);
+operation(
   '/projects/{projectId}/canvases/{canvasId}',
   'get',
   'Read an editable canvas; access follows project and ancestor privacy',
