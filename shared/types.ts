@@ -66,6 +66,8 @@ export interface Roadmap {
   features: RoadmapFeature[];
 }
 export interface IssueSource {
+  syncMode?: 'inbound' | 'two-way';
+  syncError?: string | null;
   provider: 'github' | 'gitea';
   integrationId: string;
   repository: string;

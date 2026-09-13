@@ -1082,9 +1082,16 @@ export async function createApp(
       const old = await checkedItem(s, u, request.params.id);
       if (expectedRevision !== undefined && expectedRevision !== (old.revision ?? 0))
         fail(409, 'Work item changed. Read it again before updating.');
+      const sourceIntegration =
+        old.source?.connected && old.source.provider === 'github'
+          ? await s.get<{ syncMode?: string }>('integrations', old.source.integrationId)
+          : null;
       if (
         old.source &&
-        ['title', 'description', 'externalUrl'].some(
+        (sourceIntegration?.syncMode === 'two-way'
+          ? ['externalUrl']
+          : ['title', 'description', 'externalUrl']
+        ).some(
           (key) => key in input && input[key as keyof typeof input] !== old[key as keyof WorkItem],
         )
       )

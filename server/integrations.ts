@@ -1,3 +1,12 @@
+import { githubApi } from './github-api.ts';
+import {
+  mergeIssueFields,
+  localIssueFields,
+  remoteIssueFields,
+  sameField,
+  type IssueFields,
+} from './github-issue-sync.ts';
+import { registerGitHubDevelopment } from './github-development.ts';
 import {
   resolveGitCredential,
   migrateGitConnections,
@@ -24,6 +33,7 @@ import {
 } from './integration-provider.ts';
 
 interface Integration {
+  syncMode?: 'inbound' | 'two-way';
   id: string;
   provider: Provider;
   name: string;
@@ -43,6 +53,8 @@ interface ImportedIssue {
   itemId: string;
   remoteId: string;
   sourceState: string;
+  base?: IssueFields;
+  published?: boolean;
 }
 interface ImportedComment {
   id: string;
@@ -56,6 +68,7 @@ interface SyncResult {
   integration: ReturnType<typeof sanitize>;
 }
 const createSchema = z.object({
+  syncMode: z.enum(['inbound', 'two-way']).default('inbound'),
   provider: z.enum(['github', 'gitea']).optional(),
   name: z.string().trim().min(1).max(100),
   baseUrl: z.string().max(2000).optional(),
@@ -143,7 +156,7 @@ export async function backfillIssueSources(ctx: AppContext) {
   });
 }
 
-/** Credentials never leave the server; synchronization is strictly inbound. */
+/** Credentials stay on the server; GitHub writes require explicit two-way configuration. */
 export async function registerIntegrations(app: FastifyInstance, ctx: AppContext) {
   const allowedOrigins = (process.env.INTEGRATION_ALLOWED_ORIGINS ?? '')
     .split(',')
@@ -204,8 +217,46 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
       const owner = await workspaceUser(store, integration.creatorId, workspaceOf(project));
       if (!owner || owner.role !== 'admin' || !(await ctx.canProject(owner, project.id, store)))
         ctx.fail(403, 'The connection owner no longer has access to this project.');
-      const result = { imported: 0, updated: 0, comments: 0 };
+      const result = { imported: 0, updated: 0, comments: 0, conflicts: 0 };
       for (const issue of remote) {
+        const publishing =
+          integration.syncMode === 'two-way' &&
+          issue.description.match(/\n\n<!-- trestl-item:([a-f0-9-]{36}) -->$/);
+        if (publishing) {
+          const pending = await store.get<{ id: string; itemId: string }>(
+            'githubPublications',
+            `${integration.id}:${publishing[1]}`,
+          );
+          const native = pending && (await store.get<WorkItem>('items', pending.itemId));
+          if (
+            pending &&
+            native &&
+            !native.source &&
+            native.projectId === integration.projectId &&
+            (await ctx.canItem(owner, native.id, store))
+          ) {
+            await store.put<ImportedIssue>('importedIssues', {
+              id: identity(integration, issue.id),
+              integrationId: integration.id,
+              itemId: native.id,
+              remoteId: issue.id,
+              sourceState: issue.closed ? 'closed' : 'open',
+              published: true,
+              base: {
+                ...remoteIssueFields(issue),
+                description: issue.description.replace(
+                  /\n\n<!-- trestl-item:[a-f0-9-]{36} -->$/,
+                  '',
+                ),
+              },
+            });
+            await store.remove('githubPublications', pending.id);
+          }
+          issue.description = issue.description.replace(
+            /\n\n<!-- trestl-item:[a-f0-9-]{36} -->$/,
+            '',
+          );
+        }
         const mappingId = identity(integration, issue.id);
         const mapping = await store.get<ImportedIssue>('importedIssues', mappingId);
         let item = mapping ? await store.get<WorkItem>('items', mapping.itemId) : null;
@@ -220,6 +271,9 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
           state: issue.closed ? 'closed' : 'open',
           lastSyncedAt: now,
           connected: true,
+          ...(integration.syncMode === 'two-way'
+            ? { syncMode: 'two-way' as const, syncError: null }
+            : {}),
         };
         if (!item) {
           item = {
@@ -253,11 +307,43 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
             itemId: item.id,
             userId: integration.creatorId,
             kind: 'event',
-            body: `Imported from ${integration.provider === 'github' ? 'GitHub' : 'Gitea'} · ${integration.repository} #${issue.number}. Repository updates own the title and description; planning fields stay local.`,
+            body: `Imported from ${integration.provider === 'github' ? 'GitHub' : 'Gitea'} · ${integration.repository} #${issue.number}. ${integration.syncMode === 'two-way' ? 'Title, description, labels, and open/closed state synchronize both ways; internal notes stay local.' : 'Repository updates own the title and description; planning fields stay local.'}`,
             createdAt: now,
           };
           await store.put('activity', event);
           result.imported++;
+        } else if (integration.syncMode === 'two-way') {
+          const remote = remoteIssueFields(issue);
+          const local = mapping?.base ? localIssueFields(item) : remote;
+          const base = mapping?.base ?? remote;
+          const { conflicts } = mergeIssueFields(base, local, remote);
+          // Preserve an edit made while provider requests were in flight. The next sync can publish it.
+          const incoming = { ...local };
+          for (const field of ['title', 'description', 'labels', 'state'] as const)
+            if (sameField(local[field], base[field]) || sameField(local[field], remote[field]))
+              Object.assign(incoming, { [field]: remote[field] });
+          const nextStatus =
+            incoming.state === localIssueFields(item).state
+              ? item.status
+              : incoming.state === 'closed'
+                ? 'done'
+                : 'todo';
+          item = {
+            ...item,
+            title: incoming.title,
+            description: incoming.description,
+            labels: incoming.labels,
+            status: nextStatus,
+            completedAt: nextStatus === 'done' ? (item.completedAt ?? now) : null,
+            externalUrl: issue.externalUrl,
+            updatedAt: now,
+          };
+          if (conflicts.length) {
+            source.syncError = `Conflicting edits: ${conflicts.join(', ')}. Choose which version to keep.`;
+            result.conflicts++;
+          }
+          await store.put('items', item);
+          result.updated++;
         } else if (
           item.title !== issue.title ||
           item.description !== issue.description ||
@@ -281,7 +367,11 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
           integrationId: integration.id,
           itemId: item.id,
           remoteId: issue.id,
+          ...(mapping?.published ? { published: true } : {}),
           sourceState: issue.closed ? 'closed' : 'open',
+          ...(integration.syncMode === 'two-way'
+            ? { base: item.source?.syncError ? mapping?.base : remoteIssueFields(issue) }
+            : {}),
         });
         const received = new Set<string>();
         for (const comment of issue.comments) {
@@ -330,7 +420,13 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
         }
       }
       // Commit sync status with the items so disconnect cannot resurrect an import.
-      const updated = { ...locked.rows[0]!.data, lastSyncedAt: ctx.now(), lastError: null };
+      const updated = {
+        ...locked.rows[0]!.data,
+        lastSyncedAt: ctx.now(),
+        lastError: result.conflicts
+          ? `${result.conflicts} issue(s) have conflicting edits. Open their tasks to resolve them.`
+          : null,
+      };
       await store.put('integrations', updated);
       // Missing remote issues are retained: providers can hide issues because access changed.
       return { ...result, integration: sanitize(updated) };
@@ -384,6 +480,77 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
         }
         throw error;
       }
+      if (integration.syncMode === 'two-way') {
+        if (!credential.githubInstallation?.issueWrite)
+          ctx.fail(400, 'Two-way sync requires a GitHub App with issue write access.');
+        for (let index = 0; index < issues.length; index++) {
+          const issue = issues[index];
+          const mapping = await ctx.store.get<ImportedIssue>(
+            'importedIssues',
+            identity(integration, issue.id),
+          );
+          if (!mapping?.base) continue;
+          const item = await ctx.store.get<WorkItem>('items', mapping.itemId);
+          const owner = await workspaceUser(
+            ctx.store,
+            integration.creatorId,
+            credential.workspaceId ?? 'default',
+          );
+          if (
+            !item ||
+            !owner ||
+            owner.disabledAt ||
+            owner.role !== 'admin' ||
+            !(await ctx.canItem(owner, item.id))
+          )
+            continue;
+          const remote = remoteIssueFields({
+            ...issue,
+            description: issue.description.replace(/\n\n<!-- trestl-item:[a-f0-9-]{36} -->$/, ''),
+          });
+          const { merged, conflicts } = mergeIssueFields(
+            mapping.base,
+            localIssueFields(item),
+            remote,
+          );
+          if (conflicts.length) continue; // applyIssues records a visible conflict while preserving both versions.
+          const changes: Record<string, unknown> = {};
+          for (const field of ['title', 'description', 'labels', 'state'] as const)
+            if (!sameField(merged[field], remote[field]))
+              changes[field === 'description' ? 'body' : field] = merged[field];
+          if (!Object.keys(changes).length) continue;
+          const currentIntegration = await ctx.store.get<Integration>(
+            'integrations',
+            integration.id,
+          );
+          const currentConnection = await ctx.store.get<GitConnection>(
+            'gitConnections',
+            credential.id,
+          );
+          if (
+            currentIntegration?.syncMode !== 'two-way' ||
+            currentIntegration.connectionId !== credential.id ||
+            !currentConnection?.githubInstallation?.issueWrite
+          )
+            ctx.fail(409, 'Issue synchronization was disconnected or reconfigured.');
+          if (mapping.published && typeof changes.body === 'string')
+            changes.body += `\n\n<!-- trestl-item:${item.id} -->`;
+          await githubApi(
+            ctx,
+            `/repos/${integration.repository}/issues/${issue.number}`,
+            token,
+            'PATCH',
+            changes,
+          );
+          issues[index] = {
+            ...issue,
+            title: merged.title,
+            description: merged.description,
+            labels: merged.labels,
+            closed: merged.state === 'closed',
+          };
+        }
+      }
       // Recheck owner authorization after network work, before writing fetched content.
       const project = await ctx.store.get<Project>('projects', integration.projectId);
       const owner =
@@ -425,6 +592,338 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
     );
     return visible.filter(Boolean);
   });
+  app.post<{ Params: { id: string } }>(
+    '/api/v1/github/items/:id/issue-comments',
+    async (request) => {
+      const user = ctx.requireUser(request);
+      if (request.tokenScope || !(await ctx.canItem(user, request.params.id)))
+        ctx.fail(404, 'Work item not found.');
+      const input = z
+        .object({ body: z.string().trim().min(1).max(40000), requestId: z.string().uuid() })
+        .strict()
+        .parse(request.body);
+      const item = (await ctx.store.get<WorkItem>('items', request.params.id))!;
+      const integration =
+        item.source &&
+        (await ctx.store.get<Integration>('integrations', item.source.integrationId));
+      if (!integration || integration.syncMode !== 'two-way')
+        ctx.fail(400, 'Connect this issue with two-way sync before posting to GitHub.');
+      const credential = await ownGitConnection(ctx, user.id, integration.connectionId ?? '');
+      if (!credential.githubInstallation?.issueWrite)
+        ctx.fail(400, 'Issue write permission is required.');
+      const { token } = await resolveGitCredential(ctx, credential);
+      const id = createHash('sha256')
+        .update(`${user.id}:${item.id}:${input.requestId}`)
+        .digest('hex');
+      const fingerprint = createHash('sha256').update(input.body).digest('hex');
+      const previous = await ctx.db.transaction(async (db) => {
+        const store = makeStore(db);
+        await db.query(
+          "SELECT id FROM entities WHERE collection='system' AND id='mutation-lock' FOR UPDATE",
+        );
+        const current = await store.get<{ id: string; fingerprint: string; sent?: boolean }>(
+          'githubCommentPosts',
+          id,
+        );
+        if (current) {
+          if (current.fingerprint !== fingerprint)
+            ctx.fail(409, 'This comment retry contains different text.');
+          if (!current.sent)
+            ctx.fail(
+              409,
+              'This comment may already have reached GitHub. Check the issue before posting again.',
+            );
+          return true;
+        }
+        await store.put('githubCommentPosts', {
+          id,
+          fingerprint,
+          itemId: item.id,
+          createdAt: ctx.now(),
+          sent: false,
+        });
+        return false;
+      });
+      if (previous) return { posted: true };
+      const body = `**${user.name.replace(/[\\*_<>`]/g, '')} via Trestl**\n\n${input.body}`;
+      const remote = await githubApi<{ id: number; created_at: string; user: { login: string } }>(
+        ctx,
+        `/repos/${integration.repository}/issues/${item.source!.number}/comments`,
+        token,
+        'POST',
+        { body },
+      );
+      await ctx.db.transaction(async (db) => {
+        const store = makeStore(db);
+        await db.query(
+          "SELECT id FROM entities WHERE collection='system' AND id='mutation-lock' FOR UPDATE",
+        );
+        const mappingId = identity(integration, `comment:${remote.id}`);
+        const existing = await store.get<ImportedComment>('importedComments', mappingId);
+        const activityId = existing?.activityId ?? ctx.id();
+        if (await store.get('items', item.id)) {
+          await store.put<Activity>('activity', {
+            id: activityId,
+            itemId: item.id,
+            userId: user.id,
+            kind: 'comment',
+            body,
+            createdAt: remote.created_at,
+            source: { provider: 'github', author: remote.user.login },
+          });
+          await store.put<ImportedComment>('importedComments', {
+            id: mappingId,
+            itemId: item.id,
+            activityId,
+          });
+        }
+        await store.put('githubCommentPosts', {
+          id,
+          fingerprint,
+          itemId: item.id,
+          sent: true,
+          createdAt: ctx.now(),
+        });
+      });
+      return { posted: true };
+    },
+  );
+  app.get<{ Params: { id: string } }>(
+    '/api/v1/github/items/:id/publish-options',
+    async (request) => {
+      const user = ctx.requireUser(request);
+      if (!(await ctx.canItem(user, request.params.id))) ctx.fail(404, 'Work item not found.');
+      const item = (await ctx.store.get<WorkItem>('items', request.params.id))!;
+      if (item.source) return [];
+      return (await ctx.store.list<Integration>('integrations'))
+        .filter((i) => i.syncMode === 'two-way' && i.projectId === item.projectId)
+        .map((i) => ({ id: i.id, repository: i.repository }));
+    },
+  );
+  app.post<{ Params: { id: string } }>('/api/v1/github/items/:id/publish', async (request) => {
+    const user = ctx.requireUser(request);
+    if (request.tokenScope || !(await ctx.canItem(user, request.params.id)))
+      ctx.fail(404, 'Work item not found.');
+    const { integrationId } = z
+      .object({ integrationId: z.string().max(200) })
+      .strict()
+      .parse(request.body);
+    const integration = await authorized(user, integrationId);
+    const item = (await ctx.store.get<WorkItem>('items', request.params.id))!;
+    if (
+      item.source ||
+      item.projectId !== integration.projectId ||
+      integration.syncMode !== 'two-way'
+    )
+      ctx.fail(400, 'Choose a two-way GitHub connection for an unlinked task in this project.');
+    const credential = await ownGitConnection(ctx, user.id, integration.connectionId ?? '');
+    if (!credential.githubInstallation?.issueWrite)
+      ctx.fail(400, 'Issue write access is required.');
+    const owner = await workspaceUser(ctx.store, integration.creatorId, workspaceOf(user));
+    if (!owner || owner.disabledAt || !(await ctx.canItem(owner, item.id)))
+      ctx.fail(403, 'The integration owner must be able to access this task.');
+    const { token } = await resolveGitCredential(ctx, credential);
+    const publishId = `${integration.id}:${item.id}`;
+    await ctx.db.transaction(async (db) => {
+      const store = makeStore(db);
+      await db.query(
+        "SELECT id FROM entities WHERE collection='system' AND id='mutation-lock' FOR UPDATE",
+      );
+      const current = await store.get<WorkItem>('items', item.id);
+      if (!current || current.source || !(await ctx.canItem(user, item.id, store)))
+        ctx.fail(409, 'The task changed during publishing.');
+      const pending = await store.get<{ id: string; createdAt: string }>(
+        'githubPublications',
+        publishId,
+      );
+      if (pending)
+        ctx.fail(
+          409,
+          'A publish attempt already exists. Synchronize the repository to recover its GitHub issue before trying again.',
+        );
+      await store.put('githubPublications', {
+        id: publishId,
+        itemId: item.id,
+        integrationId,
+        createdAt: ctx.now(),
+      });
+    });
+    const remote = await githubApi<{ id: number; number: number }>(
+      ctx,
+      `/repos/${integration.repository}/issues`,
+      token,
+      'POST',
+      {
+        title: item.title,
+        body: `${item.description}\n\n<!-- trestl-item:${item.id} -->`,
+        labels: item.labels,
+      },
+    );
+    if (!Number.isSafeInteger(remote.id) || !Number.isSafeInteger(remote.number))
+      ctx.fail(502, 'GitHub returned an invalid issue. Synchronize the repository to recover it.');
+    await ctx.db.transaction(async (db) => {
+      const store = makeStore(db);
+      await db.query(
+        "SELECT id FROM entities WHERE collection='system' AND id='mutation-lock' FOR UPDATE",
+      );
+      const current = await store.get<WorkItem>('items', item.id);
+      if (
+        !current ||
+        current.source ||
+        current.projectId !== integration.projectId ||
+        !(await store.get('integrations', integration.id))
+      )
+        ctx.fail(
+          409,
+          'The task or connection was removed while publishing. The issue exists on GitHub.',
+        );
+      const url = `https://github.com/${integration.repository}/issues/${remote.number}`;
+      await store.put('items', {
+        ...current,
+        externalUrl: url,
+        source: {
+          provider: 'github',
+          integrationId,
+          repository: integration.repository,
+          number: remote.number,
+          url,
+          state: 'open',
+          lastSyncedAt: ctx.now(),
+          connected: true,
+          syncMode: 'two-way',
+        },
+      });
+      await store.put<ImportedIssue>('importedIssues', {
+        id: identity(integration, String(remote.id)),
+        integrationId,
+        itemId: item.id,
+        remoteId: String(remote.id),
+        sourceState: 'open',
+        base: { ...localIssueFields(item), state: 'open' },
+        published: true,
+      });
+      await store.remove('githubPublications', publishId);
+      await store.put<Activity>('activity', {
+        id: ctx.id(),
+        itemId: item.id,
+        userId: user.id,
+        kind: 'event',
+        body: `Published to GitHub: ${integration.repository} #${remote.number}`,
+        createdAt: ctx.now(),
+      });
+    });
+    return { published: true };
+  });
+  async function conflictContext(request: FastifyRequest, itemId: string) {
+    const user = ctx.requireUser(request);
+    if (request.tokenScope || !(await ctx.canItem(user, itemId)))
+      ctx.fail(404, 'Work item not found.');
+    const item = (await ctx.store.get<WorkItem>('items', itemId))!;
+    const integration =
+      item.source && (await ctx.store.get<Integration>('integrations', item.source.integrationId));
+    if (!integration || integration.syncMode !== 'two-way')
+      ctx.fail(400, 'This issue does not have two-way synchronization.');
+    const connection = await ownGitConnection(ctx, user.id, integration.connectionId ?? '');
+    const { token } = await resolveGitCredential(ctx, connection);
+    const remote = await githubApi<{
+      id: number;
+      title: string;
+      body: string | null;
+      state: string;
+      labels: { name: string }[];
+    }>(ctx, `/repos/${integration.repository}/issues/${item.source!.number}`, token);
+    const fields: IssueFields = {
+      title: remote.title,
+      description: (remote.body ?? '').replace(/\n\n<!-- trestl-item:[a-f0-9-]{36} -->$/, ''),
+      state: remote.state === 'closed' ? 'closed' : 'open',
+      labels: remote.labels.map((l) => l.name).sort(),
+    };
+    return {
+      item,
+      integration,
+      remote,
+      fields,
+      fingerprint: createHash('sha256').update(JSON.stringify(fields)).digest('hex'),
+    };
+  }
+  app.get<{ Params: { id: string } }>(
+    '/api/v1/github/items/:id/issue-conflict',
+    async (request) => {
+      const { item, fields, fingerprint } = await conflictContext(request, request.params.id);
+      return {
+        local: localIssueFields(item),
+        remote: fields,
+        fingerprint,
+        revision: item.revision ?? 0,
+      };
+    },
+  );
+  app.post<{ Params: { id: string } }>(
+    '/api/v1/github/items/:id/issue-conflict',
+    async (request) => {
+      const input = z
+        .object({
+          choice: z.enum(['local', 'remote']),
+          fingerprint: z.string(),
+          revision: z.number().int(),
+        })
+        .strict()
+        .parse(request.body);
+      const { item, integration, remote, fields, fingerprint } = await conflictContext(
+        request,
+        request.params.id,
+      );
+      if (input.fingerprint !== fingerprint)
+        ctx.fail(409, 'The GitHub issue changed. Review the latest versions before resolving.');
+      await ctx.db.transaction(async (db) => {
+        const store = makeStore(db);
+        await db.query(
+          "SELECT id FROM entities WHERE collection='system' AND id='mutation-lock' FOR UPDATE",
+        );
+        const current = await store.get<WorkItem>('items', item.id);
+        const currentIntegration = await store.get<Integration>('integrations', integration.id);
+        if (
+          !current ||
+          (current.revision ?? 0) !== input.revision ||
+          currentIntegration?.syncMode !== 'two-way' ||
+          !(await ctx.canItem(ctx.requireUser(request), item.id, store))
+        )
+          ctx.fail(409, 'The work item or connection changed. Review the latest versions.');
+        const mapping = await store.get<ImportedIssue>(
+          'importedIssues',
+          identity(integration, String(remote.id)),
+        );
+        if (!mapping || mapping.itemId !== item.id)
+          ctx.fail(409, 'The issue mapping changed. Synchronize again.');
+        const next =
+          input.choice === 'remote'
+            ? {
+                ...current,
+                title: fields.title,
+                description: fields.description,
+                labels: fields.labels,
+                status: fields.state === 'closed' ? ('done' as const) : ('todo' as const),
+                completedAt: fields.state === 'closed' ? ctx.now() : null,
+              }
+            : current;
+        await store.put('items', {
+          ...next,
+          source: { ...next.source!, syncError: null },
+          updatedAt: ctx.now(),
+        });
+        await store.put('importedIssues', { ...mapping, base: fields });
+        await store.put<Activity>('activity', {
+          id: ctx.id(),
+          itemId: item.id,
+          userId: ctx.requireUser(request).id,
+          kind: 'event',
+          body: `Resolved GitHub sync conflict using the ${input.choice === 'local' ? 'Trestl' : 'GitHub'} version.`,
+          createdAt: ctx.now(),
+        });
+      });
+      return { resolved: true };
+    },
+  );
   app.post('/api/v1/integrations', async (request, reply) => {
     const user = admin(request);
     const parsed = createSchema.safeParse(request.body);
@@ -434,6 +933,11 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
     const saved = data.connectionId
       ? await ownGitConnection(ctx, user.id, data.connectionId)
       : null;
+    if (data.syncMode === 'two-way' && !saved?.githubInstallation?.issueWrite)
+      ctx.fail(
+        400,
+        'Choose a GitHub App created with issue write access for two-way synchronization.',
+      );
     if (!saved && (!data.provider || !data.token))
       ctx.fail(400, 'Choose a saved connection, or provide a provider and token.');
     if (
@@ -497,6 +1001,7 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
       ...source,
       id,
       name: data.name,
+      syncMode: data.syncMode,
       projectId: data.projectId,
       creatorId: user.id,
       connectionId,
@@ -546,14 +1051,35 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
     sync(await authorized(admin(request), request.params.id)),
   );
 
+  registerGitHubDevelopment(app, ctx, async (connectionId, repository) => {
+    for (const integration of await ctx.store.list<Integration>('integrations')) {
+      if (
+        integration.connectionId === connectionId &&
+        integration.repository.toLowerCase() === repository.toLowerCase()
+      )
+        await sync(integration);
+    }
+  });
+
   // Explicit opt-in reconciliation, minimum one minute, with one process owning scheduling.
-  const intervalMs = Number(process.env.INTEGRATION_SYNC_INTERVAL_MS ?? 0);
+  const configuredInterval = Number(process.env.INTEGRATION_SYNC_INTERVAL_MS ?? 0);
+  const intervalMs = configuredInterval >= 60_000 ? configuredInterval : 300_000;
   if (Number.isFinite(intervalMs) && intervalMs >= 60_000) {
     let stopped = false;
     const timer = setInterval(async () => {
       if (stopped || syncing) return;
       try {
         for (const integration of await ctx.store.list<Integration>('integrations')) {
+          if (
+            configuredInterval < 60_000 &&
+            integration.syncMode !== 'two-way' &&
+            !(
+              integration.connectionId &&
+              (await ctx.store.get<GitConnection>('gitConnections', integration.connectionId))
+                ?.githubInstallation?.managedAppId
+            )
+          )
+            continue;
           if (stopped || syncing) break;
           const project = await ctx.store.get<Project>('projects', integration.projectId);
           const owner =

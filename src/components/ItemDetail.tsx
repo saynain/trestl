@@ -1,3 +1,5 @@
+import GitHubIssueSync from './GitHubIssueSync';
+import ItemDevelopment from './ItemDevelopment';
 import { assigneeOptions } from '../lib/assignees';
 import { useShortcuts, activateItemControl } from '../lib/keyboard';
 import { itemActions, type ItemAction } from '../lib/shortcuts';
@@ -292,6 +294,7 @@ export default function ItemDetail({
     }
   }
   const source = item?.source;
+  const sourceReadOnly = !!source && (source.syncMode !== 'two-way' || !source.connected);
   const providerName = source?.provider === 'github' ? 'GitHub' : 'Gitea';
   const SourceIcon = source?.provider === 'github' ? Github : GitFork;
   const project = data.projects.find((p) => p.id === item?.projectId);
@@ -301,7 +304,7 @@ export default function ItemDetail({
   function act(action: ItemAction) {
     if (!item || saving) return false;
     if (action === 'title' || action === 'description') {
-      if (source) return false;
+      if (sourceReadOnly) return false;
       setTitle(item.title);
       setDescription(item.description);
       setEditField(action);
@@ -414,7 +417,7 @@ export default function ItemDetail({
               >
                 <Link2 size={16} />
               </button>
-              {!source && (
+              {!sourceReadOnly && (
                 <button
                   className="icon-button"
                   aria-label="Edit title and description"
@@ -471,7 +474,7 @@ export default function ItemDetail({
                 </div>
               </section>
             )}
-            {editing && !source ? (
+            {editing && !sourceReadOnly ? (
               <form
                 className="item-inline-editor"
                 onKeyDown={(event) => {
@@ -536,7 +539,9 @@ export default function ItemDetail({
                 <h1 className="item-detail-title">{item.title}</h1>
                 {item.description ? (
                   <MarkdownBody
-                    onChange={source ? undefined : (description) => void update({ description })}
+                    onChange={
+                      sourceReadOnly ? undefined : (description) => void update({ description })
+                    }
                     saving={saving}
                   >
                     {item.description}
@@ -559,12 +564,17 @@ export default function ItemDetail({
             )}
             {source && (
               <div className="item-source-ownership">
-                <span>Title and description are managed in {providerName}.</span>
+                <span>
+                  {source.syncMode === 'two-way'
+                    ? 'Title, description, labels, and issue state sync both ways.'
+                    : `Title and description are managed in ${providerName}.`}
+                </span>
                 <a href={source.url} target="_blank" rel="noopener noreferrer">
                   Edit in {providerName} <ArrowUpRight size={12} />
                 </a>
               </div>
             )}
+            {source?.syncMode === 'two-way' && <GitHubIssueSync item={item} onChange={reload} />}
             {source?.state === 'closed' && item.status !== 'done' && item.status !== 'canceled' && (
               <div className="item-source-notice" role="note">
                 <CircleAlert size={15} aria-hidden="true" />
@@ -839,6 +849,7 @@ export default function ItemDetail({
                 )}
               </section>
             )}
+            <ItemDevelopment key={item.id} item={item} onChange={reload} />
             <section className="item-activity">
               <div className="item-section-heading">
                 <h3>Activity</h3>

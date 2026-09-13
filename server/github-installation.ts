@@ -31,7 +31,13 @@ export async function installationCredential(ctx: AppContext, c: GitConnection) 
     {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ permissions: { issues: 'read', metadata: 'read' } }),
+      body: JSON.stringify({
+        permissions: {
+          issues: saved.issueWrite ? 'write' : 'read',
+          metadata: 'read',
+          ...(saved.development ? { pull_requests: 'read', contents: 'read', checks: 'read' } : {}),
+        },
+      }),
       signal: AbortSignal.timeout(10000),
       redirect: 'error',
     },

@@ -1,3 +1,4 @@
+import { registerGitHubOnboarding } from './github-onboarding.ts';
 import { installationCredential, registerGitHubInstallation } from './github-installation.ts';
 import { workspaceUser, workspaceOf } from './workspaces.ts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -22,7 +23,16 @@ import {
 export interface GitConnection {
   shared?: boolean;
   workspaceId?: string;
-  githubInstallation?: { appId: string; installationId: string; encryptedPrivateKey: string };
+  githubInstallation?: {
+    appId: string;
+    installationId: string;
+    encryptedPrivateKey: string;
+    managedAppId?: string;
+    account?: string;
+    settingsUrl?: string;
+    development?: boolean;
+    issueWrite?: boolean;
+  };
   id: string;
   userId: string;
   provider: Provider;
@@ -56,6 +66,15 @@ export function publicGitConnection(connection: GitConnection) {
     createdAt: connection.createdAt,
     updatedAt: connection.updatedAt,
     configured: true,
+    development: !!connection.githubInstallation?.development,
+    issueWrite: !!connection.githubInstallation?.issueWrite,
+    githubInstallation: connection.githubInstallation
+      ? {
+          managedAppId: connection.githubInstallation.managedAppId,
+          account: connection.githubInstallation.account,
+          settingsUrl: connection.githubInstallation.settingsUrl,
+        }
+      : undefined,
     authType: connection.githubInstallation
       ? 'github-installation'
       : connection.githubApp
@@ -163,6 +182,7 @@ export async function registerGitConnections(app: FastifyInstance, ctx: AppConte
   });
   await registerGitHubApp(app, ctx);
   registerGitHubInstallation(app, ctx);
+  registerGitHubOnboarding(app, ctx);
   app.get('/api/v1/git/connections', async (request) => {
     const user = ctx.requireUser(request);
     return (await ctx.store.list<GitConnection>('gitConnections'))
@@ -279,6 +299,14 @@ export async function registerGitConnections(app: FastifyInstance, ctx: AppConte
         "DELETE FROM entities WHERE collection='githubAuthorizationStates' AND data->>'userId'=$1 AND (data->>'connectionId' IS NULL OR data->>'connectionId'=$2)",
         [user.id, request.params.id],
       );
+      for (const repo of await store.list<{ id: string; connectionId: string }>(
+        'githubRepositories',
+      )) {
+        if (repo.connectionId === request.params.id) {
+          await store.remove('githubRepositories', repo.id);
+          await store.remove('githubJobs', repo.id);
+        }
+      }
       await store.remove('gitConnections', request.params.id);
     });
     return reply.code(204).send();
