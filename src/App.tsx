@@ -533,11 +533,7 @@ export default function App() {
                               : 'Time-bound'}
                         </span>
                         <span>·</span>
-                        {project.visibility === 'private' ? (
-                          <ProjectAccess key={project.id} project={project} />
-                        ) : (
-                          <span>Workspace</span>
-                        )}
+                        <ProjectAccess key={project.id} project={project} />
                         <span>·</span>
                       </>
                     )}

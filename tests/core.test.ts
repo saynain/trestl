@@ -889,3 +889,59 @@ test('installation inbox numbering is shared while private items stay private', 
     await app.close();
   }
 });
+
+test('workspace project membership identifies the team without restricting collaboration', async () => {
+  const app = await createApp({ dataDir: ':memory:', integrations: false });
+  try {
+    const lead = await setup(app);
+    const owner = client(app, lead.cookie);
+    const response = await owner('POST', '/users', {
+      name: 'Teammate',
+      email: 'team@public.test',
+      password: 'sharing-password',
+    });
+    assert.equal(response.statusCode, 201);
+    const user = response.json();
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: { email: user.email, password: 'sharing-password' },
+    });
+    const teammate = client(app, `${login.cookies[0].name}=${login.cookies[0].value}`);
+    const created = await owner('POST', '/projects', {
+      key: 'TEAM',
+      name: 'Public team',
+      visibility: 'workspace',
+      memberIds: [user.id, user.id, lead.user.id],
+    });
+    assert.equal(created.statusCode, 201);
+    const path = `/projects/${created.json().id}`;
+    assert.deepEqual(created.json().memberIds, [user.id]);
+    assert.equal((await teammate('PATCH', path, { memberIds: [] })).statusCode, 403);
+    const removed = await owner('PATCH', path, { memberIds: [] });
+    assert.equal(removed.statusCode, 200);
+    assert.deepEqual(removed.json().memberIds, []);
+    assert.equal((await teammate('GET', path)).statusCode, 200);
+    assert.equal(
+      (await teammate('PATCH', path, { description: 'Still collaborating' })).statusCode,
+      200,
+    );
+    assert.equal((await teammate('PATCH', path, { memberIds: [user.id] })).statusCode, 403);
+    assert.equal((await owner('PATCH', path, { memberIds: [user.id] })).statusCode, 200);
+    for (const visibility of ['private', 'workspace']) {
+      const changed = await owner('PATCH', path, { visibility });
+      assert.equal(changed.statusCode, 200);
+      assert.deepEqual(changed.json().memberIds, [user.id]);
+      assert.equal((await teammate('GET', path)).statusCode, 200);
+    }
+    const parent = await owner('POST', '/projects', {
+      key: 'HIDDEN',
+      name: 'Private parent',
+      visibility: 'private',
+    });
+    assert.equal((await owner('PATCH', path, { parentId: parent.json().id })).statusCode, 200);
+    assert.equal((await teammate('GET', path)).statusCode, 404);
+  } finally {
+    await app.close();
+  }
+});
