@@ -3,6 +3,7 @@ import {
   registerCliDeviceEndpoints,
   registerCliApproval,
 } from './cli-login.ts';
+import { compareProjectUpdates } from '../shared/project-updates.ts';
 import { addMentionRelations } from './mentions.ts';
 import { authSettings, configuredProxy, registerAuthSettings } from './auth-settings.ts';
 import { createInstallation, installation, migrateInstallation } from './installation.ts';
@@ -44,6 +45,7 @@ import type {
   ProjectCanvas,
   CanvasCollection,
   Project,
+  ProjectUpdate,
   WorkItem,
   Activity,
   ResourceLink,
@@ -711,6 +713,7 @@ export async function createApp(
       allLinks,
       allMilestones,
       allRelations,
+      allUpdates,
       allProjectRelations,
       allNotifications,
     ] = await Promise.all([
@@ -721,6 +724,7 @@ export async function createApp(
       store.list<ResourceLink>('links'),
       store.list<Milestone>('milestones'),
       store.list<Relation>('relations'),
+      store.list<ProjectUpdate>('projectUpdates'),
       store.list<ProjectRelation>('projectRelations'),
       store.list<MentionNotification>('notifications'),
     ]);
@@ -769,6 +773,7 @@ export async function createApp(
       workspaces: (await userWorkspaces(store, user.id)).filter((w) => w.id === workspaceOf(user)),
       users: users.filter((member) => sameWorkspace(user, member)),
       projects,
+      projectUpdates: allUpdates.filter((update) => projectVisible(update.projectId)),
       items,
       views: allViews.filter((view) => view.userId === user.id && sameWorkspace(user, view)),
       links: allLinks.filter(
@@ -914,6 +919,34 @@ export async function createApp(
   app.get<{ Params: { id: string } }>('/api/v1/projects/:id', async (request) =>
     checkedProject(store, requireUser(request), request.params.id),
   );
+  app.get<{ Params: { id: string } }>('/api/v1/projects/:id/updates', async (request) => {
+    const project = await checkedProject(store, requireUser(request), request.params.id);
+    const updates = (await store.list<ProjectUpdate>('projectUpdates'))
+      .filter((update) => update.projectId === project.id)
+      .sort(compareProjectUpdates);
+    return { data: updates };
+  });
+  app.post<{ Params: { id: string } }>('/api/v1/projects/:id/updates', async (request, reply) => {
+    const user = requireUser(request);
+    const input = z
+      .object({
+        health: z.enum(['on_track', 'at_risk', 'off_track']),
+        body: z.string().trim().min(1).max(20000),
+      })
+      .parse(request.body);
+    const update = await mutate(async (s) => {
+      const project = await checkedProject(s, user, request.params.id);
+      return s.put<ProjectUpdate>('projectUpdates', {
+        id: id(),
+        projectId: project.id,
+        authorId: user.id,
+        health: input.health,
+        body: input.body,
+        createdAt: now(),
+      });
+    });
+    return reply.code(201).send(update);
+  });
   app.patch<{ Params: { id: string } }>('/api/v1/projects/:id', async (request) => {
     const u = requireUser(request),
       input = projectInput.partial().parse(request.body);
@@ -974,6 +1007,8 @@ export async function createApp(
         if (canvas.projectId === p.id) await s.remove('canvases', canvas.id);
       for (const collection of await s.list<CanvasCollection>('canvasCollections'))
         if (collection.projectId === p.id) await s.remove('canvasCollections', collection.id);
+      for (const update of await s.list<ProjectUpdate>('projectUpdates'))
+        if (update.projectId === p.id) await s.remove('projectUpdates', update.id);
       for (const r of await s.list<ProjectRelation>('projectRelations'))
         if (r.projectId === p.id) await s.remove('projectRelations', r.id);
       await s.remove('projects', p.id);

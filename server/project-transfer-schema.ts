@@ -91,6 +91,23 @@ export const projectPackage = z
           .strip(),
       )
       .max(100000),
+    projectUpdates: z
+      .array(
+        z
+          .object({
+            id,
+            projectId: id,
+            authorId: id,
+            health: z.enum(['on_track', 'at_risk', 'off_track']),
+            body: z.string().trim().min(1).max(20000),
+            createdAt: stamp,
+            sortKey: id.optional(),
+            importedFrom: z.object({ authorName: title }).strict(),
+          })
+          .strip(),
+      )
+      .max(100000)
+      .default([]),
     relations: z
       .array(
         z.object({ id, itemId: id, targetId: id, kind: z.enum(['blocks', 'related']) }).strict(),
@@ -156,6 +173,7 @@ export function validatePackage(data: ProjectPackage): string | null {
     data.projects,
     data.items,
     data.activity,
+    data.projectUpdates,
     data.relations,
     data.links,
     data.milestones,
@@ -206,6 +224,8 @@ export function validatePackage(data: ProjectPackage): string | null {
     if (i.startDate && i.dueDate && i.startDate > i.dueDate)
       return 'Work item dates are out of order';
   }
+  if (data.projectUpdates.some((u) => !projects.has(u.projectId) || !people.has(u.authorId)))
+    return 'Project update references missing project or person';
   if (data.activity.some((a) => !items.has(a.itemId) || !people.has(a.userId)))
     return 'Activity references missing work item or person';
   if (

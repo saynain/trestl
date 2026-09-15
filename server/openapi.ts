@@ -238,6 +238,26 @@ schemas.ItemDetail = {
     links: { type: 'array', items: ref('ResourceLink') },
   },
 };
+schemas.ProjectUpdate = {
+  type: 'object',
+  required: ['id', 'projectId', 'authorId', 'health', 'body', 'createdAt'],
+  properties: {
+    importedFrom: {
+      type: 'object',
+      readOnly: true,
+      description: 'Original author name from an imported file; not a verified local identity.',
+      properties: { authorName: string },
+      required: ['authorName'],
+    },
+    sortKey: { ...uuid, readOnly: true },
+    id: uuid,
+    projectId: uuid,
+    authorId: uuid,
+    health: { type: 'string', enum: ['on_track', 'at_risk', 'off_track'] },
+    body: { type: 'string', minLength: 1, maxLength: 20000 },
+    createdAt: { type: 'string', format: 'date-time' },
+  },
+};
 schemas.MentionNotification = {
   type: 'object',
   properties: {
@@ -262,6 +282,7 @@ schemas.Bootstrap = {
     user: ref('User'),
     users: { type: 'array', items: ref('User') },
     projects: { type: 'array', items: ref('Project') },
+    projectUpdates: { type: 'array', items: ref('ProjectUpdate') },
     items: { type: 'array', items: ref('WorkItem') },
     views: { type: 'array', items: ref('SavedView') },
     links: { type: 'array', items: ref('ResourceLink') },
@@ -457,6 +478,26 @@ operation(
       features: { type: 'array', maxItems: 100, items: ref('RoadmapFeature') },
     },
   },
+);
+operation(
+  '/projects/{id}/updates',
+  'get',
+  'Read project health updates, newest first; requires project access',
+  object({ data: { type: 'array', items: ref('ProjectUpdate') } }),
+);
+operation(
+  '/projects/{id}/updates',
+  'post',
+  'Post a health update as the signed-in user; requires project access',
+  ref('ProjectUpdate'),
+  object(
+    {
+      health: { type: 'string', enum: ['on_track', 'at_risk', 'off_track'] },
+      body: { type: 'string', minLength: 1, maxLength: 20000 },
+    },
+    ['health', 'body'],
+  ),
+  { created: true },
 );
 const idempotencyParameter = {
   name: 'Idempotency-Key',

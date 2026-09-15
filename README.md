@@ -15,6 +15,7 @@ still developing.
 - Capture private tasks, ideas, and follow-ups in your personal inbox.
 - Organize nested projects and work in lists, boards, and saved views.
 - Plan dates, dependencies, milestones, Gantt schedules, and project roadmaps.
+- Post project health updates and review active projects together in a weekly meeting.
 - Keep diagrams in project canvases with the embedded Excalidraw editor.
 - Collaborate through project sharing, assignments, and internal discussions.
 - Link GitHub/Gitea issues and Confluence documentation.
@@ -35,6 +36,22 @@ trestl auth status --profile work
 ```
 
 Sign in in your browser and approve the code displayed in your terminal. Your CLI uses the same user and permissions as the app. Use `--scope read` for read-only access. See the [CLI guide](cli/README.md) for Windows checksums, GHCR installation, automation and token revocation. Downloads require access while the repository/packages are private.
+
+### Project updates and weekly review
+
+Open a project's **Overview → Write update** to share progress, blockers, and next steps
+with an **On track**, **At risk**, or **Off track** health status. The latest update appears
+above the project description; expand **Previous updates** to read its history.
+Health is independent of the project's lifecycle status.
+
+Open **All projects → Weekly review** for projects whose status is **Active**, including
+active subprojects. The review shows the latest update, author, owner, and target date,
+with off-track and at-risk projects first. Search by project name or key, filter by health,
+or choose **Needs update** for missing updates and those at least seven days old.
+You can write an update directly from the review. Existing project permissions apply.
+
+Updates are stored in the installation database and included in portable project transfers.
+Imported updates retain their original health, text, date, and author name, labeled as imported history.
 
 ## Choose how to run it
 

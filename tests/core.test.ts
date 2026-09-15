@@ -737,14 +737,14 @@ test('bootstrap uses bounded database reads while resolving large nested and mal
     assert.equal(visible.items.length, 51);
     assert.equal(visible.projects.length, 1);
     assert.ok(
-      reads <= 16,
-      `Bootstrap used ${reads} queries; expected at most five authentication/configuration reads, nine collection reads and two installation reads`,
+      reads <= 17,
+      `Bootstrap used ${reads} queries; expected at most five authentication/configuration reads, ten collection reads and two installation reads`,
     );
     reads = 0;
     const own = (await api('GET', '/bootstrap')).json();
     assert.equal(own.items.length, 102);
     assert.equal(own.projects.length, 2);
-    assert.ok(reads <= 16);
+    assert.ok(reads <= 17);
   } finally {
     await app.close();
   }
