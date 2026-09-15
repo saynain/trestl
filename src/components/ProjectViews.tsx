@@ -341,6 +341,29 @@ export function Overview({ project, items }: { project: Project; items: WorkItem
         </section>
       </div>
       <aside className="overview-aside">
+        {!!data.projectRelations?.some((r) => r.projectId === project.id) && (
+          <section>
+            <h3>Related work items</h3>
+            {data.projectRelations
+              .filter((r) => r.projectId === project.id)
+              .map((relation) => {
+                const item = data.items.find((i) => i.id === relation.itemId);
+                return item ? (
+                  <button
+                    className="upcoming-item"
+                    key={relation.id}
+                    onClick={() => openItem(item.id)}
+                  >
+                    <span>
+                      <StatusIcon status={item.status} />
+                      <small>{item.identifier}</small>
+                    </span>
+                    <strong>{item.title}</strong>
+                  </button>
+                ) : null;
+              })}
+          </section>
+        )}
         <h3>Coming up</h3>
         {active
           .filter((i) => i.dueDate)

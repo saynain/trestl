@@ -4,6 +4,7 @@ import {
   registerCliApproval,
 } from './cli-login.ts';
 import { compareProjectUpdates } from '../shared/project-updates.ts';
+import { addMentionRelations } from './mentions.ts';
 import { authSettings, configuredProxy, registerAuthSettings } from './auth-settings.ts';
 import { createInstallation, installation, migrateInstallation } from './installation.ts';
 import {
@@ -51,6 +52,8 @@ import type {
   SavedView,
   Milestone,
   Relation,
+  ProjectRelation,
+  MentionNotification,
 } from '../shared/types.ts';
 
 const id = randomUUID;
@@ -355,6 +358,27 @@ export async function createApp(
       return fail(404, 'Project not found');
     return project;
   };
+  const saveMentions = (
+    s: Store,
+    u: User,
+    item: WorkItem,
+    body: string,
+    previous = '',
+    activityId: string | null = null,
+  ) =>
+    addMentionRelations(
+      s,
+      u,
+      item,
+      body,
+      previous,
+      {
+        item: (targetId) => checkedItem(s, u, targetId),
+        project: (projectId) => checkedProject(s, u, projectId),
+        recipientCanRead: (recipient) => canItemIn(s, recipient, item.id),
+      },
+      activityId,
+    );
   const profileCookie = (userId: string) => `trestl_profile_${userId}`;
   const cookieOptions = {
     path: '/',
@@ -690,6 +714,8 @@ export async function createApp(
       allMilestones,
       allRelations,
       allUpdates,
+      allProjectRelations,
+      allNotifications,
     ] = await Promise.all([
       store.list<Project>('projects'),
       store.list<WorkItem>('items'),
@@ -699,6 +725,8 @@ export async function createApp(
       store.list<Milestone>('milestones'),
       store.list<Relation>('relations'),
       store.list<ProjectUpdate>('projectUpdates'),
+      store.list<ProjectRelation>('projectRelations'),
+      store.list<MentionNotification>('notifications'),
     ]);
     const projectsById = new Map(allProjects.map((project) => [project.id, project]));
     const itemsById = new Map(allItems.map((item) => [item.id, item]));
@@ -757,10 +785,54 @@ export async function createApp(
       relations: allRelations.filter(
         (relation) => itemVisible(relation.itemId) && itemVisible(relation.targetId),
       ),
+      projectRelations: allProjectRelations.filter(
+        (r) => itemVisible(r.itemId) && projectVisible(r.projectId),
+      ),
+      notifications: allNotifications
+        .filter((n) => n.recipientId === user.id && sameWorkspace(n, user) && itemVisible(n.itemId))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)),
       milestones: allMilestones.filter((milestone) => projectVisible(milestone.projectId)),
     };
   };
   app.get('/api/v1/bootstrap', async (request) => visibleData(requireUser(request)));
+  app.get('/api/v1/notifications', async (request) => ({
+    data: (await visibleData(requireUser(request))).notifications,
+  }));
+  app.patch<{ Params: { id: string } }>('/api/v1/notifications/:id', async (request) => {
+    const input = z.object({ read: z.boolean() }).strict().parse(request.body);
+    const u = requireUser(request);
+    return mutate(async (s) => {
+      const notification = await s.get<MentionNotification>('notifications', request.params.id);
+      if (
+        !notification ||
+        notification.recipientId !== u.id ||
+        !sameWorkspace(notification, u) ||
+        !(await canItemIn(s, u, notification.itemId))
+      )
+        fail(404, 'Notification not found');
+      return s.put('notifications', {
+        ...notification,
+        readAt: input.read ? (notification.readAt ?? now()) : null,
+      });
+    });
+  });
+  app.post('/api/v1/notifications/read-all', async (request, reply) => {
+    z.object({}).strict().parse(request.body);
+    const u = requireUser(request);
+    await mutate(async (s) => {
+      const stamp = now();
+      for (const notification of await s.list<MentionNotification>('notifications')) {
+        if (
+          notification.recipientId === u.id &&
+          sameWorkspace(notification, u) &&
+          !notification.readAt &&
+          (await canItemIn(s, u, notification.itemId))
+        )
+          await s.put('notifications', { ...notification, readAt: stamp });
+      }
+    });
+    return reply.code(204).send();
+  });
   app.get('/api/v1/projects', async (request) => ({
     data: (await visibleData(requireUser(request))).projects,
   }));
@@ -937,6 +1009,8 @@ export async function createApp(
         if (collection.projectId === p.id) await s.remove('canvasCollections', collection.id);
       for (const update of await s.list<ProjectUpdate>('projectUpdates'))
         if (update.projectId === p.id) await s.remove('projectUpdates', update.id);
+      for (const r of await s.list<ProjectRelation>('projectRelations'))
+        if (r.projectId === p.id) await s.remove('projectRelations', r.id);
       await s.remove('projects', p.id);
     });
     return reply.code(204).send();
@@ -1089,6 +1163,7 @@ export async function createApp(
       };
       await validateItem(s, u, item);
       const result = await s.put('items', item);
+      await saveMentions(s, u, item, item.description);
       if (retry) await s.put('idempotency', { ...retry, itemId: item.id, result });
       return result;
     });
@@ -1105,13 +1180,15 @@ export async function createApp(
         (await ctx.canItem(u, r.targetId))
       )
         relations.push(r);
+    const visible = await visibleData(u);
     return {
       item,
       activity: (await store.list<Activity>('activity'))
         .filter((a) => a.itemId === item.id)
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
       relations,
-      links: (await visibleData(u)).links.filter((l) => l.itemId === item.id),
+      projectRelations: visible.projectRelations.filter((r) => r.itemId === item.id),
+      links: visible.links.filter((l) => l.itemId === item.id),
     };
   });
   app.patch<{ Params: { id: string } }>('/api/v1/items/:id', async (request) => {
@@ -1166,6 +1243,8 @@ export async function createApp(
       if (item.projectId !== old.projectId)
         item.identifier = await nextItemIdentifier(tx, item.projectId, workspaceOf(item));
       const saved = await s.put('items', item, expectedRevision);
+      if (input.description !== undefined)
+        await saveMentions(s, u, item, item.description, old.description);
       const changes = Object.entries(input)
         .filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(old[k as keyof WorkItem]))
         .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : (v ?? 'cleared')}`);
@@ -1277,6 +1356,10 @@ export async function createApp(
         if (l.itemId === item.id) await s.remove('links', l.id);
       for (const r of await s.list<Relation>('relations'))
         if (r.itemId === item.id || r.targetId === item.id) await s.remove('relations', r.id);
+      for (const r of await s.list<ProjectRelation>('projectRelations'))
+        if (r.itemId === item.id) await s.remove('projectRelations', r.id);
+      for (const n of await s.list<MentionNotification>('notifications'))
+        if (n.itemId === item.id) await s.remove('notifications', n.id);
       await s.remove('items', item.id);
     });
     return reply.code(204).send();
@@ -1300,6 +1383,7 @@ export async function createApp(
         body: input.body,
         createdAt: now(),
       });
+      await saveMentions(s, u, item, input.body, '', result.id);
       if (retry) await s.put('idempotency', { ...retry, itemId: item.id, result });
       return result;
     });
@@ -1449,6 +1533,23 @@ export async function createApp(
         await checkedItem(s, requireUser(request), r.itemId);
         await checkedItem(s, requireUser(request), r.targetId);
         await s.remove('relations', r.id);
+      });
+      return reply.code(204).send();
+    },
+  );
+  app.delete<{ Params: { id: string; relationId: string } }>(
+    '/api/v1/items/:id/project-relations/:relationId',
+    async (request, reply) => {
+      await mutate(async (s) => {
+        const u = requireUser(request);
+        const item = await checkedItem(s, u, request.params.id);
+        const relation = await s.get<ProjectRelation>(
+          'projectRelations',
+          request.params.relationId,
+        );
+        if (!relation || relation.itemId !== item.id) fail(404, 'Relationship not found');
+        await checkedProject(s, u, relation.projectId);
+        await s.remove('projectRelations', relation.id);
       });
       return reply.code(204).send();
     },

@@ -224,12 +224,17 @@ const list = (name: string) => ({
   type: 'object',
   properties: { data: { type: 'array', items: ref(name) }, nextCursor: string },
 });
+schemas.ProjectRelation = {
+  type: 'object',
+  properties: { id: uuid, itemId: uuid, projectId: uuid },
+};
 schemas.ItemDetail = {
   type: 'object',
   properties: {
     item: ref('WorkItem'),
     activity: { type: 'array', items: ref('Activity') },
     relations: { type: 'array', items: ref('Relation') },
+    projectRelations: { type: 'array', items: ref('ProjectRelation') },
     links: { type: 'array', items: ref('ResourceLink') },
   },
 };
@@ -253,9 +258,24 @@ schemas.ProjectUpdate = {
     createdAt: { type: 'string', format: 'date-time' },
   },
 };
+schemas.MentionNotification = {
+  type: 'object',
+  properties: {
+    id: uuid,
+    workspaceId: uuid,
+    recipientId: uuid,
+    actorId: uuid,
+    itemId: uuid,
+    activityId: { ...uuid, nullable: true },
+    kind: { type: 'string', enum: ['mention'] },
+    createdAt: { type: 'string', format: 'date-time' },
+    readAt: { type: 'string', format: 'date-time', nullable: true },
+  },
+};
 schemas.Bootstrap = {
   type: 'object',
   properties: {
+    notifications: { type: 'array', items: ref('MentionNotification') },
     authMode: { type: 'string', enum: ['local', 'google', 'oidc', 'proxy'] },
     workspace: ref('Workspace'),
     workspaces: { type: 'array', items: ref('Workspace') },
@@ -268,6 +288,7 @@ schemas.Bootstrap = {
     links: { type: 'array', items: ref('ResourceLink') },
     milestones: { type: 'array', items: ref('Milestone') },
     relations: { type: 'array', items: ref('Relation') },
+    projectRelations: { type: 'array', items: ref('ProjectRelation') },
   },
 };
 const object = (properties: Record<string, unknown>, required: string[] = []) => ({
@@ -583,6 +604,35 @@ operation(
 operation('/items/{id}/relations/{relationId}', 'delete', 'Delete a relationship', {}, undefined, {
   noContent: true,
 });
+operation(
+  '/items/{id}/project-relations/{relationId}',
+  'delete',
+  'Delete a project relationship',
+  {},
+  undefined,
+  { noContent: true },
+);
+operation(
+  '/notifications',
+  'get',
+  'List your accessible mention notifications, newest first',
+  list('MentionNotification'),
+);
+operation(
+  '/notifications/{id}',
+  'patch',
+  'Mark your notification read or unread',
+  ref('MentionNotification'),
+  object({ read: { type: 'boolean' } }, ['read']),
+);
+operation(
+  '/notifications/read-all',
+  'post',
+  'Mark all accessible notifications as read',
+  {},
+  object({}),
+  { noContent: true },
+);
 operation('/users', 'get', 'List workspace members', list('User'));
 operation(
   '/users',
@@ -650,6 +700,7 @@ operation(
       exportedAt: string,
       activity: { type: 'array', items: ref('Activity') },
       relations: { type: 'array', items: ref('Relation') },
+      projectRelations: { type: 'array', items: ref('ProjectRelation') },
     },
   },
 );
@@ -1105,6 +1156,49 @@ operation(
     ['title'],
   ),
   { created: true },
+);
+operation(
+  '/projects/{projectId}/canvases/import',
+  'post',
+  'Import a native .excalidraw document as one new canvas (8 MiB request limit); editor-only preferences are discarded',
+  ref('ProjectCanvas'),
+  object(
+    {
+      title: canvasMetadata.title,
+      collectionId: canvasMetadata.collectionId,
+      document: {
+        type: 'object',
+        required: ['type', 'elements'],
+        additionalProperties: true,
+        properties: {
+          type: { type: 'string', const: 'excalidraw' },
+          elements: canvasSceneSchema.properties.elements,
+          appState: {
+            type: 'object',
+            additionalProperties: true,
+            properties: {
+              viewBackgroundColor: { type: 'string', maxLength: 100 },
+              gridSize: { type: ['number', 'null'], exclusiveMinimum: 0 },
+            },
+          },
+          files: canvasSceneSchema.properties.files,
+        },
+      },
+    },
+    ['title', 'document'],
+  ),
+  { created: true },
+);
+operation(
+  '/projects/{projectId}/canvases/{canvasId}/show',
+  'get',
+  'Return a browser link and current revision; URL is relative to the installation origin and requires project access',
+  object({ id: uuid, title: string, revision: { type: 'integer' }, url: string }, [
+    'id',
+    'title',
+    'revision',
+    'url',
+  ]),
 );
 operation(
   '/projects/{projectId}/canvases/{canvasId}',

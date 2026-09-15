@@ -28,7 +28,7 @@
 }
 .project-access-summary {
   padding: 0 24px 24px;
-  font-size: 13px;
+  font-size: var(--text-ui);
 }
 .project-access-dialog {
   color: var(--text);

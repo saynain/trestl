@@ -1,30 +1,40 @@
 import { useState } from 'react';
-import { LockKeyhole } from 'lucide-react';
+import { LockKeyhole, Users } from 'lucide-react';
 import type { Project } from '../../shared/types';
 import { useApp } from '../lib/context';
-import { projectAccessMembers } from '../lib/project-access';
+import { projectAccessMembers, projectTeamMembers } from '../lib/project-access';
 import { Avatar, Modal } from './ui';
 import './project-access.css';
 
 export default function ProjectAccess({ project }: { project: Project }) {
   const { data, editProject } = useApp();
   const [open, setOpen] = useState(false);
-  const members = projectAccessMembers(project, data.projects, data.users);
+  const isPrivate = project.visibility === 'private';
+  const members = isPrivate
+    ? projectAccessMembers(project, data.projects, data.users)
+    : projectTeamMembers(project, data.users);
   const onlyYou = members.length === 1 && members[0].id === data.user.id;
-  const summary = onlyYou
-    ? 'Only you'
-    : `${members.length} ${members.length === 1 ? 'person' : 'people'}`;
+  const summary =
+    isPrivate && onlyYou
+      ? 'Only you'
+      : `${members.length} ${members.length === 1 ? 'person' : 'people'}`;
   return (
     <>
       <button
         type="button"
         className="project-access-trigger"
-        aria-label={`Private · ${summary}. View people with access`}
+        aria-label={
+          isPrivate
+            ? `Private · ${summary}. View people with access`
+            : `Workspace · ${summary}. View project members`
+        }
         aria-haspopup="dialog"
         onClick={() => setOpen(true)}
       >
-        <LockKeyhole size={12} />
-        <span>Private · {summary}</span>
+        {isPrivate ? <LockKeyhole size={12} /> : <Users size={12} />}
+        <span>
+          {isPrivate ? 'Private' : 'Workspace'} · {summary}
+        </span>
         {!onlyYou && (
           <span className="project-access-avatars" aria-hidden="true">
             {members.slice(0, 3).map((member) => (
@@ -35,12 +45,16 @@ export default function ProjectAccess({ project }: { project: Project }) {
       </button>
       {open && (
         <Modal
-          title="People with access"
+          title={isPrivate ? 'People with access' : 'Project members'}
           className="project-access-dialog"
           onClose={() => setOpen(false)}
         >
           <div className="project-access-summary">
-            <p>Only these people can access {project.name}.</p>
+            <p>
+              {isPrivate
+                ? `Only these people can access ${project.name}.`
+                : `These people are the project team for ${project.name}. Everyone in the workspace can access this project.`}
+            </p>
             <ul className="project-access-list">
               {members.map((member) => (
                 <li key={member.id}>
@@ -69,7 +83,7 @@ export default function ProjectAccess({ project }: { project: Project }) {
                   editProject(project);
                 }}
               >
-                Manage access
+                {isPrivate ? 'Manage access' : 'Manage members'}
               </button>
             )}
           </div>

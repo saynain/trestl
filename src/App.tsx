@@ -1,5 +1,7 @@
+import { watchAppearance } from './lib/themes';
 import CliLoginApproval from './components/CliLoginApproval';
 import { WeeklyReview } from './components/ProjectUpdates';
+import Notifications, { NotificationBell } from './components/Notifications';
 import Canvases from './components/Canvases';
 import GanttView from './components/GanttView';
 import ShortcutHelp from './components/ShortcutHelp';
@@ -38,7 +40,6 @@ import {
 import type { Bootstrap, Project, Status, User } from '../shared/types';
 import { api, ApiError, patch, remove } from './lib/api';
 import {
-  readTheme,
   readUiPreferences,
   saveUiPreferences,
   defaultUiPreferences,
@@ -120,6 +121,9 @@ export default function App() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const toastTimer = useRef<number | undefined>(undefined);
   const loadSequence = useRef(0);
+  useEffect(() => {
+    if (data?.user) return watchAppearance(data.user);
+  }, [data?.user.id]);
   const toast = useCallback((text: string, kind = 'success') => {
     setMessage({ text, kind });
     clearTimeout(toastTimer.current);
@@ -130,7 +134,6 @@ export default function App() {
     try {
       const next = await api<Bootstrap>('/bootstrap');
       if (sequence === loadSequence.current) {
-        document.documentElement.dataset.theme = readTheme(next.user);
         setProfilePreferences((current) =>
           current?.userId === next.user.id
             ? current
@@ -337,19 +340,21 @@ export default function App() {
   const title =
     project?.name ||
     view?.name ||
-    (route.page === 'home'
-      ? 'Home'
-      : route.page === 'projects'
-        ? 'All projects'
-        : route.page === 'my-work'
-          ? 'My work'
-          : route.page === 'settings'
-            ? 'Administration'
-            : route.page === 'account-settings'
-              ? 'Account settings'
-              : route.page === 'inbox'
-                ? 'Inbox'
-                : 'Work items');
+    (route.page === 'notifications'
+      ? 'Notifications'
+      : route.page === 'home'
+        ? 'Home'
+        : route.page === 'projects'
+          ? 'All projects'
+          : route.page === 'my-work'
+            ? 'My work'
+            : route.page === 'settings'
+              ? 'Administration'
+              : route.page === 'account-settings'
+                ? 'Account settings'
+                : route.page === 'inbox'
+                  ? 'Inbox'
+                  : 'Work items');
   const description =
     route.page === 'projects'
       ? 'A little structure for everything you’re moving forward.'
@@ -455,6 +460,7 @@ export default function App() {
               <span>{title}</span>
             </div>
             <div className="topbar-actions">
+              <NotificationBell />
               {route.page !== 'account-settings' && (
                 <div className="member-stack">
                   {data.users.slice(0, 3).map((u) => (
@@ -493,6 +499,8 @@ export default function App() {
               section={route.tab}
               scope={route.page === 'account-settings' ? 'account' : 'workspace'}
             />
+          ) : route.page === 'notifications' ? (
+            <Notifications key={`${data.user.id}:${data.workspace?.id}`} tab={route.tab} />
           ) : route.page === 'home' ? (
             <Home tab={route.tab} />
           ) : (
@@ -534,11 +542,7 @@ export default function App() {
                               : 'Time-bound'}
                         </span>
                         <span>·</span>
-                        {project.visibility === 'private' ? (
-                          <ProjectAccess key={project.id} project={project} />
-                        ) : (
-                          <span>Workspace</span>
-                        )}
+                        <ProjectAccess key={project.id} project={project} />
                         <span>·</span>
                       </>
                     )}
@@ -785,6 +789,7 @@ export default function App() {
         <ItemDetail
           key={route.itemId}
           id={route.itemId}
+          activityId={route.activityId}
           onClose={closeItem}
           initialAction={itemAction}
           onActionHandled={() => setItemAction(undefined)}

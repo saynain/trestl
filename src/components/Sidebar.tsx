@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Home,
+  Bell,
   Keyboard,
   Search,
   Inbox,
@@ -157,6 +158,16 @@ export default function Sidebar({
                   .length
               }
             </span>
+          )}
+        </button>
+        <button
+          className={`nav-item ${route.page === 'notifications' ? 'active' : ''}`}
+          onClick={() => go('notifications')}
+        >
+          <Bell size={18} />
+          <span>Notifications</span>
+          {!!data.notifications?.some((n) => !n.readAt) && (
+            <span className="nav-count">{data.notifications.filter((n) => !n.readAt).length}</span>
           )}
         </button>
         <button

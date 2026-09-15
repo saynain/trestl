@@ -11,13 +11,13 @@
   margin: 8px 0;
 }
 .settings-eyebrow {
-  font-size: 10px;
+  font-size: var(--text-sm);
   font-weight: 650;
   letter-spacing: 1.1px;
   color: var(--muted, #92979e);
 }
 .settings-heading > p {
-  font-size: 13px;
+  font-size: var(--text-ui);
   color: var(--muted, #777e87);
   margin: 0 0 25px;
 }
@@ -26,7 +26,7 @@
   border-bottom: 1px solid var(--border, #e9eaec);
 }
 .settings-section h2 {
-  font-size: 14px;
+  font-size: var(--text-md);
   letter-spacing: -0.16px;
   line-height: 1.5;
   margin: 0 0 5px;
@@ -34,7 +34,7 @@
 }
 .settings-section > p,
 .settings-section-header > div > p {
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--muted, #787e86);
   line-height: 1.7;
   margin: 0 0 20px;
@@ -65,11 +65,11 @@
 .settings-profile strong,
 .settings-member strong {
   font-weight: 550;
-  font-size: 13px;
+  font-size: var(--text-ui);
 }
 .settings-profile > div > span,
 .settings-member > div > span {
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--muted, #787e86);
 }
 .settings-avatar {
@@ -79,12 +79,12 @@
   display: grid;
   place-items: center;
   color: #fff;
-  font-size: 10px;
+  font-size: var(--text-sm);
   font-weight: 600;
   flex-shrink: 0;
 }
 .settings-badge {
-  font-size: 10px;
+  font-size: var(--text-sm);
   font-weight: 500;
   border: 1px solid var(--border, #e9eaec);
   background: var(--surface-alt, #f8f9fa);
@@ -124,11 +124,11 @@
   box-shadow: 0 0 0 1px var(--accent);
 }
 .settings-layout-option strong {
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 550;
 }
 .settings-layout-option span {
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 .settings-theme {
@@ -190,7 +190,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   padding: 10px 5px 5px;
 }
 .settings-theme > span:last-child > svg:last-child:not(:first-child) {
@@ -213,17 +213,17 @@
   margin-top: 1px;
 }
 .settings-tip strong {
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 550;
 }
 .settings-tip p {
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.7;
   color: var(--muted, #7a8088);
   margin: 5px 0 0;
 }
 .settings-tip a {
-  font-size: 12px;
+  font-size: var(--text-sm);
   display: inline-flex;
   gap: 6px;
   align-items: center;
@@ -238,7 +238,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--text-sm);
   padding: 9px 0;
   color: var(--muted, #727983);
 }
@@ -247,7 +247,7 @@
   border-bottom-width: 2px;
   border-radius: 4px;
   padding: 3px 6px;
-  font-size: 10px;
+  font-size: var(--text-sm);
   min-width: 26px;
   text-align: center;
   background: var(--surface, #fff);
@@ -257,7 +257,7 @@
   display: flex;
   justify-content: center;
   gap: 9px;
-  font-size: 10px;
+  font-size: var(--text-sm);
   color: var(--muted, #969ca4);
   padding: 28px 0;
 }
@@ -267,7 +267,7 @@
   border-radius: 4px;
   padding: 2px 5px;
   color: var(--muted, #7b818a);
-  font-size: 10px;
+  font-size: var(--text-sm);
 }
 .settings-form {
   padding: 19px;
@@ -288,7 +288,7 @@
   display: flex;
   flex-direction: column;
   gap: 7px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 500;
 }
 .settings-form .input,
@@ -302,7 +302,7 @@
   gap: 9px;
 }
 .settings-helper {
-  font-size: 11px !important;
+  font-size: var(--text-sm) !important;
   line-height: 1.7 !important;
   color: var(--muted, #858b93) !important;
   margin: 10px 0 0 !important;
@@ -345,7 +345,7 @@
   gap: 12px;
 }
 .people-list-heading {
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--muted);
   padding-bottom: 9px;
   border-bottom: 1px solid var(--border);
@@ -358,7 +358,7 @@
   overflow-wrap: anywhere;
 }
 .people-access {
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--muted);
   display: flex;
   align-items: center;
@@ -385,7 +385,7 @@
   justify-self: end;
 }
 .people-protected {
-  font-size: 10px;
+  font-size: var(--text-sm);
   text-align: right;
   color: var(--muted);
 }
@@ -416,12 +416,12 @@
 }
 .settings-you {
   color: var(--muted, #8e949c);
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 400;
   margin-left: 3px;
 }
 .settings-error {
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.6;
   background: #fdf0ee;
   border: 1px solid #f3d2cb;
@@ -436,7 +436,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--muted, #808791);
   padding: 34px;
 }
@@ -455,11 +455,11 @@
   margin-bottom: 13px;
 }
 .settings-empty strong {
-  font-size: 13px;
+  font-size: var(--text-ui);
   font-weight: 500;
 }
 .settings-empty p {
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.7;
   color: var(--muted, #828991);
   max-width: 370px;
@@ -492,11 +492,11 @@
   min-width: 0;
 }
 .settings-connection-heading strong {
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 550;
 }
 .settings-connection-heading > div > span {
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--muted, #818892);
   overflow-wrap: anywhere;
 }
@@ -510,7 +510,7 @@
   margin-left: auto;
 }
 .settings-sync-status {
-  font-size: 10px;
+  font-size: var(--text-sm);
   color: var(--muted, #8d949b);
   margin: 12px 0 0 45px;
 }
@@ -524,7 +524,7 @@
   margin-top: 12px;
 }
 .settings-confirm > span {
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--muted, #747c85);
   margin-right: auto;
 }
@@ -554,18 +554,18 @@
   margin-right: auto;
 }
 .settings-token-main strong {
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 550;
 }
 .settings-token-main > div > span {
-  font-size: 10px;
+  font-size: var(--text-sm);
   color: var(--muted, #8b929a);
 }
 .settings-checkbox {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .settings-checkbox input {
   accent-color: var(--accent);
@@ -584,10 +584,10 @@
   gap: 8px;
 }
 .settings-secret strong {
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .settings-secret p {
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.6;
   margin: 6px 0 14px;
 }
@@ -598,13 +598,13 @@
   min-width: 0;
   flex: 1;
   font-family: ui-monospace, monospace;
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .settings-secret > div > .button {
   flex-shrink: 0;
 }
 .settings-tip code {
-  font-size: 11px;
+  font-size: var(--text-sm);
   background: var(--surface, #fff);
   border: 1px solid var(--border, #e9eaec);
   border-radius: 3px;
@@ -649,7 +649,7 @@
   }
   .settings-footer {
     flex-wrap: wrap;
-    font-size: 9px;
+    font-size: var(--text-sm);
   }
   .settings-connection-heading {
     flex-wrap: wrap;
@@ -709,7 +709,7 @@
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 8px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 @media (max-width: 700px) {
   .github-access {
@@ -743,14 +743,14 @@
 }
 .settings-navigation-heading > span,
 .settings-scope > span {
-  font-size: 10px;
+  font-size: var(--text-sm);
   font-weight: 650;
   color: var(--muted);
   letter-spacing: 0.7px;
   text-transform: uppercase;
 }
 .settings-navigation-heading > strong {
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 500;
   overflow-wrap: anywhere;
 }
@@ -762,7 +762,7 @@
   padding: 9px 10px;
   border-radius: 6px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-ui);
   text-decoration: none;
 }
 .settings-navigation-links > a:hover {
@@ -787,12 +787,12 @@
   border-bottom: 1px solid var(--border);
 }
 .settings-scope strong {
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 500;
   overflow-wrap: anywhere;
 }
 .settings-context-note {
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.7;
   color: var(--muted);
   margin: 20px 0 0;
@@ -800,16 +800,16 @@
 .settings-workspace-name {
   display: grid;
   gap: 6px;
-  font-size: 14px;
+  font-size: var(--text-md);
   margin-bottom: 24px;
 }
 .settings-workspace-name span {
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 .settings-workspace-details {
   margin: 22px 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .settings-workspace-details > div {
   display: flex;
