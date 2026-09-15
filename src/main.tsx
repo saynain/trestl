@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { KeyboardProvider } from './lib/keyboard';
 import './styles.css';
+import './lib/themes/themes.css';
 (window as Window & { EXCALIDRAW_ASSET_PATH?: string }).EXCALIDRAW_ASSET_PATH =
   '/excalidraw-assets/';
 document.documentElement.dataset.theme = 'light';

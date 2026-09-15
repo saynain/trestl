@@ -1,0 +1,64 @@
+/* Original T3 Code colors mapped onto Trestl's semantic interface tokens. */
+:root[data-palette]:not([data-palette='trestl']) {
+  --bg: var(--theme-canvas);
+  --surface: var(--theme-surface);
+  --surface-hover: var(--theme-secondary);
+  --surface-alt: var(--theme-surfaceRaised);
+  --text: var(--theme-text);
+  --muted: var(--theme-textMuted);
+  --border: var(--theme-border);
+  --accent: var(--theme-accent);
+  --accent-foreground: var(--theme-accentForeground);
+  --accent-hover: color-mix(in srgb, var(--theme-accent) 88%, var(--theme-text));
+  --accent-soft: var(--theme-accentSurface);
+  --danger: var(--theme-errorForeground);
+  color: var(--text);
+  background: var(--bg);
+}
+:root {
+  color: var(--text);
+  background: var(--bg);
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+:root[data-palette]:not([data-palette='trestl']) .settings-page {
+  --text: var(--theme-text);
+  --muted: var(--theme-textMuted);
+  --border: var(--theme-border);
+  --surface: var(--theme-surface);
+  --surface-alt: var(--theme-surfaceRaised);
+  --accent: var(--theme-accent);
+}
+:root[data-palette]:not([data-palette='trestl']) .sidebar {
+  --bg: var(--theme-sidebar);
+  --surface: var(--theme-sidebar);
+  --surface-hover: var(--theme-sidebarRowHover);
+  --text: var(--theme-sidebarForeground);
+  --muted: var(--theme-sidebarMutedForeground);
+  --border: var(--theme-sidebarBorder);
+  --accent-soft: var(--theme-sidebarRowActive);
+  color: var(--text);
+}
+:root[data-palette]:not([data-palette='trestl']) .nav-item {
+  color: var(--muted);
+}
+:root[data-palette]:not([data-palette='trestl']) .nav-item:hover {
+  color: var(--text);
+}
+:root[data-palette]:not([data-palette='trestl']) .nav-item.active {
+  color: var(--text);
+}
+:root[data-palette]:not([data-palette='trestl']) .button.primary {
+  color: var(--accent-foreground);
+}
+:root[data-palette]:not([data-palette='trestl']) ::selection {
+  color: var(--theme-accentForeground);
+  background: var(--theme-accent);
+}
+:root[data-palette]:not([data-palette='trestl']) .settings-error {
+  color: var(--theme-errorForeground);
+  background: var(--theme-errorSurface);
+  border-color: var(--theme-error);
+}
