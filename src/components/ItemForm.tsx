@@ -1,4 +1,5 @@
 import { assigneeOptions } from '../lib/assignees';
+import { MentionTextarea } from './MentionTextarea';
 import { Select } from './Select';
 import { useShortcuts, activateItemControl } from '../lib/keyboard';
 import { useRef, useState, type FormEvent } from 'react';
@@ -143,7 +144,7 @@ export default function ItemForm({
           maxLength={240}
           required
         />
-        <textarea
+        <MentionTextarea
           className="item-description-input"
           aria-label="Description"
           placeholder="Add a description, a thought, or some context…"

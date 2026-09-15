@@ -224,18 +224,38 @@ const list = (name: string) => ({
   type: 'object',
   properties: { data: { type: 'array', items: ref(name) }, nextCursor: string },
 });
+schemas.ProjectRelation = {
+  type: 'object',
+  properties: { id: uuid, itemId: uuid, projectId: uuid },
+};
 schemas.ItemDetail = {
   type: 'object',
   properties: {
     item: ref('WorkItem'),
     activity: { type: 'array', items: ref('Activity') },
     relations: { type: 'array', items: ref('Relation') },
+    projectRelations: { type: 'array', items: ref('ProjectRelation') },
     links: { type: 'array', items: ref('ResourceLink') },
+  },
+};
+schemas.MentionNotification = {
+  type: 'object',
+  properties: {
+    id: uuid,
+    workspaceId: uuid,
+    recipientId: uuid,
+    actorId: uuid,
+    itemId: uuid,
+    activityId: { ...uuid, nullable: true },
+    kind: { type: 'string', enum: ['mention'] },
+    createdAt: { type: 'string', format: 'date-time' },
+    readAt: { type: 'string', format: 'date-time', nullable: true },
   },
 };
 schemas.Bootstrap = {
   type: 'object',
   properties: {
+    notifications: { type: 'array', items: ref('MentionNotification') },
     authMode: { type: 'string', enum: ['local', 'google', 'oidc', 'proxy'] },
     workspace: ref('Workspace'),
     workspaces: { type: 'array', items: ref('Workspace') },
@@ -247,6 +267,7 @@ schemas.Bootstrap = {
     links: { type: 'array', items: ref('ResourceLink') },
     milestones: { type: 'array', items: ref('Milestone') },
     relations: { type: 'array', items: ref('Relation') },
+    projectRelations: { type: 'array', items: ref('ProjectRelation') },
   },
 };
 const object = (properties: Record<string, unknown>, required: string[] = []) => ({
@@ -542,6 +563,35 @@ operation(
 operation('/items/{id}/relations/{relationId}', 'delete', 'Delete a relationship', {}, undefined, {
   noContent: true,
 });
+operation(
+  '/items/{id}/project-relations/{relationId}',
+  'delete',
+  'Delete a project relationship',
+  {},
+  undefined,
+  { noContent: true },
+);
+operation(
+  '/notifications',
+  'get',
+  'List your accessible mention notifications, newest first',
+  list('MentionNotification'),
+);
+operation(
+  '/notifications/{id}',
+  'patch',
+  'Mark your notification read or unread',
+  ref('MentionNotification'),
+  object({ read: { type: 'boolean' } }, ['read']),
+);
+operation(
+  '/notifications/read-all',
+  'post',
+  'Mark all accessible notifications as read',
+  {},
+  object({}),
+  { noContent: true },
+);
 operation('/users', 'get', 'List workspace members', list('User'));
 operation(
   '/users',
@@ -609,6 +659,7 @@ operation(
       exportedAt: string,
       activity: { type: 'array', items: ref('Activity') },
       relations: { type: 'array', items: ref('Relation') },
+      projectRelations: { type: 'array', items: ref('ProjectRelation') },
     },
   },
 );

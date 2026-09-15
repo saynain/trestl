@@ -81,6 +81,7 @@ export interface Route {
   id?: string;
   tab: string;
   itemId?: string;
+  activityId?: string;
 }
 export function readRoute(): Route {
   if (window.location.pathname === '/cli-login') return { page: 'cli-login', tab: 'list' };
@@ -91,6 +92,7 @@ export function readRoute(): Route {
     page: page || 'home',
     id,
     tab: query.get('tab') || 'list',
+    activityId: query.get('activity') || undefined,
     itemId: page === 'item' ? id : query.get('item') || undefined,
   };
 }
