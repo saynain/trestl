@@ -1,3 +1,5 @@
+<img src="public/trestl-mark.svg" alt="" width="60" height="48" />
+
 # Trestl
 
 A self-hosted project workspace for personal projects and small teams.

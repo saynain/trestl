@@ -16,9 +16,7 @@ import { initials, priorities, statuses } from '../lib/model';
 export function Logo({ small = false }: { small?: boolean }) {
   return (
     <span className={`logo ${small ? 'small' : ''}`} aria-hidden="true">
-      <svg viewBox="0 0 32 32" fill="currentColor">
-        <path d="M3 5h26v4H3zM10 9h5L7 29H1zM17 9h5l9 20h-6z" />
-      </svg>
+      <img src="/trestl-mark.svg?v=2" width="40" height="32" alt="" />
     </span>
   );
 }
