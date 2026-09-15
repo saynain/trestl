@@ -1,3 +1,4 @@
+import { MentionTextarea } from './MentionTextarea';
 import { assigneeOptions } from '../lib/assignees';
 import { useShortcuts, activateItemControl } from '../lib/keyboard';
 import { itemActions, type ItemAction } from '../lib/shortcuts';
@@ -160,11 +161,13 @@ function ActivityIcon({ body }: { body: string }) {
 
 export default function ItemDetail({
   id,
+  activityId,
   onClose,
   initialAction,
   onActionHandled,
 }: {
   id: string;
+  activityId?: string;
   onClose: () => void;
   initialAction?: ItemAction;
   onActionHandled?: () => void;
@@ -173,6 +176,10 @@ export default function ItemDetail({
   const actionRoot = useRef<HTMLDivElement>(null);
   const [editField, setEditField] = useState<'title' | 'description'>('title');
   const [detail, setDetail] = useState<Detail | null>(null);
+  useEffect(() => {
+    if (detail?.item.id === id && activityId)
+      document.getElementById(`activity-${activityId}`)?.scrollIntoView({ block: 'center' });
+  }, [detail?.item.id, id, activityId]);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -508,7 +515,8 @@ export default function ItemDetail({
                   maxLength={240}
                   onChange={(e) => setTitle(e.target.value)}
                 />
-                <textarea
+                <MentionTextarea
+                  excludeItemId={id}
                   className="input"
                   aria-label="Description"
                   value={description}
@@ -627,11 +635,34 @@ export default function ItemDetail({
                 </p>
               )}
             </section>
-            {(detail!.relations.length > 0 || showRelation) && (
+            {(detail!.relations.length > 0 ||
+              !!detail!.projectRelations?.length ||
+              showRelation) && (
               <section className="item-section">
                 <div className="item-section-heading">
                   <h3>Relationships</h3>
                 </div>
+                {detail!.projectRelations?.map((relation) => {
+                  const project = data.projects.find((p) => p.id === relation.projectId);
+                  return (
+                    <div className="item-relation" key={relation.id}>
+                      <span className="muted">Related to project</span>
+                      <a href={`#/project/${relation.projectId}`}>
+                        {project?.name || 'Unavailable project'}
+                      </a>
+                      <button
+                        className="icon-button"
+                        aria-label="Remove project relationship"
+                        disabled={saving}
+                        onClick={() =>
+                          void mutate(() => remove(`/items/${id}/project-relations/${relation.id}`))
+                        }
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  );
+                })}
                 {detail!.relations.map((relation) => {
                   const outward = relation.itemId === id;
                   const target = data.items.find(
@@ -887,7 +918,11 @@ export default function ItemDetail({
                       </time>
                     </li>
                   ) : (
-                    <li key={entry.id} className="item-comment">
+                    <li
+                      key={entry.id}
+                      id={`activity-${entry.id}`}
+                      className={`item-comment ${entry.id === activityId ? 'notification-target' : ''}`}
+                    >
                       {entry.importedFrom ? (
                         <span className="item-source-avatar">
                           <Download size={15} aria-hidden="true" />
@@ -969,7 +1004,8 @@ export default function ItemDetail({
                       )}
                     </div>
                   ) : (
-                    <textarea
+                    <MentionTextarea
+                      excludeItemId={id}
                       className="input"
                       aria-label={source ? 'Internal note' : 'Comment'}
                       placeholder={

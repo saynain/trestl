@@ -1,0 +1,76 @@
+.mention-editor {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+.mention-editor textarea {
+  width: 100%;
+}
+.mention-help {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  padding: 5px 0;
+}
+.mention-menu {
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  width: min(440px, 100%);
+  background: var(--surface, var(--bg));
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 30px #0002;
+  overflow: hidden;
+}
+.mention-menu-heading,
+.mention-menu-hint {
+  padding: 8px 12px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.mention-menu [role='listbox'] {
+  max-height: 240px;
+  overflow-y: auto;
+}
+.mention-menu [role='option'] {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  text-align: left;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+.mention-menu [role='option'][aria-selected='true'],
+.mention-menu [role='option']:hover {
+  background: var(--surface-hover);
+}
+.mention-menu small {
+  color: var(--muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.mention-menu p {
+  padding: 8px 12px;
+}
+.item-markdown .mention {
+  display: inline;
+  border: 0;
+  border-radius: 4px;
+  padding: 1px 4px;
+  font: inherit;
+  color: var(--accent);
+  background: var(--surface-hover);
+  text-decoration: none;
+  cursor: pointer;
+}
+.item-markdown .mention-unavailable {
+  color: var(--muted);
+  cursor: default;
+}

@@ -120,6 +120,23 @@ export interface Relation {
   targetId: string;
   kind: 'blocks' | 'related';
 }
+export interface ProjectRelation {
+  id: string;
+  itemId: string;
+  projectId: string;
+}
+export interface MentionNotification {
+  id: string;
+  workspaceId: string;
+  recipientId: string;
+  actorId: string;
+  itemId: string;
+  /** Null for a description mention; otherwise the comment's activity ID. */
+  activityId: string | null;
+  kind: 'mention';
+  createdAt: string;
+  readAt: string | null;
+}
 export interface ResourceLink {
   id: string;
   projectId: string | null;
@@ -152,6 +169,8 @@ export interface Bootstrap {
   workspaces?: (Workspace & { role: User['role'] })[];
   /** Only relationships whose two endpoints are visible to the signed-in user. */
   relations?: Relation[];
+  projectRelations?: ProjectRelation[];
+  notifications?: MentionNotification[];
   user: User;
   users: User[];
   projects: Project[];
@@ -164,6 +183,7 @@ export interface ItemDetail {
   item: WorkItem;
   activity: Activity[];
   relations: Relation[];
+  projectRelations?: ProjectRelation[];
   links: ResourceLink[];
 }
 export interface ApiError {
