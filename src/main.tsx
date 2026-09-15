@@ -2,6 +2,8 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { KeyboardProvider } from './lib/keyboard';
+import '@fontsource-variable/inter';
+import '@fontsource-variable/inter/wght-italic.css';
 import './styles.css';
 (window as Window & { EXCALIDRAW_ASSET_PATH?: string }).EXCALIDRAW_ASSET_PATH =
   '/excalidraw-assets/';

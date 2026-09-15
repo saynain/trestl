@@ -1,7 +1,7 @@
 .board-hint {
   margin: 0 9px 10px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--text-sm);
   line-height: 1.6;
 }
 .board-column > header > .icon-button.board-column-handle {
@@ -41,12 +41,12 @@
   padding: 20px 24px;
 }
 .board-settings-body > p {
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.6;
   margin: 0 0 14px;
 }
 .board-settings-body h3 {
-  font-size: 13px;
+  font-size: var(--text-ui);
   margin: 20px 0 8px;
 }
 .board-settings-columns {
@@ -64,7 +64,7 @@
 }
 .board-settings-column > label > span {
   display: block;
-  font-size: 10px;
+  font-size: var(--text-sm);
   color: var(--muted);
   margin-bottom: 3px;
 }
@@ -89,7 +89,7 @@
     padding: 16px;
   }
   .board-hint {
-    font-size: 10px;
+    font-size: var(--text-sm);
   }
   .board-settings-column {
     gap: 5px;
