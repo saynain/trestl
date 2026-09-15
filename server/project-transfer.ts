@@ -5,6 +5,7 @@ import type { AppContext } from './context.ts';
 import type { Database, Store } from './db.ts';
 import type {
   Project,
+  ProjectUpdate,
   WorkItem,
   Activity,
   ResourceLink,
@@ -121,10 +122,17 @@ export function registerProjectTransfer(
       const canvases = (await s.list<ProjectCanvas>('canvases')).filter(
         (c) => selected.has(c.projectId) && sameWorkspace(user, c),
       );
+      const projectUpdates = (await s.list<ProjectUpdate>('projectUpdates'))
+        .filter((update) => selected.has(update.projectId))
+        .map((update) => ({
+          ...update,
+          importedFrom: update.importedFrom ?? { authorName: name(update.authorId) },
+        }));
       const peopleIds = new Set([
         ...projects.map((p) => p.ownerId),
         ...items.flatMap((i) => [i.creatorId, ...(i.assigneeId ? [i.assigneeId] : [])]),
         ...activity.map((a) => a.userId),
+        ...projectUpdates.map((update) => update.authorId),
         ...canvases.flatMap((c) => [c.createdBy, c.updatedBy]),
       ]);
       const result = parse({
@@ -144,6 +152,7 @@ export function registerProjectTransfer(
           },
         })),
         activity,
+        projectUpdates,
         relations: (await s.list<Relation>('relations')).filter(
           (r) => itemIds.has(r.itemId) && itemIds.has(r.targetId),
         ),
@@ -217,6 +226,7 @@ export function registerProjectTransfer(
           'projects',
           'items',
           'activity',
+          'projectUpdates',
           'links',
           'relations',
           'milestones',
@@ -340,6 +350,14 @@ export function registerProjectTransfer(
             id: id(),
             itemId: itemIds.get(a.itemId)!,
             userId: user.id,
+          });
+        for (const update of data.projectUpdates)
+          await s.put<ProjectUpdate>('projectUpdates', {
+            ...update,
+            id: id(),
+            sortKey: update.sortKey ?? update.id,
+            projectId: projectIds.get(update.projectId)!,
+            authorId: user.id,
           });
         for (const r of data.relations)
           await s.put<Relation>('relations', {

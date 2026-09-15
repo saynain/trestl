@@ -46,6 +46,19 @@ export interface Project {
   memberIds?: string[];
   createdAt: string;
 }
+export type ProjectHealth = 'on_track' | 'at_risk' | 'off_track';
+export interface ProjectUpdate {
+  /** Source identity is provenance, never a verified local user. */
+  importedFrom?: { authorName: string };
+  /** Retains deterministic ordering when imported IDs change. */
+  sortKey?: string;
+  id: string;
+  projectId: string;
+  authorId: string;
+  health: ProjectHealth;
+  body: string;
+  createdAt: string;
+}
 export type RoadmapHorizon = 'current' | 'next' | 'future' | 'deferred';
 export interface RoadmapFeature {
   id: string;
@@ -155,6 +168,7 @@ export interface Bootstrap {
   user: User;
   users: User[];
   projects: Project[];
+  projectUpdates?: ProjectUpdate[];
   items: WorkItem[];
   views: SavedView[];
   links: ResourceLink[];

@@ -1,0 +1,136 @@
+.project-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm, 12px);
+  font-weight: 600;
+  border-radius: 20px;
+  padding: 4px 9px;
+  white-space: nowrap;
+  background: var(--surface);
+}
+.project-health.on_track {
+  color: #32835c;
+  background: color-mix(in srgb, #32835c 12%, var(--bg));
+}
+.project-health.at_risk {
+  color: #a67419;
+  background: color-mix(in srgb, #a67419 12%, var(--bg));
+}
+.project-health.off_track {
+  color: #cf5952;
+  background: color-mix(in srgb, #cf5952 12%, var(--bg));
+}
+.project-health.unknown {
+  color: var(--muted);
+}
+.project-update-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: var(--text-sm, 12px);
+  margin: 12px 0 18px;
+}
+.update-stale {
+  color: #a67419;
+}
+.project-update-input {
+  min-height: 190px;
+  resize: vertical;
+}
+.project-updates-section {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 22px !important;
+  margin-bottom: 26px;
+}
+.update-history {
+  margin-top: 20px;
+  color: var(--muted);
+  font-size: var(--text-ui, 13px);
+}
+.update-history summary {
+  cursor: pointer;
+}
+.update-history article {
+  border-top: 1px solid var(--border);
+  margin-top: 18px;
+  padding-top: 6px;
+  color: var(--text);
+}
+.weekly-review {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 28px 36px 60px;
+}
+.review-filters {
+  display: flex;
+  gap: 12px;
+  margin: 24px 0;
+}
+.review-filters > .input {
+  max-width: 340px;
+}
+.review-projects {
+  display: grid;
+  gap: 16px;
+}
+.review-project {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 22px 24px;
+  background: var(--bg);
+}
+.review-project-heading {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: center;
+}
+.review-project-name {
+  display: flex;
+  align-items: center;
+  text-align: left;
+  gap: 12px;
+  min-width: 0;
+}
+.review-project-name strong {
+  font-size: var(--text-body, 14px);
+  overflow-wrap: anywhere;
+}
+.review-project-name small {
+  display: block;
+  color: var(--muted);
+  font-size: var(--text-sm, 12px);
+  margin-top: 4px;
+}
+.review-project-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  color: var(--muted);
+  font-size: var(--text-sm, 12px);
+  margin: 16px 0;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.review-no-update {
+  font-size: var(--text-ui, 13px);
+}
+@media (max-width: 760px) {
+  .weekly-review {
+    padding: 20px 16px;
+  }
+  .review-project {
+    padding: 18px;
+  }
+  .review-filters {
+    flex-wrap: wrap;
+  }
+  .review-project-heading {
+    align-items: flex-start;
+  }
+}

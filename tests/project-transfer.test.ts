@@ -5,6 +5,7 @@ import { createApp } from '../server/app.ts';
 import type { AppContext } from '../server/context.ts';
 import type {
   Project,
+  ProjectUpdate,
   WorkItem,
   Activity,
   ProjectCanvas,
@@ -204,12 +205,72 @@ test('portable project transfer preserves content, isolates access, validates re
       secret: 'MUST_NOT_EXPORT',
       projectId: project.id,
     });
+    const updateOne = (
+      await src('POST', `/projects/${project.id}/updates`, {
+        health: 'at_risk',
+        body: '**Blocked:** waiting for review.',
+      })
+    ).json<ProjectUpdate>();
+    const updateTwo = (
+      await src('POST', `/projects/${project.id}/updates`, {
+        health: 'on_track',
+        body: 'Review complete.',
+      })
+    ).json<ProjectUpdate>();
+    // Same instant in different time zones must keep the source tie-break order after re-keying.
+    await sourceContext.store.put('projectUpdates', {
+      ...updateOne,
+      createdAt: '2025-01-01T12:00:00.000Z',
+    });
+    await sourceContext.store.put('projectUpdates', {
+      ...updateTwo,
+      createdAt: '2025-01-01T13:00:00.000+01:00',
+    });
+    await sourceContext.store.put<ProjectUpdate>('projectUpdates', {
+      id: randomUUID(),
+      projectId: child.id,
+      authorId: originalAuthor,
+      health: 'off_track',
+      body: 'Historical child update',
+      createdAt: '2024-01-01T12:00:00.000Z',
+      importedFrom: { authorName: 'Historical contributor' },
+    });
+    await src('POST', `/projects/${outside.id}/updates`, {
+      health: 'off_track',
+      body: 'Outside update must not export',
+    });
+    const hidden = (
+      await src('POST', '/projects', {
+        key: 'HIDDEN',
+        name: 'Hidden child',
+        parentId: project.id,
+        visibility: 'private',
+        ownerId: other.id,
+      })
+    ).json<Project>();
+    await sourceContext.store.put<ProjectUpdate>('projectUpdates', {
+      id: randomUUID(),
+      projectId: hidden.id,
+      authorId: other.id,
+      health: 'off_track',
+      body: 'Private update must not export',
+      createdAt: project.createdAt,
+    });
+    const sourceUpdates = (await src('GET', `/projects/${project.id}/updates`)).json().data;
     const exported = await src('GET', `/projects/${project.id}/export`);
     assert.equal(exported.statusCode, 200, exported.body);
     assert.match(String(exported.headers['content-disposition']), /trestl-project.json/);
     const pack = exported.json();
     assert.equal(pack.projects.length, 2);
     assert.equal(pack.items.length, 3);
+    assert.equal(pack.projectUpdates.length, 3);
+    assert(!exported.body.includes('Private update must not export'));
+    assert(!exported.body.includes('Outside update must not export'));
+    assert(
+      pack.projectUpdates
+        .filter((u: ProjectUpdate) => u.projectId === project.id)
+        .every((u: ProjectUpdate) => u.importedFrom?.authorName === 'Original'),
+    );
     assert.equal(pack.relations.length, 1);
     assert.equal(pack.activity[0].importedFrom.authorName, 'Former contributor');
     assert(!exported.body.includes('MUST_NOT_EXPORT'));
@@ -223,6 +284,7 @@ test('portable project transfer preserves content, isolates access, validates re
     );
     const single = (await src('GET', `/projects/${child.id}/export`)).json();
     assert.equal(single.projects.length, 1);
+    assert.equal(single.projectUpdates.length, 1);
     assert.equal(single.projects[0].parentId, null);
     assert.equal(single.items[0].parentId, null);
     // Existing destination names/keys produce proposals, without changing any data.
@@ -234,6 +296,7 @@ test('portable project transfer preserves content, isolates access, validates re
     const previewResponse = await dst('POST', '/project-import/preview', { package: pack });
     assert.equal(previewResponse.statusCode, 200, previewResponse.body);
     const review = previewResponse.json();
+    assert.equal(review.counts.projectUpdates, 3);
     assert.equal(review.options.projects[0].key, 'MOVE2');
     assert.equal(review.options.projects[0].name, 'Platform (import 2)');
     assert(review.options.projects.every((p: Project) => p.visibility === 'private'));
@@ -260,6 +323,25 @@ test('portable project transfer preserves content, isolates access, validates re
       pack.projects.find((p: Project) => p.id === project.id).roadmap.features[0].id,
     );
     assert(newChild);
+    const importedUpdates = (await dst('GET', `/projects/${newRoot.id}/updates`)).json()
+      .data as ProjectUpdate[];
+    assert.equal((await destContext.store.list('projectUpdates')).length, 3);
+    assert.deepEqual(
+      importedUpdates.map((u) => [u.health, u.body, u.createdAt]),
+      sourceUpdates.map((u: ProjectUpdate) => [u.health, u.body, u.createdAt]),
+    );
+    assert(
+      importedUpdates.every(
+        (u) => u.authorId === dstUser.id && u.importedFrom?.authorName === 'Original',
+      ),
+    );
+    assert(
+      importedUpdates.every(
+        (u) => !pack.projectUpdates.some((original: ProjectUpdate) => original.id === u.id),
+      ),
+    );
+    const importedChildUpdates = (await dst('GET', `/projects/${newChild.id}/updates`)).json().data;
+    assert.equal(importedChildUpdates[0].importedFrom.authorName, 'Historical contributor');
     assert.notEqual(newRoot.id, project.id);
     const newItems = await destContext.store.list<WorkItem>('items');
     assert.equal(newItems.length, 3);
@@ -288,6 +370,19 @@ test('portable project transfer preserves content, isolates access, validates re
     assert.equal(nextItem.identifier, 'MOVE2-03');
     const again = (await dst('GET', `/projects/${newRoot.id}/export`)).json();
     assert.equal(again.activity[0].importedFrom.authorName, 'Former contributor');
+    assert.equal(again.projectUpdates.length, 3);
+    assert(
+      again.projectUpdates
+        .filter((u: ProjectUpdate) => u.projectId === newRoot.id)
+        .every((u: ProjectUpdate) => u.importedFrom?.authorName === 'Original'),
+    );
+    assert.deepEqual(
+      again.projectUpdates
+        .filter((u: ProjectUpdate) => u.projectId === newRoot.id)
+        .map((u: ProjectUpdate) => u.sortKey)
+        .sort(),
+      [updateOne.id, updateTwo.id].sort(),
+    );
     const sourceAfter = (await src('GET', `/projects/${project.id}/export`)).json();
     delete sourceAfter.exportedAt;
     const sourceBefore = structuredClone(pack);
@@ -331,6 +426,12 @@ test('portable project transfer preserves content, isolates access, validates re
       badPackages.push(p);
     };
     change((p) => (p.version = 2));
+    change((p) => p.projectUpdates.push(p.projectUpdates[0]));
+    change((p) => (p.projectUpdates[0].projectId = randomUUID()));
+    change((p) => (p.projectUpdates[0].authorId = randomUUID()));
+    change((p) => (p.projectUpdates[0].health = 'invalid'));
+    change((p) => (p.projectUpdates[0].body = '  '));
+    change((p) => (p.projectUpdates[0].createdAt = 'not-a-date'));
     change((p) => p.projects.push(p.projects[0]));
     change((p) => (p.projects[0].parentId = p.projects[0].id));
     change((p) => (p.items[0].projectId = randomUUID()));
@@ -387,6 +488,7 @@ test('portable project transfer preserves content, isolates access, validates re
     assert.equal(failed.statusCode, 500, failed.body);
     assert.deepEqual(await destContext.store.list('projects'), snapshot);
     assert.equal((await destContext.store.list('items')).length, 4);
+    assert.equal((await destContext.store.list('projectUpdates')).length, 3);
     await destContext.db.query('ALTER TABLE entities DROP CONSTRAINT transfer_test_failure');
     assert.equal((await dst('POST', '/project-import', rollbackPayload)).statusCode, 201);
     // Ordinary members can import their own copies, with access checked on mappings.
@@ -410,6 +512,37 @@ test('portable project transfer preserves content, isolates access, validates re
     assert.equal(
       (await destContext.store.get<Project>('projects', memberImport.json().projectId))?.ownerId,
       member.id,
+    );
+    // Legacy v1 packages omit this optional collection entirely.
+    const legacy = structuredClone(pack);
+    delete legacy.projectUpdates;
+    const legacyPreview = (
+      await dst('POST', '/project-import/preview', { package: legacy })
+    ).json();
+    assert.equal(legacyPreview.counts.projectUpdates, 0);
+    const legacyImport = await dst('POST', '/project-import', {
+      package: legacy,
+      options: legacyPreview.options,
+      requestId: randomUUID(),
+    });
+    assert.equal(legacyImport.statusCode, 201, legacyImport.body);
+    assert.deepEqual(
+      (await dst('GET', `/projects/${legacyImport.json().projectId}/updates`)).json().data,
+      [],
+    );
+    const nextPreview = (await dst('POST', '/project-import/preview', { package: again })).json();
+    const nextImport = await dst('POST', '/project-import', {
+      package: again,
+      options: nextPreview.options,
+      requestId: randomUUID(),
+    });
+    assert.equal(nextImport.statusCode, 201, nextImport.body);
+    const nextUpdates = (
+      await dst('GET', `/projects/${nextImport.json().projectId}/updates`)
+    ).json().data;
+    assert.deepEqual(
+      nextUpdates.map((u: ProjectUpdate) => [u.sortKey, u.health, u.importedFrom]),
+      importedUpdates.map((u) => [u.sortKey, u.health, u.importedFrom]),
     );
   } finally {
     await source.close();

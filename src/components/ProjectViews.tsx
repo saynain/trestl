@@ -1,3 +1,4 @@
+import { ProjectUpdates } from './ProjectUpdates';
 import { Select } from './Select';
 import { useState, type FormEvent } from 'react';
 import {
@@ -159,6 +160,7 @@ export function Overview({ project, items }: { project: Project; items: WorkItem
   return (
     <div className="overview-content">
       <div className="overview-main">
+        <ProjectUpdates key={project.id} project={project} />
         <section className="overview-section">
           <div className="section-heading">
             <h2>About this project</h2>

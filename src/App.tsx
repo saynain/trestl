@@ -1,4 +1,5 @@
 import CliLoginApproval from './components/CliLoginApproval';
+import { WeeklyReview } from './components/ProjectUpdates';
 import Canvases from './components/Canvases';
 import GanttView from './components/GanttView';
 import ShortcutHelp from './components/ShortcutHelp';
@@ -543,7 +544,7 @@ export default function App() {
                     )}
                     <span>
                       {route.page === 'projects'
-                        ? `${data.projects.filter((p) => p.status !== 'archived').length} active projects`
+                        ? `${data.projects.filter((p) => p.status === 'active').length} active projects`
                         : `${headingItems.filter((i) => !isDone(i)).length} active items`}
                     </span>
                     {project?.dueDate && (
@@ -638,6 +639,22 @@ export default function App() {
                   </div>
                 )}
               </div>
+              {route.page === 'projects' && (
+                <nav className="page-tabs" aria-label="Project views">
+                  <button
+                    className={route.tab !== 'weekly' ? 'active' : ''}
+                    onClick={() => navigate('projects')}
+                  >
+                    All projects
+                  </button>
+                  <button
+                    className={route.tab === 'weekly' ? 'active' : ''}
+                    onClick={() => navigate('projects', undefined, 'weekly')}
+                  >
+                    Weekly review
+                  </button>
+                </nav>
+              )}
               {route.page !== 'projects' && (
                 <nav className="page-tabs">
                   {project && (
@@ -714,7 +731,11 @@ export default function App() {
               )}
               <div className="page-body">
                 {route.page === 'projects' ? (
-                  <AllProjects />
+                  route.tab === 'weekly' ? (
+                    <WeeklyReview />
+                  ) : (
+                    <AllProjects />
+                  )
                 ) : project && route.tab === 'gantt' ? (
                   <GanttView key={project.id} project={project} items={items} />
                 ) : project && route.tab === 'overview' ? (

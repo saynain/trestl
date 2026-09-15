@@ -49,9 +49,9 @@ export function ExportProject({ project, onClose }: { project: Project; onClose:
           another Trestl installation.
         </p>
         <p>
-          Includes accessible work items, discussion, roadmaps, milestones, links, relationships,
-          and canvases. Private content you cannot access and references outside this project tree
-          are excluded.
+          Includes accessible work items, discussion, project updates, roadmaps, milestones, links,
+          relationships, and canvases. Private content you cannot access and references outside this
+          project tree are excluded.
         </p>
         <p>
           Accounts, memberships, and integration credentials are excluded. The file contains project
@@ -218,6 +218,7 @@ export function ImportProject() {
                         {{
                           items: 'work items',
                           activity: 'history entries',
+                          projectUpdates: 'project updates',
                           canvasCollections: 'canvas collections',
                         }[key] ?? key}
                       </span>
