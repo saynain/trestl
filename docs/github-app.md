@@ -1,4 +1,6 @@
-# GitHub App setup for self-hosted Trestl
+# Legacy personal GitHub App setup
+
+For new shared connections, use the [guided GitHub App setup](github-installation.md), which supports development activity, webhooks, and optional two-way issue updates. This page describes the retained personal user-token flow.
 
 Each Trestl installation can use its own GitHub App. No central Trestl service, shared developer credentials, or paid GitHub organization is required. A personal GitHub account can register and install an app. GitHub.com is supported by this browser flow; GitHub Enterprise Server and Gitea can continue using personal tokens.
 
@@ -76,7 +78,7 @@ GitHub normally issues an eight-hour access token and a six-month refresh token.
 
 ## Scope and upstream references
 
-This implementation covers personal authorization, installation access visibility, automatic token renewal, issue lookup, and the existing read-only repository imports. Webhook-driven synchronization, GitHub writes, and automatic app registration are not implemented. Operators register their app once using the steps above.
+This implementation covers personal authorization, installation access visibility, automatic token renewal, issue lookup, and the existing read-only repository imports. This legacy flow remains read-only. Guided app registration, webhooks, and optional writes are available through the separate shared connection described in the [current integration guide](github-installation.md).
 
 - [Registering a GitHub App](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app)
 - [User authorization, state, PKCE and personal permission boundaries](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app)

@@ -11,6 +11,9 @@ export interface GitConnection {
   githubAccount?: string;
   reconnectRequired?: boolean;
   shared?: boolean;
+  development?: boolean;
+  issueWrite?: boolean;
+  githubInstallation?: { managedAppId?: string; account?: string; settingsUrl?: string };
 }
 export default function GitSettings({
   onChange,
@@ -87,8 +90,8 @@ export default function GitSettings({
     <section className="settings-section">
       <div className="settings-section-header">
         <div>
-          <h2>Git connections</h2>
-          <p>Connect a Gitea server or GitHub organization for everyone in this installation.</p>
+          <h2>Existing apps & other Git connections</h2>
+          <p>Connect an existing GitHub App manually, or add a Gitea server or access token.</p>
         </div>
         {admin && (
           <button

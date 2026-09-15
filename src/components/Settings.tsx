@@ -1,3 +1,4 @@
+import GitHubSettings from './GitHubSettings';
 import AuthenticationSettings from './AuthenticationSettings';
 import WorkspacePeople from './WorkspacePeople';
 import WorkspaceGeneral from './WorkspaceGeneral';
@@ -46,6 +47,7 @@ type Integration = {
   repository: string;
   baseUrl: string;
   projectId: string;
+  syncMode?: 'inbound' | 'two-way';
   lastSyncedAt?: string | null;
   lastError?: string | null;
 };
@@ -266,6 +268,7 @@ export default function Settings({
 function WorkspaceIntegrations() {
   const { data } = useApp();
   const [connections, setConnections] = useState<GitConnection[]>([]);
+  const [gitVersion, setGitVersion] = useState(0);
   return (
     <>
       <p className="settings-context-note">
@@ -273,7 +276,13 @@ function WorkspaceIntegrations() {
         connections are shared with everyone in this installation. Confluence search uses your
         personal account and its permissions.
       </p>
-      <GitSettings onChange={setConnections} />
+      {data.user.role === 'admin' && (
+        <GitHubSettings
+          connectionsKey={connections.map((c) => c.id).join(',')}
+          onChange={() => setGitVersion((v) => v + 1)}
+        />
+      )}
+      <GitSettings key={gitVersion} onChange={setConnections} />
       {data.user.role === 'admin' ? (
         <Integrations connections={connections} />
       ) : (
@@ -324,6 +333,7 @@ function Integrations({ connections }: { connections: GitConnection[] }) {
         connectionId: values.get('connectionId'),
         repository: values.get('repository'),
         projectId: values.get('projectId'),
+        syncMode: values.get('syncMode'),
       });
       setAdding(false);
       await load();
@@ -449,6 +459,17 @@ function Integrations({ connections }: { connections: GitConnection[] }) {
                 </Select>
               </label>
             </div>
+            <label className="field">
+              Issue synchronization
+              <select className="input" name="syncMode" defaultValue="inbound">
+                <option value="inbound">GitHub / Gitea → Trestl</option>
+                <option value="two-way">GitHub ↔ Trestl</option>
+              </select>
+              <small>
+                Two-way sync requires a GitHub App with issue write access. Titles, descriptions,
+                labels, and open/closed state sync both ways. Internal discussions stay in Trestl.
+              </small>
+            </label>
             <p className="settings-helper">
               The project is the destination for imported work. Your saved connection remains
               available from every project.
@@ -497,7 +518,8 @@ function Integrations({ connections }: { connections: GitConnection[] }) {
                 <div>
                   <strong>{integration.name}</strong>
                   <span>
-                    {integration.repository} <span>→</span>{' '}
+                    {integration.repository}{' '}
+                    <span>{integration.syncMode === 'two-way' ? '↔' : '→'}</span>{' '}
                     {data.projects.find((project) => project.id === integration.projectId)?.name ||
                       'Project unavailable'}
                   </span>
@@ -552,8 +574,8 @@ function Integrations({ connections }: { connections: GitConnection[] }) {
           ))}
         </div>
         <p className="settings-helper">
-          Sync brings repository changes into Trestl. It does not post comments or modify the source
-          repository.
+          Inbound imports keep planning local. Two-way GitHub imports also publish edits to titles,
+          descriptions, labels, and issue state. Internal notes stay in Trestl.
         </p>
       </section>
     </>

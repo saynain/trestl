@@ -118,6 +118,8 @@ const schemas: Record<string, unknown> = {
       state: { type: 'string', enum: ['open', 'closed'] },
       lastSyncedAt: nullableString,
       connected: { type: 'boolean' },
+      syncMode: { type: 'string', enum: ['inbound', 'two-way'] },
+      syncError: nullableString,
     },
   },
   WorkItem: {
@@ -650,6 +652,7 @@ operation(
 schemas.Integration = object({
   id: string,
   connectionId: string,
+  syncMode: { type: 'string', enum: ['inbound', 'two-way'] },
   provider: { type: 'string', enum: ['github', 'gitea'] },
   name: string,
   baseUrl: string,
@@ -670,10 +673,11 @@ operation(
 operation(
   '/integrations',
   'post',
-  'Connect a repository for inbound issue synchronization (administrator only)',
+  'Connect a repository for inbound or opt-in two-way GitHub issue synchronization (administrator only)',
   ref('Integration'),
   object(
     {
+      syncMode: { type: 'string', enum: ['inbound', 'two-way'], default: 'inbound' },
       provider: { type: 'string', enum: ['github', 'gitea'] },
       name: string,
       baseUrl: string,
@@ -717,6 +721,10 @@ schemas.GitConnection = object({
   authType: { type: 'string', enum: ['token', 'github-app', 'github-installation'] },
   shared: { type: 'boolean' },
   githubAccount: string,
+  development: { type: 'boolean' },
+  issueWrite: { type: 'boolean' },
+  workspaceId: string,
+  githubInstallation: object({ managedAppId: string, account: string, settingsUrl: string }),
   reconnectRequired: { type: 'boolean' },
   userId: uuid,
   provider: { type: 'string', enum: ['github', 'gitea'] },
@@ -1145,13 +1153,294 @@ operation(
   { noContent: true },
 );
 
+const githubRules = object(
+  Object.fromEntries(
+    ['draft', 'opened', 'review_requested', 'approved', 'merged', 'closed'].map((key) => [
+      key,
+      { ...status, type: ['string', 'null'], enum: [...status.enum, null] },
+    ]),
+  ),
+  ['draft', 'opened', 'review_requested', 'approved', 'merged', 'closed'],
+);
+const githubRepositoryFields = {
+  id: string,
+  connectionId: string,
+  projectId: uuid,
+  repository: string,
+  defaultBranch: string,
+  branches: string,
+  rules: githubRules,
+  enabled: { type: 'boolean' },
+  lastSyncedAt: nullableString,
+  lastError: nullableString,
+  createdAt: string,
+  creatorId: uuid,
+  workspaceId: string,
+};
+schemas.GitHubRepository = object(githubRepositoryFields);
+const developmentLink = object({
+  id: string,
+  itemId: uuid,
+  repositoryId: string,
+  kind: { type: 'string', enum: ['pull_request', 'commit', 'branch'] },
+  number: { type: ['integer', 'null'] },
+  sha: string,
+  title: string,
+  url: string,
+  branch: string,
+  baseBranch: string,
+  state: {
+    type: 'string',
+    enum: ['open', 'draft', 'merged', 'closed', 'committed', 'active', 'deleted'],
+  },
+  closing: { type: 'boolean' },
+  manual: { type: 'boolean' },
+  author: string,
+  review: nullableString,
+  checks: nullableString,
+  updatedAt: string,
+  syncedAt: string,
+});
+const browserOnly = { browserOnly: true };
+const listOf = (items: unknown) => ({ type: 'array', items });
+const managedApp = {
+  type: 'object',
+  properties: {
+    id: string,
+    name: string,
+    owner: string,
+    appId: string,
+    slug: string,
+    origin: string,
+    mode: { type: 'string', enum: ['webhook', 'polling'] },
+    issueWrite: { type: 'boolean' },
+    lastWebhookAt: nullableString,
+    installUrl: string,
+    settingsUrl: string,
+  },
+};
+operation(
+  '/admin/github-apps',
+  'get',
+  'Read guided GitHub setup readiness and saved apps (admin only; no credentials)',
+  object({ origin: string, problem: nullableString, apps: listOf(managedApp) }),
+  undefined,
+  browserOnly,
+);
+operation(
+  '/admin/github-apps/start',
+  'post',
+  'Prepare an app manifest bound to this administrator browser session',
+  object({ action: string, manifest: { type: 'object' } }),
+  object(
+    {
+      name: { ...string, maxLength: 34 },
+      owner: string,
+      ownerType: { type: 'string', enum: ['personal', 'organization'] },
+      mode: { type: 'string', enum: ['webhook', 'polling'] },
+      multipleOwners: { type: 'boolean' },
+      issueWrite: { type: 'boolean' },
+    },
+    ['name', 'owner', 'ownerType', 'mode'],
+  ),
+  browserOnly,
+);
+operation(
+  '/admin/github-apps/callback',
+  'get',
+  'Exchange a one-use manifest code and return to administration',
+  undefined,
+  undefined,
+  {
+    ...browserOnly,
+    parameters: [
+      { name: 'state', in: 'query', required: true, schema: string },
+      { name: 'code', in: 'query', required: true, schema: string },
+    ],
+  },
+);
+(paths['/admin/github-apps/callback'].get as { responses: unknown }).responses = {
+  '302': { description: 'Return to integration settings' },
+  ...errorResponses,
+};
+operation(
+  '/admin/github-apps/{id}/installations',
+  'get',
+  'Verify app installations on GitHub (admin only)',
+  listOf(object({ id: string, account: string, suspended: { type: 'boolean' } })),
+  undefined,
+  browserOnly,
+);
+operation(
+  '/admin/github-apps/{id}/connect',
+  'post',
+  'Verify and connect one app installation (admin only)',
+  ref('GitConnection'),
+  object({ installationId: string }, ['installationId']),
+  browserOnly,
+);
+operation(
+  '/admin/github-apps/{id}',
+  'delete',
+  'Remove saved app credentials after disconnecting its connections; does not uninstall on GitHub',
+  undefined,
+  undefined,
+  { ...browserOnly, noContent: true },
+);
+operation(
+  '/github/connections/{id}/repositories',
+  'get',
+  'Discover selected repositories (admin only)',
+  listOf(
+    object({
+      id: { type: 'integer' },
+      repository: string,
+      defaultBranch: string,
+      private: { type: 'boolean' },
+    }),
+  ),
+  undefined,
+  browserOnly,
+);
+operation(
+  '/github/repositories',
+  'get',
+  'List development repositories visible through project access',
+  listOf(ref('GitHubRepository')),
+);
+operation(
+  '/github/repositories',
+  'post',
+  'Connect a verified repository to a project (admin only)',
+  ref('GitHubRepository'),
+  object({ connectionId: string, repository: string, projectId: uuid }, [
+    'connectionId',
+    'repository',
+    'projectId',
+  ]),
+  { ...browserOnly, created: true },
+);
+operation(
+  '/github/repositories/{id}',
+  'patch',
+  'Configure branch filters and status automation (admin only)',
+  ref('GitHubRepository'),
+  object({ branches: string, rules: githubRules, enabled: { type: 'boolean' } }, [
+    'branches',
+    'rules',
+    'enabled',
+  ]),
+  browserOnly,
+);
+operation(
+  '/github/repositories/{id}',
+  'delete',
+  'Disconnect development synchronization while retaining tasks',
+  undefined,
+  undefined,
+  { ...browserOnly, noContent: true },
+);
+operation(
+  '/github/repositories/{id}/sync',
+  'post',
+  'Reconcile development activity and associated issue imports now (admin only)',
+  ref('GitHubRepository'),
+  object({}),
+  browserOnly,
+);
+operation(
+  '/github/items/{id}',
+  'get',
+  'Read linked development activity and a suggested branch name',
+  object({
+    branchName: string,
+    repositories: listOf(object({ id: string, repository: string })),
+    links: listOf(developmentLink),
+  }),
+);
+operation(
+  '/github/items/{id}/pull-request',
+  'post',
+  'Link a PR manually using current GitHub data',
+  object({ linked: { type: 'boolean' } }),
+  object(
+    { repositoryId: string, number: { type: 'integer', minimum: 1 }, closing: { type: 'boolean' } },
+    ['repositoryId', 'number', 'closing'],
+  ),
+  browserOnly,
+);
+operation(
+  '/github/items/{id}/links/{linkId}',
+  'delete',
+  'Unlink development activity and suppress automatic relinking',
+  undefined,
+  undefined,
+  { ...browserOnly, noContent: true },
+);
+operation(
+  '/github/items/{id}/publish-options',
+  'get',
+  'Read eligible two-way issue destinations for a native task',
+  listOf(object({ id: string, repository: string })),
+);
+operation(
+  '/github/items/{id}/publish',
+  'post',
+  'Explicitly publish a native task as a GitHub issue',
+  object({ published: { type: 'boolean' } }),
+  object({ integrationId: string }, ['integrationId']),
+  browserOnly,
+);
+operation(
+  '/github/items/{id}/issue-comments',
+  'post',
+  'Explicitly post a GitHub comment with retry protection; separate from internal notes',
+  object({ posted: { type: 'boolean' } }),
+  object({ body: string, requestId: uuid }, ['body', 'requestId']),
+  browserOnly,
+);
+const issueFields = object({
+  title: string,
+  description: string,
+  labels: listOf(string),
+  state: { type: 'string', enum: ['open', 'closed'] },
+});
+operation(
+  '/github/items/{id}/issue-conflict',
+  'get',
+  'Compare the current local and remote issue versions',
+  object({
+    local: issueFields,
+    remote: issueFields,
+    fingerprint: string,
+    revision: { type: 'integer' },
+  }),
+  undefined,
+  browserOnly,
+);
+operation(
+  '/github/items/{id}/issue-conflict',
+  'post',
+  'Resolve a conflict after checking local revision and remote fingerprint',
+  object({ resolved: { type: 'boolean' } }),
+  object(
+    {
+      choice: { type: 'string', enum: ['local', 'remote'] },
+      fingerprint: string,
+      revision: { type: 'integer' },
+    },
+    ['choice', 'fingerprint', 'revision'],
+  ),
+  browserOnly,
+);
+
 export const openapi = {
   openapi: '3.1.0',
   info: {
     title: 'Trestl API',
     version: '0.2.0',
     description:
-      'Repository-independent project planning. Authenticate with a browser session or a scoped personal token. Core collection responses use data arrays; /integrations returns a direct array; item pagination uses opaque cursor values returned as nextCursor. Private project access is inherited by descendants. All dates are ISO YYYY-MM-DD and timestamps are UTC ISO 8601. The bootstrap endpoint is intended for small self-hosted workspaces. Repository imports require an admin account. Git and Confluence connections use individual credentials and explicit allowed origins. Work mutations never post to external providers; GitHub App authorization and refresh exchange credentials with GitHub.',
+      'Repository-independent project planning. Authenticate with a browser session or a scoped personal token. Core collection responses use data arrays; /integrations returns a direct array; item pagination uses opaque cursor values returned as nextCursor. Private project access is inherited by descendants. All dates are ISO YYYY-MM-DD and timestamps are UTC ISO 8601. The bootstrap endpoint is intended for small self-hosted workspaces. Repository imports require an admin account. Git and Confluence connections use individual credentials and explicit allowed origins. Opt-in two-way GitHub synchronization publishes changes to linked issue content and state. Explicit browser actions publish new issues and GitHub comments; ordinary internal comments remain local. GitHub Apps use installation or personal credentials according to the configured connection.',
   },
   servers: [{ url: '/api/v1' }],
   components: {

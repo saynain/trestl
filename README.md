@@ -15,7 +15,8 @@ still developing.
 - Plan dates, dependencies, milestones, Gantt schedules, and project roadmaps.
 - Keep diagrams in project canvases with the embedded Excalidraw editor.
 - Collaborate through project sharing, assignments, and internal discussions.
-- Link GitHub/Gitea issues and Confluence documentation.
+- Connect your own GitHub App with guided setup, link PRs and commits, automate task status, and optionally sync issues both ways.
+- Import Gitea issues and link Confluence documentation.
 - Use a standalone CLI, a scoped API, and an optional Raycast extension.
 
 See the [user guide](docs/user-guide.md) for the complete workflows.
@@ -114,7 +115,7 @@ configuration outside the product repository.
 - [Development and checks](docs/development.md)
 - [Docker, configuration, backups, and upgrades](deploy/README.md)
 - [Kubernetes deployment](deploy/kubernetes/README.md)
-- [GitHub App integration](docs/github-app.md)
+- [GitHub App integration](docs/github-installation.md)
 - [CLI and agent integration](cli/README.md)
 - [Raycast extension](extensions/raycast/README.md)
 - [Contributing](CONTRIBUTING.md)
@@ -128,7 +129,7 @@ while substantial filtering and authorization use application memory over
 PostgreSQL JSONB documents. Large installations need further query and load
 work. Kubernetes support is a deployment path, not a high-availability claim.
 
-Git issue synchronization is inbound. Email/push notification delivery and
+Gitea imports are inbound; GitHub Apps support optional two-way issue updates. Email/push notification delivery and
 installation-wide JSON restore are not implemented. Project export/import supports
 portability but does not replace database backups. Database migrations run at
 startup; back up before upgrading and retain your `APP_SECRET`.
