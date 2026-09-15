@@ -1,3 +1,4 @@
+import { watchAppearance } from './lib/themes';
 import CliLoginApproval from './components/CliLoginApproval';
 import Canvases from './components/Canvases';
 import GanttView from './components/GanttView';
@@ -37,7 +38,6 @@ import {
 import type { Bootstrap, Project, Status, User } from '../shared/types';
 import { api, ApiError, patch, remove } from './lib/api';
 import {
-  readTheme,
   readUiPreferences,
   saveUiPreferences,
   defaultUiPreferences,
@@ -119,6 +119,9 @@ export default function App() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const toastTimer = useRef<number | undefined>(undefined);
   const loadSequence = useRef(0);
+  useEffect(() => {
+    if (data?.user) return watchAppearance(data.user);
+  }, [data?.user.id]);
   const toast = useCallback((text: string, kind = 'success') => {
     setMessage({ text, kind });
     clearTimeout(toastTimer.current);
@@ -129,7 +132,6 @@ export default function App() {
     try {
       const next = await api<Bootstrap>('/bootstrap');
       if (sequence === loadSequence.current) {
-        document.documentElement.dataset.theme = readTheme(next.user);
         setProfilePreferences((current) =>
           current?.userId === next.user.id
             ? current
