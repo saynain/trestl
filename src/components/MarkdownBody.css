@@ -1,7 +1,7 @@
 .item-markdown {
-  font-size: 13px;
+  font-size: var(--text-body);
   color: var(--text);
-  line-height: 1.8;
+  line-height: 1.65;
   overflow-wrap: anywhere;
 }
 .item-markdown p {
@@ -13,7 +13,7 @@
   color: var(--text);
   line-height: 1.4;
   margin: 20px 0 10px;
-  font-size: 16px;
+  font-size: var(--text-body);
 }
 .item-markdown ul,
 .item-markdown ol {
@@ -44,15 +44,16 @@
   padding: 12px;
   border-radius: 5px;
   overflow: auto;
-  font-size: 11px;
+  font-size: 0.875em;
 }
 .item-markdown code {
   background: var(--surface-hover);
-  font-size: 11px;
+  font-size: 0.875em;
   border-radius: 3px;
   padding: 2px 4px;
 }
 .item-markdown pre code {
+  font-size: inherit;
   padding: 0;
 }
 .item-markdown blockquote {

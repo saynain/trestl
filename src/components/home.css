@@ -15,7 +15,7 @@
 .home-heading p {
   color: var(--muted);
   margin-top: 10px;
-  font-size: 14px;
+  font-size: var(--text-md);
   line-height: 1.5;
 }
 .home-capture {
@@ -26,7 +26,7 @@
 }
 .home-capture-title {
   width: 100%;
-  font-size: 14px;
+  font-size: var(--text-md);
   min-height: 44px;
 }
 .home-capture-options {
@@ -58,7 +58,7 @@
   align-items: center;
   gap: 10px;
   margin-left: auto;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .home-capture-date input {
   width: 145px;
@@ -68,7 +68,7 @@
   align-items: center;
   gap: 7px;
   margin-top: 13px;
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 .home-tabs {
@@ -92,7 +92,7 @@
   font-weight: 600;
 }
 .home-tabs button span {
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 400;
   padding: 2px 6px;
   border-radius: 10px;
@@ -156,7 +156,7 @@
 }
 .home-item-main strong {
   display: block;
-  font-size: 14px;
+  font-size: var(--text-md);
   line-height: 1.5;
   font-weight: 500;
   overflow-wrap: anywhere;
@@ -164,13 +164,13 @@
 .home-item-main > span {
   display: block;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--text-sm);
   line-height: 1.6;
   margin-top: 2px;
 }
 .home-item-dates {
   text-align: right;
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--muted);
   display: grid;
   gap: 5px;
@@ -180,11 +180,11 @@
   color: var(--accent);
 }
 .home-row-action {
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .home-scope-note {
   margin-top: 20px;
-  font-size: 11px;
+  font-size: var(--text-sm);
   line-height: 1.6;
   color: var(--muted);
 }

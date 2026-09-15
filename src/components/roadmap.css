@@ -25,7 +25,7 @@
 }
 .roadmap-eyebrow {
   text-transform: uppercase;
-  font-size: 13px;
+  font-size: var(--text-ui);
   font-weight: 600;
   color: var(--accent);
   margin: 0 0 10px;
@@ -39,7 +39,7 @@
   margin: 0;
 }
 .roadmap-headline {
-  font-size: 16px;
+  font-size: var(--text-body);
   line-height: 1.6;
   color: var(--muted);
   margin: 12px 0 0;
@@ -48,7 +48,7 @@
 .roadmap-review {
   text-align: right;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-ui);
   line-height: 1.55;
   max-width: 430px;
 }
@@ -94,7 +94,7 @@
 }
 .roadmap-column-heading p {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-ui);
   line-height: 1.6;
   color: var(--muted);
 }
@@ -147,7 +147,7 @@
 }
 .roadmap-card-body p {
   margin: 13px 0 0;
-  font-size: 14px;
+  font-size: var(--text-md);
   line-height: 1.65;
   color: var(--muted);
   overflow-wrap: anywhere;
@@ -160,7 +160,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.4;
 }
 .roadmap-area {
@@ -186,7 +186,7 @@
   margin-top: 16px;
 }
 .roadmap-empty {
-  font-size: 14px;
+  font-size: var(--text-md);
   line-height: 1.7;
   color: var(--muted);
   padding: 20px 0;
@@ -210,7 +210,7 @@
   letter-spacing: -0.4px;
 }
 .roadmap-deferred p {
-  font-size: 14px;
+  font-size: var(--text-md);
   line-height: 1.65;
   margin: 8px 0 0;
   color: var(--muted);
@@ -244,7 +244,7 @@
 .roadmap-footnote {
   text-align: center;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-ui);
   margin: 24px 0 0;
 }
 .roadmap-presenting > .sidebar,
@@ -281,7 +281,7 @@
   border-radius: 7px;
 }
 .is-presenting .roadmap-brandbar .button {
-  font-size: 14px;
+  font-size: var(--text-md);
   padding: 10px 16px;
 }
 .is-presenting .roadmap-heading {
@@ -299,7 +299,7 @@
   font-size: 18px;
 }
 .is-presenting .roadmap-review {
-  font-size: 16px;
+  font-size: var(--text-body);
   max-width: 500px;
 }
 .is-presenting .roadmap-review p {
@@ -318,7 +318,7 @@
   font-size: 23px;
 }
 .is-presenting .roadmap-column-heading p {
-  font-size: 16px;
+  font-size: var(--text-body);
 }
 .is-presenting .roadmap-column-heading::after {
   margin-top: 18px;
@@ -334,7 +334,7 @@
   line-height: 1.55;
 }
 .is-presenting .roadmap-card-meta {
-  font-size: 12px;
+  font-size: var(--text-sm);
   min-height: 58px;
   gap: 8px;
 }
@@ -359,10 +359,10 @@
   font-size: 18px;
 }
 .is-presenting .roadmap-deferred p {
-  font-size: 16px;
+  font-size: var(--text-body);
 }
 .is-presenting .roadmap-footnote {
-  font-size: 16px;
+  font-size: var(--text-body);
 }
 .roadmap-editor fieldset {
   display: grid;
@@ -385,7 +385,7 @@
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 .roadmap-remove-trigger {
@@ -418,7 +418,7 @@
   margin: 0;
 }
 .roadmap-detail h3 {
-  font-size: 14px;
+  font-size: var(--text-md);
   margin: 12px 0 0;
 }
 .roadmap-prose {
@@ -428,7 +428,7 @@
 }
 .roadmap-detail-horizon {
   color: var(--horizon-color, var(--accent));
-  font-size: 13px;
+  font-size: var(--text-ui);
 }
 :root[data-theme='dark'] .horizon-next {
   --horizon-color: #b79bdd;
@@ -508,7 +508,7 @@
   }
   .roadmap-brand {
     gap: 10px;
-    font-size: 16px;
+    font-size: var(--text-body);
   }
   .is-presenting .roadmap-heading h2 {
     font-size: 36px;

@@ -31,13 +31,13 @@
 }
 .tree-count {
   padding: 2px 5px;
-  font-size: 10px;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
   background: var(--surface);
 }
 .tree-status,
 .tree-context-label {
-  font-size: 10px;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 .work-tree-row .item-name {
