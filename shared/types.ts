@@ -42,7 +42,7 @@ export interface Project {
   dueDate: string | null;
   visibility: Visibility;
   ownerId: string;
-  /** Additional workspace members allowed into a private project; absent on older records. */
+  /** Project team members in addition to the owner; also grants access when private. Absent on older records. */
   memberIds?: string[];
   createdAt: string;
 }

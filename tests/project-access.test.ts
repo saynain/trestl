@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Project, User } from '../shared/types.ts';
-import { projectAccessMembers } from '../src/lib/project-access.ts';
+import { projectAccessMembers, projectTeamMembers } from '../src/lib/project-access.ts';
 
 const users: User[] = ['owner', 'alex', 'jamie', 'outsider'].map((id) => ({
   id,
@@ -71,4 +71,22 @@ test('missing or cyclic ancestor chains do not claim that users have access', ()
     ),
     [],
   );
+});
+
+test('workspace project teams include selected members and the owner, independently of access', () => {
+  const shared = {
+    ...project,
+    visibility: 'workspace' as const,
+    memberIds: ['jamie', 'owner', 'jamie', 'missing'],
+  };
+  assert.deepEqual(
+    projectTeamMembers(shared, users).map((u) => u.id),
+    ['owner', 'jamie'],
+  );
+  assert.equal(projectAccessMembers(shared, [shared], users).length, users.length);
+  assert.deepEqual(
+    projectTeamMembers({ ...shared, memberIds: undefined }, users).map((u) => u.id),
+    ['owner'],
+  );
+  assert.deepEqual(projectTeamMembers(shared, [{ ...users[2], workspaceId: 'other' }]), []);
 });
