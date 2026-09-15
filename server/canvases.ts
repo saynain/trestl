@@ -92,6 +92,22 @@ export const canvasScene = z
       ),
     'An image is missing its file',
   );
+// Native files contain editor preferences we do not persist in shared scenes.
+export const excalidrawDocument = z
+  .object({
+    type: z.literal('excalidraw'),
+    elements: z.array(z.unknown()),
+    appState: z
+      .object({
+        viewBackgroundColor: z.string().max(100).optional(),
+        gridSize: z.number().positive().nullable().optional(),
+      })
+      .default({}),
+    files: z.record(z.string(), z.unknown()).default({}),
+  })
+  .transform(({ elements, appState, files }) => ({ elements, appState, files }))
+  .pipe(canvasScene);
+
 const title = z.string().trim().min(1).max(240);
 const collectionId = z.string().uuid().nullable();
 const create = z
@@ -247,16 +263,13 @@ export function registerCanvases(
     );
     return { data: result.rows.map((row) => row.data).filter((c) => sameWorkspace(user, c)) };
   });
-  app.post<{ Params: Params }>(base, { bodyLimit: canvasBodyLimit }, async (request, reply) => {
-    const user = ctx.requireUser(request),
-      input = create.parse(request.body);
-    const canvas = await mutate(async (store, tx) => {
-      await checked(store, user, request.params.projectId);
-      if (input.collectionId)
-        await checkedCollection(store, user, request.params.projectId, input.collectionId);
+  const createCanvas = async (user: User, projectId: string, input: z.infer<typeof create>) =>
+    mutate(async (store) => {
+      await checked(store, user, projectId);
+      if (input.collectionId) await checkedCollection(store, user, projectId, input.collectionId);
       return store.put<ProjectCanvas>('canvases', {
         id: ctx.id(),
-        projectId: request.params.projectId,
+        projectId,
         workspaceId: workspaceOf(user),
         title: input.title,
         collectionId: input.collectionId ?? null,
@@ -268,7 +281,45 @@ export function registerCanvases(
         updatedAt: ctx.now(),
       });
     });
+  app.post<{ Params: Params }>(base, { bodyLimit: canvasBodyLimit }, async (request, reply) => {
+    const canvas = await createCanvas(
+      ctx.requireUser(request),
+      request.params.projectId,
+      create.parse(request.body),
+    );
     return reply.code(201).send(canvas);
+  });
+  app.post<{ Params: Params }>(
+    `${base}/import`,
+    { bodyLimit: canvasBodyLimit },
+    async (request, reply) => {
+      const user = ctx.requireUser(request);
+      const input = z
+        .object({ title, document: excalidrawDocument, collectionId: collectionId.optional() })
+        .strict()
+        .parse(request.body);
+      const canvas = await createCanvas(user, request.params.projectId, {
+        title: input.title,
+        scene: input.document,
+        collectionId: input.collectionId,
+      });
+      return reply.code(201).send(canvas);
+    },
+  );
+  app.get<{ Params: Params }>(`${base}/:canvasId/show`, async (request) => {
+    const canvas = (await checked(
+      ctx.store,
+      ctx.requireUser(request),
+      request.params.projectId,
+      request.params.canvasId,
+    ))!;
+    const query = new URLSearchParams({ tab: `canvases/${canvas.id}` });
+    return {
+      id: canvas.id,
+      title: canvas.title,
+      revision: canvas.revision,
+      url: `/#/project/${encodeURIComponent(canvas.projectId)}?${query}`,
+    };
   });
   app.get<{ Params: Params }>(`${base}/:canvasId`, async (request) =>
     checked(ctx.store, ctx.requireUser(request), request.params.projectId, request.params.canvasId),

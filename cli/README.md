@@ -173,3 +173,21 @@ trestl milestone-update <milestone-id> --due 2026-10-15 --expected-revision 2 --
 `--start` and `--due` accept `none` to clear a date. `--labels` accepts comma-separated names, or `none` to clear all tags. A project requires an explicit `--key`; a new milestone requires an explicit `--project`. `--completed` creates an already-completed milestone. Project keys must be unique in the workspace. Project and milestone creation do not support idempotency keys: after an uncertain response, inspect `projects` or `milestones` before trying again. Work-item creation supports `--idempotency-key` as usual.
 
 `relation-add` takes the blocker first and dependent second, resolving either IDs or identifiers. An existing identical dependency is returned without duplication; cycles are rejected by the server. `project-update` accepts description and start/due dates. `milestone-update` accepts title and due date and requires the revision from `milestones --json` (use 0 if absent); stale revisions fail without overwriting another edit.
+
+## Canvases
+
+Canvases belong to a project. Use `--project <id-or-key>` or the repository project default; profiles and `--no-config` work as for items.
+
+```sh
+trestl canvases list --project APP
+trestl canvases create "System architecture" --project APP
+trestl canvases import ./architecture.excalidraw --project APP
+trestl canvases import ./architecture.excalidraw --project APP --title "Production" --collection <collection-id>
+trestl canvases show <canvas-id> --project APP
+trestl canvases show <canvas-id> --project APP --json
+trestl canvases delete <canvas-id> --project APP --expected-revision 1
+```
+
+`show` prints a browser link instead of a terminal image. Its JSON output includes `id`, `title`, `revision`, and an absolute `url`. The link opens the canvas in Trestl and requires normal project access. Use `GET /api/v1/projects/:projectId/canvases/:canvasId` for the full editable scene. `list --json` returns canvas metadata without scenes. Creation and import return the created canvas as JSON. Import derives the name from the filename unless `--title` is given; create/import accept `--collection <id|none>`.
+
+Imports create exactly one canvas, preserve embedded images, discard editor-only preferences, and are validated by the server. Invalid documents create nothing. Requests are limited to 8 MiB, including JSON wrapping and images. A write token is required for create, import, and delete. Delete requires the revision previously read with `show --json`; a stale revision returns conflict (exit 5). Canvas creation/import are not automatically retried or deduplicated; check the list after an uncertain network failure before retrying.

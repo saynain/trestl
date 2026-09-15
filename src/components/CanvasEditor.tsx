@@ -15,7 +15,6 @@ import {
   MainMenu,
   exportToBlob,
   exportToSvg,
-  loadFromBlob,
   serializeAsJSON,
 } from '@excalidraw/excalidraw';
 import type {
@@ -31,6 +30,7 @@ import { CanvasSaveQueue } from '../lib/canvas-save';
 import { useApp } from '../lib/context';
 import { readCanvasTheme, saveCanvasTheme, type CanvasTheme } from '../lib/preferences';
 import { Modal } from './ui';
+import { importCanvas, readCanvasImport } from '../lib/canvas-import';
 import CanvasSwitcher from './CanvasSwitcher';
 import '@excalidraw/excalidraw/index.css';
 
@@ -409,21 +409,10 @@ export default function CanvasEditor({
           setBusy(true);
           setNotice('');
           try {
-            if (file.size > 8 * 1024 * 1024) throw new Error('Choose a canvas smaller than 8 MB.');
-            const raw = JSON.parse(await file.text());
-            if (raw.type !== 'excalidraw' || !Array.isArray(raw.elements))
-              throw new Error('Choose a valid .excalidraw file.');
-            const data = await loadFromBlob(file, null, null);
-            if (data.elements.some((e) => ['embeddable', 'iframe'].includes(e.type)))
-              throw new Error(
-                'Embedded web pages are not supported. Remove them before importing.',
-              );
-            // Import creates a new canvas, preserving the current drawing.
+            const document = await readCanvasImport(file);
+            // Preserve pending changes before opening the imported canvas.
             if (!(await queue.flush())) return;
-            const result = await post<ProjectCanvas>(base, {
-              title: file.name.replace(/\.excalidraw$/i, '').slice(0, 240) || 'Imported canvas',
-              scene: sceneFrom(data.elements, data.appState, data.files ?? {}),
-            });
+            const result = await importCanvas(base, file, document, canvas.collectionId);
             allowNavigation.current = true;
             onOpen(result.id);
           } catch (e) {

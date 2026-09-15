@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { browserLogin } from './browser-login.js';
 import { parseArgs } from 'node:util';
-import { readFile } from 'node:fs/promises';
+import { basename } from 'node:path';
+import { readFile, stat } from 'node:fs/promises';
 import {
   credentialPath,
   listProfiles,
@@ -14,7 +15,14 @@ import {
 } from './auth.js';
 import { initializeConfig, repositoryConfig } from './config.js';
 import { CliError, httpError, usage } from './errors.js';
-import type { Project, WorkItem, ItemDetail, Milestone } from '../shared/types';
+import type {
+  Project,
+  WorkItem,
+  ItemDetail,
+  Milestone,
+  ProjectCanvas,
+  CanvasSummary,
+} from '../shared/types';
 const help = `Trestl — project work from your terminal
 
 Usage: trestl <command> [arguments] [options]
@@ -39,6 +47,11 @@ Commands:
   milestones                    List milestones (optional --project)
   milestone-create <title>     Create a milestone (requires --project)
   comment <id-or-identifier> <text>  Add an internal comment
+  canvases list                 List canvases (requires a project)
+  canvases create <title>       Create a blank canvas
+  canvases import <file>        Import an .excalidraw file as a new canvas
+  canvases show <id>            Print a browser link; --json includes revision
+  canvases delete <id>          Delete using --expected-revision from show
   export                        Export your accessible workspace as JSON
 
 Options:
@@ -60,7 +73,8 @@ Options:
   --status <status>             backlog|todo|in_progress|in_review|done|canceled
   --priority <priority>         none|low|medium|high|urgent
   --type <type>                 task|bug|idea|followup
-  --title <title>               New title for update
+  --title <title>               New title for update or canvas import
+  --collection <id|none>        Collection for canvas create/import
   --description <text>          Item description
   --start <YYYY-MM-DD|none>     Scheduled start
   --key <key>                   Unique project key
@@ -131,6 +145,7 @@ const commandOptions: Record<string, string[]> = {
   milestones: ['project'],
   'milestone-create': ['project', 'due', 'completed'],
   export: [],
+  canvases: ['project', 'title', 'collection', 'expected-revision'],
   create: [...fields, 'idempotency-key'],
   update: [...fields, 'title', 'expected-revision'],
   comment: ['idempotency-key'],
@@ -194,22 +209,44 @@ async function main() {
   for (const key of Object.keys(values))
     if (![...common, ...commandOptions[command]].includes(key))
       throw usage(`--${key} is not supported by ${command}.`);
-  const count = ['comment', 'relation-add'].includes(command)
-    ? 2
-    : [
-          'get',
-          'search',
-          'create',
-          'update',
-          'auth',
-          'profiles',
-          'project-create',
-          'project-update',
-          'milestone-update',
-          'milestone-create',
-        ].includes(command)
-      ? 1
-      : 0;
+  const canvasAction = command === 'canvases' ? args[0] : undefined;
+  if (command === 'canvases') {
+    if (!['list', 'create', 'import', 'show', 'delete'].includes(canvasAction || ''))
+      throw usage(
+        'Usage: trestl canvases <list|create|import|show|delete> [argument] --project <id-or-key>',
+      );
+    const allowed = [
+      ...common,
+      'project',
+      ...(canvasAction === 'import' ? ['title', 'collection'] : []),
+      ...(canvasAction === 'create' ? ['collection'] : []),
+      ...(canvasAction === 'delete' ? ['expected-revision'] : []),
+    ];
+    for (const key of Object.keys(values))
+      if (!allowed.includes(key))
+        throw usage(`--${key} is not supported by canvases ${canvasAction}.`);
+  }
+  const count =
+    command === 'canvases'
+      ? canvasAction === 'list'
+        ? 1
+        : 2
+      : ['comment', 'relation-add'].includes(command)
+        ? 2
+        : [
+              'get',
+              'search',
+              'create',
+              'update',
+              'auth',
+              'profiles',
+              'project-create',
+              'project-update',
+              'milestone-update',
+              'milestone-create',
+            ].includes(command)
+          ? 1
+          : 0;
   if (args.length !== count)
     throw usage(
       `Incorrect arguments for ${command}. Quote text containing spaces. Run trestl --help.`,
@@ -230,6 +267,8 @@ async function main() {
   }
   integer('limit', 1, 500);
   const expectedRevision = integer('expected-revision', 0, 2147483646);
+  if (canvasAction === 'delete' && expectedRevision === undefined)
+    throw usage('canvases delete requires --expected-revision from canvases show --json.');
   if (
     values['idempotency-key'] &&
     !/^[A-Za-z0-9._:-]{1,128}$/.test(String(values['idempotency-key']))
@@ -415,6 +454,78 @@ async function main() {
         ? { id: status.user.id, name: status.user.name, email: status.user.email }
         : undefined,
     });
+    return;
+  }
+  if (command === 'canvases') {
+    const projectRef = values.project ?? repository.config.project;
+    if (!projectRef || projectRef === 'none')
+      throw usage('Canvases require --project <id-or-key> or a repository project default.');
+    let document: unknown;
+    if (canvasAction === 'import') {
+      try {
+        if ((await stat(args[1])).size > 8 * 1024 * 1024)
+          throw usage('Choose a canvas smaller than 8 MB.');
+        document = JSON.parse(await readFile(args[1], 'utf8'));
+        if (
+          !document ||
+          typeof document !== 'object' ||
+          !('type' in document) ||
+          document.type !== 'excalidraw'
+        )
+          throw usage('Choose a valid .excalidraw file.');
+      } catch (error) {
+        if (error instanceof CliError) throw error;
+        throw usage('Cannot read a valid .excalidraw JSON file at the supplied path.');
+      }
+    }
+    const project = await api<Project>(`projects/${encodeURIComponent(String(projectRef))}`);
+    const canvasBase = `projects/${encodeURIComponent(project.id)}/canvases`;
+    if (canvasAction === 'list') {
+      const canvases = await all<CanvasSummary>(canvasBase);
+      output(
+        canvases,
+        canvases.map((c) => ({
+          ID: c.id,
+          Title: c.title,
+          Revision: c.revision,
+          Updated: c.updatedAt,
+        })),
+      );
+    } else if (canvasAction === 'create' || canvasAction === 'import') {
+      const title =
+        canvasAction === 'create'
+          ? args[1]
+          : (values.title ??
+            (basename(args[1])
+              .replace(/\.excalidraw$/i, '')
+              .trim()
+              .slice(0, 240) ||
+              'Imported canvas'));
+      output(
+        await api<ProjectCanvas>(
+          `${canvasBase}${canvasAction === 'import' ? '/import' : ''}`,
+          'POST',
+          {
+            title,
+            ...(canvasAction === 'import' ? { document } : {}),
+            ...(values.collection
+              ? { collectionId: values.collection === 'none' ? null : values.collection }
+              : {}),
+          },
+        ),
+      );
+    } else if (canvasAction === 'show') {
+      const result = await api<{ id: string; title: string; revision: number; url: string }>(
+        `${canvasBase}/${encodeURIComponent(args[1])}/show`,
+      );
+      const link = new URL(result.url, `${url}/`).href;
+      if (values.json) output({ ...result, url: link });
+      else process.stdout.write(`${link}\n`);
+    } else {
+      await api(`${canvasBase}/${encodeURIComponent(args[1])}`, 'DELETE', { expectedRevision });
+      if (values.json) output({ deleted: true, id: args[1] });
+      else process.stdout.write('Canvas deleted.\n');
+    }
     return;
   }
   if (command === 'export') {
