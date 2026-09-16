@@ -26,6 +26,8 @@ pnpm --dir website preview
 
 The build checks the demo's TypeScript, builds the real application with its isolated data adapter, checks Astro, generates `website/dist/`, and verifies the built docs links and anchors. Deploy that directory to a static host at the domain root. No API server or live Trestl instance is needed. `/play/` is the standalone dashboard; `/demo/` contains its generated assets. `/api/search.json` is a static documentation search index, not a Trestl API proxy.
 
+The deployed demo updates when the website is rebuilt and deployed; publishing an app release alone does not update static hosting. The embedded and full-demo URLs include a fingerprint of the built app document so returning visitors load the current bundle after deployment.
+
 The dashboard retains the product's dependencies, including the lazily loaded Excalidraw canvas editor, fonts, and workers. Its bundle is larger than an illustrative mockup. The iframe is lazy-loaded so marketing content does not wait for the app.
 
 ## Documentation

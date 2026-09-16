@@ -1,6 +1,13 @@
+---
+import { createHash } from 'node:crypto';
+import demoHtml from '../../.generated/demo.html?raw';
+// A changed app bundle must get a fresh iframe document, even on cached static hosts.
+const demoVersion = createHash('sha256').update(demoHtml).digest('hex').slice(0, 16);
+const demoUrl = `/play/?v=${demoVersion}`;
+---
 <div class="real-demo" id="demo">
-  <div class="real-demo-top"><div><span class="demo-live-dot" aria-hidden="true"></span><strong>The real Trestl. A little space to explore.</strong></div><a href="/play/" target="_blank" rel="noopener">Open full demo <span aria-hidden="true">↗</span></a></div>
-  <div class="real-demo-frame"><iframe src="/play/" title="Interactive Trestl dashboard with sample projects" loading="lazy" allow="clipboard-write" referrerpolicy="no-referrer"></iframe></div>
+  <div class="real-demo-top"><div><span class="demo-live-dot" aria-hidden="true"></span><strong>The real Trestl. A little space to explore.</strong></div><a href={demoUrl} target="_blank" rel="noopener">Open full demo <span aria-hidden="true">↗</span></a></div>
+  <div class="real-demo-frame"><iframe src={demoUrl} title="Interactive Trestl dashboard with sample projects" loading="lazy" allow="clipboard-write" referrerpolicy="no-referrer"></iframe></div>
   <div class="real-demo-bottom"><p>Explore projects, boards, Gantt, roadmaps, and canvases. All changes stay in this demo.</p><div class="demo-actions"><button type="button" id="follow-website-theme" title="Clear demo appearance overrides and follow the website theme">Match website theme</button><button type="button" id="reset-product-demo">Reset demo <span aria-hidden="true">↺</span></button></div></div>
   <p class="demo-limits">Sample repositories and issues. Live connections and account administration require your own installation.</p>
   <span class="sr-only" role="status" id="demo-reset-status"></span>
@@ -14,7 +21,7 @@
   });
   document.querySelector('#reset-product-demo')?.addEventListener('click', () => {
     const frame = document.querySelector<HTMLIFrameElement>('.real-demo iframe');
-    if (frame) frame.src = '/play/';
+    if (frame) frame.src = frame.src;
     document.querySelector('#demo-reset-status')!.textContent = 'Demo reset to the original sample workspace.';
   });
 </script>
