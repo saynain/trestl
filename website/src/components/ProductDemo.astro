@@ -6,10 +6,33 @@ const demoVersion = createHash('sha256').update(demoHtml).digest('hex').slice(0,
 const demoUrl = `/play/?v=${demoVersion}`;
 ---
 <div class="real-demo" id="demo">
-  <div class="real-demo-top"><div><span class="demo-live-dot" aria-hidden="true"></span><strong>The real Trestl. A little space to explore.</strong></div><a href={demoUrl} target="_blank" rel="noopener">Open full demo <span aria-hidden="true">↗</span></a></div>
-  <div class="real-demo-frame"><iframe src={demoUrl} title="Interactive Trestl dashboard with sample projects" loading="lazy" allow="clipboard-write" referrerpolicy="no-referrer"></iframe></div>
-  <div class="real-demo-bottom"><p>Explore projects, boards, Gantt, roadmaps, and canvases. All changes stay in this demo.</p><div class="demo-actions"><button type="button" id="follow-website-theme" title="Clear demo appearance overrides and follow the website theme">Match website theme</button><button type="button" id="reset-product-demo">Reset demo <span aria-hidden="true">↺</span></button></div></div>
-  <p class="demo-limits">Sample repositories and issues. Live connections and account administration require your own installation.</p>
+  <div class="demo-shell">
+    <div class="demo-toolbar">
+      <div class="demo-heading">
+        <span class="demo-live-dot" aria-hidden="true"></span>
+        <div><strong>The real Trestl</strong><p>A little space to explore.</p></div>
+      </div>
+      <div class="demo-actions" role="group" aria-label="Demo controls">
+        <button class="demo-control" type="button" id="follow-website-theme" title="Clear demo appearance overrides and follow the website theme">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M12 4a8 8 0 0 1 0 16" fill="currentColor" stroke="none"/></svg>
+          Match website theme
+        </button>
+        <button class="demo-control" type="button" id="reset-product-demo">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></svg>
+          Reset demo
+        </button>
+        <a class="demo-control demo-open" href={demoUrl} target="_blank" rel="noopener">
+          Open full demo
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7M21 3 10 14M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/></svg>
+        </a>
+      </div>
+    </div>
+    <div class="real-demo-frame"><iframe src={demoUrl} title="Interactive Trestl dashboard with sample projects" loading="lazy" allow="clipboard-write" referrerpolicy="no-referrer"></iframe></div>
+  </div>
+  <div class="demo-notes">
+    <p>Explore projects, boards, Gantt, roadmaps, and canvases. All changes stay in this demo.</p>
+    <p class="demo-limits">Sample repositories and issues. Live connections and account administration require your own installation.</p>
+  </div>
   <span class="sr-only" role="status" id="demo-reset-status"></span>
 </div>
 <script>
@@ -26,19 +49,34 @@ const demoUrl = `/play/?v=${demoVersion}`;
   });
 </script>
 <style>
-  .real-demo { scroll-margin-top: 24px; }
-  .real-demo-top,.real-demo-bottom { display:flex;justify-content:space-between;align-items:center;gap:20px;font-size:11px; }
-  .real-demo-top { padding:0 2px 18px; }
-  .real-demo-top>div {display:flex;align-items:center;gap:9px;}
-  .real-demo-top strong {font-weight:500;}
-  .real-demo-top a {color:var(--rust);white-space:nowrap;}
-  .demo-live-dot {width:6px;height:6px;border-radius:50%;background:#6f8e62;box-shadow:0 0 0 4px #6f8e6215;}
-  .real-demo-frame {border:1px solid var(--line);border-radius:9px;overflow:hidden;box-shadow:0 22px 55px -22px #34281e38;background:var(--card);}
-  iframe {display:block;width:100%;height:740px;border:0;}
-  .real-demo-bottom {padding:18px 0 8px;color:var(--muted);line-height:1.8;}
-  .real-demo-bottom button {border:0;background:none;white-space:nowrap;color:var(--rust);padding:6px;font-size:11px;}
-  .real-demo-bottom button span {margin-left:6px;}
-  .demo-actions {display:flex;gap:12px;align-items:center;}
-  .demo-limits {font-size:10px;line-height:1.8;color:var(--muted);}
-  @media(max-width:720px){.real-demo-top{font-size:10px;align-items:flex-start;gap:14px;line-height:1.7}.real-demo-top>div{max-width:200px}.demo-live-dot{flex-shrink:0}iframe{height:680px}.real-demo-bottom{align-items:flex-start;font-size:10px}.real-demo-bottom p{max-width:240px}.demo-limits{font-size:9px}.demo-actions{flex-direction:column;align-items:flex-end;gap:0}}
+  .real-demo { scroll-margin-top: 24px; font-family: 'Manrope Variable', sans-serif; font-style: normal; }
+  .demo-shell { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--card); box-shadow: 0 22px 55px -22px #34281e38; }
+  .demo-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
+  .demo-heading { display: flex; align-items: center; gap: 12px; flex: 1 1 220px; }
+  .demo-heading strong { display: block; font-size: 15px; font-weight: 700; line-height: 1.5; }
+  .demo-heading p { margin: 3px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .demo-live-dot { flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; background: #6f8e62; box-shadow: 0 0 0 4px #6f8e6215; }
+  .demo-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .demo-control { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--ink); font-family: inherit; font-size: 14px; font-style: normal; font-weight: 600; line-height: 1.4; text-decoration: none; white-space: nowrap; transition: background-color 150ms, border-color 150ms; }
+  .demo-control svg { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .demo-control:hover { background: var(--surface); border-color: var(--muted); }
+  .demo-control:focus-visible { outline: 2px solid var(--rust); outline-offset: 3px; }
+  .demo-open { background: var(--button-bg); border-color: var(--button-bg); color: var(--button-ink); }
+  .demo-open:hover { background: var(--button-hover); border-color: var(--button-hover); }
+  .real-demo-frame { background: var(--card); }
+  iframe { display: block; width: 100%; height: 740px; border: 0; }
+  .demo-notes { display: grid; gap: 6px; padding: 18px 4px 0; color: var(--muted); }
+  .demo-notes p { margin: 0; font-size: 14px; line-height: 1.65; }
+  .demo-notes .demo-limits { font-size: 13px; }
+  @media (max-width: 640px) {
+    .demo-toolbar { padding: 18px 16px; gap: 16px; }
+    .demo-heading { flex-basis: 100%; }
+    .demo-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; width: 100%; }
+    .demo-control { padding-inline: 10px; font-size: 13px; }
+    .demo-open { grid-column: 1 / -1; }
+    iframe { height: 680px; }
+    .demo-notes { padding-top: 14px; }
+  }
+  @media (max-width: 380px) { .demo-actions { grid-template-columns: minmax(0, 1fr); } }
+  @media (prefers-reduced-motion: reduce) { .demo-control { transition: none; } }
 </style>
