@@ -157,3 +157,7 @@ The CLI and container image can be built from source or published through the re
 ### Authentication proxy deployments
 
 For a dedicated company installation behind Traefik and oauth2-proxy, see [Google/proxy authentication](docs/proxy-auth.md). Proxy authentication provides automatic approved-user provisioning and personal API-token access for CLI and Raycast. Every authentication mode uses one installation. Local authentication remains the default. Keep actual domains, emails, and secrets in private deployment configuration.
+
+## Website and documentation
+
+The [Astro website](website/README.md) lives in `website/` and builds separately from the application. Its interactive demo reuses the product UI with isolated sample data, and its documentation is generated from this repository's guides. Run `pnpm --dir website install --frozen-lockfile`, then `pnpm --dir website build` after installing root dependencies. Deploy `website/dist/` to a static host.

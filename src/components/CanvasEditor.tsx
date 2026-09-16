@@ -28,7 +28,12 @@ import type { CanvasScene, Project, ProjectCanvas } from '../../shared/types';
 import { api, ApiError, patch, post } from '../lib/api';
 import { CanvasSaveQueue } from '../lib/canvas-save';
 import { useApp } from '../lib/context';
-import { readCanvasTheme, saveCanvasTheme, type CanvasTheme } from '../lib/preferences';
+import {
+  readCanvasTheme,
+  saveCanvasTheme,
+  subscribeAppearance,
+  type CanvasTheme,
+} from '../lib/preferences';
 import { Modal } from './ui';
 import { importCanvas, readCanvasImport } from '../lib/canvas-import';
 import CanvasSwitcher from './CanvasSwitcher';
@@ -73,6 +78,10 @@ export default function CanvasEditor({
 }) {
   const { data } = useApp();
   const [canvasTheme, setCanvasTheme] = useState(() => readCanvasTheme(data.user));
+  useEffect(
+    () => subscribeAppearance(() => setCanvasTheme(readCanvasTheme(data.user))),
+    [data.user],
+  );
   const changeCanvasTheme = (theme: CanvasTheme) => {
     setCanvasTheme(theme);
     saveCanvasTheme(data.user, theme);

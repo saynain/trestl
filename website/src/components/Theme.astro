@@ -1,0 +1,11 @@
+<script is:inline>
+  // Set the palette before the first paint, including when storage is unavailable.
+  (() => {
+    let choice = 'system';
+    try { choice = localStorage.getItem('trestl.website.theme') || 'system'; } catch {}
+    const theme = choice === 'dark' || (choice !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+    document.documentElement.dataset.theme = theme;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#191c19' : '#f6f4ef');
+  })();
+</script>
+<script src="../scripts/theme.ts"></script>
