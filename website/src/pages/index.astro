@@ -1,4 +1,5 @@
 ---
+import { logoUrl, faviconUrl } from '../lib/brand';
 import '@fontsource-variable/manrope';
 import '@fontsource/instrument-serif/latin-400-italic.css';
 import ProductDemo from '../components/ProductDemo.astro';
@@ -24,13 +25,13 @@ const commands = {
     <meta property="og:description" content="Your tasks, projects, and big ideas. Together, on your terms. Free and open source, with every feature included." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary" />
-    <link rel="icon" type="image/svg+xml" href="/trestl-mark.svg" />
+    <link rel="icon" type="image/svg+xml" href={faviconUrl} />
     <title>Trestl — Good work needs a little structure.</title>
   </head>
   <body>
     <a href="#main" class="skip-link">Skip to content</a>
     <header class="site-header wrap">
-      <a class="brand" href="#" aria-label="Trestl home"><img src="/trestl-mark.svg" width="28" height="28" alt="" /><span>trestl</span></a>
+      <a class="brand" href="#" aria-label="Trestl home"><img src={logoUrl} width="35" height="28" alt="" /><span>trestl</span></a>
       <nav aria-label="Main navigation"><a href="#product">Product</a><a href="#integrations" class="integrations-nav">Integrations</a><a href="#open-source">Open source</a><a href="#get-started">Get started</a><a href="/docs/">Docs</a></nav>
       <div class="header-actions">
         <button class="theme-toggle" id="site-theme" type="button" role="switch" aria-label="Dark mode" aria-checked="false" title="Switch to dark mode">
@@ -67,7 +68,7 @@ const commands = {
         <div class="install-block"><div class="terminal"><div class="terminal-header"><div role="tablist" aria-label="Installation method">{Object.keys(commands).map((method, i) => <button role="tab" id={`install-${method}`} aria-controls={`commands-${method}`} aria-selected={i === 0 ? 'true' : 'false'} tabindex={i === 0 ? 0 : -1} data-method={method}>{method === 'local' ? 'Local' : method === 'docker' ? 'Docker' : 'Kubernetes'}</button>)}</div><button class="copy-button" aria-label="Copy installation commands" title="Copy commands"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg><span>Copy</span></button></div>{Object.entries(commands).map(([method, command], i) => <pre role="tabpanel" id={`commands-${method}`} aria-labelledby={`install-${method}`} hidden={i !== 0} tabindex="0"><code>{command.split('\n').map(line => <span class:list={['code-line', { 'code-comment': line.startsWith('#') }]}><span class="prompt" aria-hidden="true">{line.startsWith('#') ? ' ' : '$'}</span>{line}</span>)}</code></pre>)}</div><div class="install-footnote"><span id="install-help">Node.js 22.9+ · pnpm 10.7.1</span><a id="install-guide" href="/docs/development/">Local guide <span aria-hidden="true">↗</span></a></div><p class="copy-status sr-only" role="status"></p></div>
       </section>
     </main>
-    <footer class="site-footer wrap"><a class="brand" href="#" aria-label="Trestl home"><img src="/trestl-mark.svg" width="25" height="25" alt="" /><span>trestl</span></a><p>A little structure. A lot of possibility.</p><div><a href={repo}>Source code <span aria-hidden="true">↗</span></a><a href="/docs/">Documentation <span aria-hidden="true">↗</span></a></div></footer>
+    <footer class="site-footer wrap"><a class="brand" href="#" aria-label="Trestl home"><img src={logoUrl} width="30" height="24" alt="" /><span>trestl</span></a><p>A little structure. A lot of possibility.</p><div><a href={repo}>Source code <span aria-hidden="true">↗</span></a><a href="/docs/">Documentation <span aria-hidden="true">↗</span></a></div></footer>
     <script>
       const installTabs = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-method]'));
       const help = document.querySelector('#install-help')!;
