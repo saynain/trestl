@@ -1,0 +1,40 @@
+---
+import '@fontsource-variable/manrope';
+import '@fontsource/instrument-serif/latin-400-italic.css';
+import DocsSite from '../../components/docs/DocsSite';
+import { loadDoc } from '../../lib/docs';
+import { docPages } from '../../lib/docs-manifest';
+import '../../styles/docs.css';
+
+export async function getStaticPaths() {
+  return [
+    { params: { slug: undefined }, props: { page: null } },
+    ...await Promise.all(docPages.map(async meta => {
+      const { structuredData: _, ...page } = await loadDoc(meta);
+      return { params: { slug: meta.slug }, props: { page } };
+    })),
+  ];
+}
+const { page } = Astro.props;
+const title = page ? `${page.title} · Trestl Docs` : 'Trestl Docs — Make yourself at home';
+const description = page?.description ?? 'Your guide to setting up, using, and making Trestl your own.';
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f6f4ef" />
+    <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary" />
+    <link rel="icon" type="image/svg+xml" href="/trestl-mark.svg" />
+    <title>{title}</title>
+  </head>
+  <body>
+    <a href="#nd-page" class="docs-skip">Skip to content</a>
+    <DocsSite page={page} pathname={Astro.url.pathname} client:load />
+  </body>
+</html>

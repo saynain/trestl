@@ -1,0 +1,37 @@
+<div class="real-demo" id="demo">
+  <div class="real-demo-top"><div><span class="demo-live-dot" aria-hidden="true"></span><strong>The real Trestl. A little space to explore.</strong></div><a href="/play/" target="_blank" rel="noopener">Open full demo <span aria-hidden="true">↗</span></a></div>
+  <div class="real-demo-frame"><iframe src="/play/" title="Interactive Trestl dashboard with sample projects" loading="lazy" allow="clipboard-write" referrerpolicy="no-referrer"></iframe></div>
+  <div class="real-demo-bottom"><p>Explore projects, boards, Gantt, roadmaps, and canvases. All changes stay in this demo.</p><div class="demo-actions"><button type="button" id="follow-website-theme" title="Clear demo appearance overrides and follow the website theme">Match website theme</button><button type="button" id="reset-product-demo">Reset demo <span aria-hidden="true">↺</span></button></div></div>
+  <p class="demo-limits">Sample repositories and issues. Live connections and account administration require your own installation.</p>
+  <span class="sr-only" role="status" id="demo-reset-status"></span>
+</div>
+<script>
+  document.querySelector('#follow-website-theme')?.addEventListener('click', () => {
+    document.querySelector<HTMLIFrameElement>('.real-demo iframe')?.contentWindow?.postMessage(
+      { type: 'trestl:follow-website-theme' }, window.location.origin,
+    );
+    document.querySelector('#demo-reset-status')!.textContent = 'The demo now follows the website appearance.';
+  });
+  document.querySelector('#reset-product-demo')?.addEventListener('click', () => {
+    const frame = document.querySelector<HTMLIFrameElement>('.real-demo iframe');
+    if (frame) frame.src = '/play/';
+    document.querySelector('#demo-reset-status')!.textContent = 'Demo reset to the original sample workspace.';
+  });
+</script>
+<style>
+  .real-demo { scroll-margin-top: 24px; }
+  .real-demo-top,.real-demo-bottom { display:flex;justify-content:space-between;align-items:center;gap:20px;font-size:11px; }
+  .real-demo-top { padding:0 2px 18px; }
+  .real-demo-top>div {display:flex;align-items:center;gap:9px;}
+  .real-demo-top strong {font-weight:500;}
+  .real-demo-top a {color:var(--rust);white-space:nowrap;}
+  .demo-live-dot {width:6px;height:6px;border-radius:50%;background:#6f8e62;box-shadow:0 0 0 4px #6f8e6215;}
+  .real-demo-frame {border:1px solid var(--line);border-radius:9px;overflow:hidden;box-shadow:0 22px 55px -22px #34281e38;background:var(--card);}
+  iframe {display:block;width:100%;height:740px;border:0;}
+  .real-demo-bottom {padding:18px 0 8px;color:var(--muted);line-height:1.8;}
+  .real-demo-bottom button {border:0;background:none;white-space:nowrap;color:var(--rust);padding:6px;font-size:11px;}
+  .real-demo-bottom button span {margin-left:6px;}
+  .demo-actions {display:flex;gap:12px;align-items:center;}
+  .demo-limits {font-size:10px;line-height:1.8;color:var(--muted);}
+  @media(max-width:720px){.real-demo-top{font-size:10px;align-items:flex-start;gap:14px;line-height:1.7}.real-demo-top>div{max-width:200px}.demo-live-dot{flex-shrink:0}iframe{height:680px}.real-demo-bottom{align-items:flex-start;font-size:10px}.real-demo-bottom p{max-width:240px}.demo-limits{font-size:9px}.demo-actions{flex-direction:column;align-items:flex-end;gap:0}}
+</style>
