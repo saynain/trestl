@@ -118,7 +118,9 @@ export default function Sidebar({
   return (
     <aside className="sidebar">
       <div className="workspace-brand">
-        <Brand />
+        <a href="#/home" aria-label="Trestl home" onClick={onDismiss}>
+          <Brand />
+        </a>
         <button
           className="icon-button mobile-only"
           aria-label="Close navigation"
