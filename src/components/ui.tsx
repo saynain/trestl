@@ -1,3 +1,4 @@
+import logoUrl from '../../public/trestl-mark.svg?url';
 import { useEffect, useRef, type ReactNode } from 'react';
 import {
   Box,
@@ -16,7 +17,7 @@ import { initials, priorities, statuses } from '../lib/model';
 export function Logo({ small = false }: { small?: boolean }) {
   return (
     <span className={`logo ${small ? 'small' : ''}`} aria-hidden="true">
-      <img src="/trestl-mark.svg?v=2" width="40" height="32" alt="" />
+      <img src={logoUrl} width="40" height="32" alt="" />
     </span>
   );
 }

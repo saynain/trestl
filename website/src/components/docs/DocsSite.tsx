@@ -1,3 +1,4 @@
+import { logoUrl } from '../../lib/brand';
 import { lazy, useEffect, useState } from 'react';
 import {
   ArrowRightLeft,
@@ -68,7 +69,7 @@ function DocsHeader() {
     <header id="nd-subnav" className="docs-header">
       <div className="docs-brand-group">
         <a href="/" aria-label="Trestl home" className="docs-brand">
-          <img src="/trestl-mark.svg" width={25} height={25} alt="" />
+          <img src={logoUrl} width={30} height={24} alt="" />
           trestl
         </a>
         <a href="/docs/" className="docs-label">

@@ -1,6 +1,6 @@
 # Trestl website and documentation
 
-A static Astro website with integrated Fumadocs documentation at `/docs/` and the actual Trestl dashboard embedded as an interactive playground. The demo builds the root application's `src/App.tsx`, components, keyboard shortcuts, and styles without duplicating their implementation. Fonts are bundled locally.
+A static Astro website with integrated Fumadocs documentation at `/docs/` and the actual Trestl dashboard embedded as an interactive playground. The demo builds the root application's `src/App.tsx`, components, keyboard shortcuts, and styles without duplicating their implementation. Fonts are bundled locally. Marketing, docs, and the demo import the product artwork from `public/trestl-mark.svg` and `public/favicon.svg`; there is no separate website logo to maintain. Asset URLs change with the artwork to refresh browser caches.
 
 ## Develop
 
