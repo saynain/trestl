@@ -1,3 +1,4 @@
+import { registerUpdateGuard } from '../lib/desktop-updates';
 import { downloadFile as download } from '../lib/download';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -125,6 +126,7 @@ export default function CanvasEditor({
         setNotice('Your canvas has unsaved changes. Save them or download a copy before leaving.');
       }
     };
+    const removeUpdateGuard = registerUpdateGuard(() => queue.flush());
     window.addEventListener('beforeunload', beforeUnload);
     window.addEventListener('trestl:before-navigate', beforeNavigate);
     return () => {
@@ -132,6 +134,7 @@ export default function CanvasEditor({
       outside.forEach(({ element, inert }) => {
         element.inert = inert;
       });
+      removeUpdateGuard();
       queue.dispose();
       window.removeEventListener('beforeunload', beforeUnload);
       window.removeEventListener('trestl:before-navigate', beforeNavigate);
@@ -444,6 +447,7 @@ export default function CanvasEditor({
                 disabled={busy || queue.status === 'saving'}
                 onClick={async () => {
                   setBusy(true);
+
                   queue.dispose();
                   try {
                     await api(`${base}/${canvas.id}`, {

@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod updates;
+
 use std::{
     io::{BufRead, BufReader, Write},
     process::{Child, Command, Stdio},
@@ -14,6 +16,36 @@ use tauri::{
 
 struct Service(Mutex<Option<Child>>);
 impl Service {
+    fn stop_for_update(&self) -> Result<(), String> {
+        let mut guard = self.0.lock().unwrap();
+        let child = guard
+            .as_mut()
+            .ok_or("The database process is unavailable")?;
+        writeln!(
+            child
+                .stdin
+                .as_mut()
+                .ok_or("The database control pipe is closed")?,
+            "shutdown"
+        )
+        .map_err(|error| error.to_string())?;
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
+                guard.take();
+                return if status.success() {
+                    Ok(())
+                } else {
+                    Err("The database did not exit cleanly".into())
+                };
+            }
+            if Instant::now() >= deadline {
+                return Err("Database shutdown timed out".into());
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+
     fn stop(&self) {
         let mut guard = self.0.lock().unwrap();
         if let Some(mut child) = guard.take() {
@@ -139,6 +171,24 @@ fn start(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             .permission("core:window:allow-start-dragging")
             .permission("core:window:allow-internal-toggle-maximize"),
     )?;
+    app.add_capability(
+        tauri::ipc::CapabilityBuilder::new("workspace-update-preparation")
+            .local(false)
+            .window("main")
+            .remote(format!("{}/*", origin.ascii_serialization()))
+            .permission("allow-update-prepared"),
+    )?;
+    app.add_capability(
+        tauri::ipc::CapabilityBuilder::new("update-controls")
+            .window("updates")
+            .permission("allow-update-status")
+            .permission("allow-update-check")
+            .permission("allow-update-download")
+            .permission("allow-update-install")
+            .permission("allow-update-close")
+            .permission("allow-update-releases")
+            .permission("core:window:allow-start-dragging"),
+    )?;
     app.manage(service);
     let menu = Menu::with_items(
         app,
@@ -149,6 +199,7 @@ fn start(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 true,
                 &[
                     &PredefinedMenuItem::about(app, Some("About Trestl"), None)?,
+                    &MenuItem::with_id(app, "updates", "Check for Updates…", true, None::<&str>)?,
                     &MenuItem::with_id(app, "data", "Open Data Folder", true, None::<&str>)?,
                     &PredefinedMenuItem::separator(app)?,
                     &PredefinedMenuItem::quit(app, Some("Quit Trestl"))?,
@@ -181,7 +232,14 @@ fn start(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         ],
     )?;
     app.set_menu(menu)?;
-    app.on_menu_event(move |_app, event| {
+    app.on_menu_event(move |app, event| {
+        if event.id().as_ref() == "updates" {
+            let _ = updates::open(app, true);
+            let handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                updates::check(handle, false).await;
+            });
+        }
         if event.id().as_ref() == "data" {
             let _ = open::that_detached(&data);
         }
@@ -256,6 +314,10 @@ fn start(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
 fn main() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![updates::update_status, updates::update_check,
+            updates::update_download, updates::update_install, updates::update_prepared,
+            updates::update_close, updates::update_releases])
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize(); let _ = window.show(); let _ = window.set_focus();
@@ -263,12 +325,21 @@ fn main() {
         }))
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
+            app.manage(updates::Updates::new(app.package_info().version.to_string()));
             if let Err(error) = start(app) {
                 rfd::MessageDialog::new().set_title("Trestl could not start")
                     .set_description(format!("{error}\n\nYour data has been kept. Check desktop.log in the Trestl data folder for details."))
                     .set_level(rfd::MessageLevel::Error).show();
                 return Err(error);
             }
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                loop {
+                    updates::check(handle.clone(), true).await;
+                    tokio::time::sleep(Duration::from_secs(6 * 60 * 60)).await;
+                }
+            });
             Ok(())
         })
         .build(tauri::generate_context!())

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Trestl Updates</title>
+    <link rel="stylesheet" href="updates.css" />
+    <script src="updates.js" defer></script>
+  </head>
+  <body>
+    <div class="drag" data-tauri-drag-region aria-hidden="true"></div>
+    <main>
+      <img class="app-icon" src="app-icon.svg" alt="" width="52" height="52" />
+      <p class="eyebrow">TRESTL</p>
+      <h1 id="title">Software updates</h1>
+      <p id="description" class="description" aria-live="polite">Checking for a newer version…</p>
+      <section id="notes-section" hidden>
+        <h2>What’s new</h2>
+        <pre id="notes"></pre>
+      </section>
+      <div id="progress-section" hidden>
+        <progress id="progress" aria-label="Download progress"></progress>
+        <p id="progress-label"></p>
+      </div>
+      <p id="message" role="alert" hidden></p>
+      <footer>
+        <span id="version"></span>
+        <div class="actions">
+          <button id="later">Later</button
+          ><button id="action" class="primary">Check for Updates</button>
+        </div>
+      </footer>
+    </main>
+  </body>
+</html>

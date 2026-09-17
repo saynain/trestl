@@ -1,3 +1,4 @@
+import { watchDesktopUpdates } from './lib/desktop-updates';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -15,6 +16,7 @@ document.documentElement.dataset.theme =
     ? 'dark'
     : 'light';
 if (import.meta.env.VITE_TRESTL_DESKTOP === 'true') {
+  watchDesktopUpdates();
   document.documentElement.dataset.desktop =
     import.meta.env.VITE_TRESTL_DESKTOP_PLATFORM === 'darwin'
       ? 'macos'

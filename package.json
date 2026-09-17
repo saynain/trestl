@@ -28,7 +28,7 @@
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",
     "desktop:check": "cargo check --manifest-path src-tauri/Cargo.toml",
-    "test:desktop": "node --import tsx --test tests/desktop.test.ts tests/desktop-release.test.mjs",
+    "test:desktop": "node --import tsx --test tests/desktop*.test.ts tests/desktop-release.test.mjs",
     "test:desktop-package": "node scripts/test-desktop-package.mjs",
     "desktop:version": "node scripts/desktop-release.mjs verify"
   },

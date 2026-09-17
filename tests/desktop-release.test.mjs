@@ -97,3 +97,39 @@ test('CLI and desktop release creation tolerate a concurrent creator without edi
   });
   assert.equal(called, 1);
 });
+
+test('updater feed preserves platform and installer type and requires all signatures', async () => {
+  const { updateAssets, writeUpdateManifest } = await import('../scripts/desktop-release.mjs');
+  await fixture(async (root) => {
+    await mkdir(join(root, 'docs/releases'), { recursive: true });
+    await writeFile(
+      join(root, 'docs/releases/v0.4.0.md'),
+      '# Release notes\nNew desktop features.',
+    );
+    const output = join(root, 'output');
+    await mkdir(output);
+    const assets = updateAssets('0.4.0');
+    for (const { name } of assets) {
+      await writeFile(join(output, name), 'signed update bytes');
+      await writeFile(
+        join(output, `${name}.sig`),
+        Buffer.from('untrusted comment: test fixture\nsignature').toString('base64'),
+      );
+    }
+    const feed = await writeUpdateManifest(root, output);
+    assert.equal(feed.version, '0.4.0');
+    assert.equal(Object.keys(feed.platforms).length, 5);
+    assert.match(feed.platforms['windows-x86_64-msi'].url, /\.msi$/);
+    assert.match(feed.platforms['windows-x86_64-nsis'].url, /\.exe$/);
+    assert.match(feed.platforms['darwin-aarch64'].url, /aarch64-apple-darwin\.app\.tar\.gz$/);
+    assert.match(feed.platforms['linux-x86_64-appimage'].url, /\.AppImage$/);
+    assert.equal(feed.platforms['windows-x86_64'], undefined);
+    assert.equal(feed.platforms['linux-x86_64-deb'], undefined);
+    for (const name of Object.keys(targets).flatMap((target) => assetNames('0.4.0', target)))
+      await writeFile(join(output, name), 'installer');
+    await checksumInstallers(root, output, true);
+    await rm(join(output, `${assets[0].name}.sig`));
+    await assert.rejects(writeUpdateManifest(root, output), /ENOENT/);
+    await assert.rejects(checksumInstallers(root, output, true), /updater artifacts/);
+  });
+});

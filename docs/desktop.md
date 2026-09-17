@@ -21,8 +21,10 @@ Pull requests and manual workflow runs produce unsigned test artifacts only:
 
 Windows installers include an offline WebView2 installer. Linux packages use the
 system WebKitGTK 4.1 runtime. AppImages may need FUSE or the distribution's
-AppImage extraction option. There is no automatic updater yet: install a newer
-version over the old one after making a backup.
+AppImage extraction option. The app checks for updates in the background. You can also choose **Trestl →
+Check for Updates…**. Download an update, then choose **Install and Restart**
+when you are ready. Linux `.deb` and `.rpm` users update through their package
+manager or download the newer package; AppImage installations update in the app.
 
 Open the application and create your local administrator account. Choose an
 empty workspace or the example projects. This account belongs to this desktop
@@ -36,6 +38,27 @@ window size/position restoration, external links in your
 browser, and native download dialogs are supported. Closing the application
 also stops the local database process. Launching a second copy focuses the
 existing window.
+
+## Updates
+
+Trestl checks once after startup and every six hours while open. Checks that find
+no update or cannot reach GitHub stay quiet. A newly available version opens a
+small update window without taking keyboard focus. The menu's **Check for
+Updates…** action always lets you check manually.
+
+The update window shows the new version, release notes, download progress, and
+**Install and Restart**. Downloads are verified against the public key shipped
+with the app. Downloading does not interrupt your work. Before installation,
+save and close open forms or editors; the app flushes canvas autosaves, waits for
+pending API writes, and requires the database process to exit successfully. A
+save failure or shutdown timeout stops installation. Local data and the persistent
+encryption key remain in the app-data folder, outside the replaced application.
+
+Updates work for macOS, Windows NSIS/MSI (preserving the installed package type),
+and Linux AppImage. Linux `.deb`/`.rpm` installations show a link to downloads
+instead of replacing files managed by the package manager. Updater downloads use
+public GitHub Releases; a private repository's downloads will not work without
+GitHub authentication, and no GitHub credential is bundled into the app.
 
 ## Local data and backups
 
@@ -117,8 +140,10 @@ that extracted application and runtime.
 
 The seven installers are named
 `trestl-desktop-0.4.0-<target-triple>.<extension>`. The publishing job validates the
-complete set, calculates SHA-256 checksums, and attaches the files to the shared
-GitHub Release. `desktop-SHA256SUMS` is separate from the CLI's `SHA256SUMS`.
+complete set, verifies updater signatures with the same Minisign verifier used
+by Tauri, calculates SHA-256 checksums, and attaches the files to the shared
+GitHub Release. It uploads `latest.json` last, after every referenced artifact.
+The feed includes separate Windows MSI and NSIS entries and both Mac architectures. `desktop-SHA256SUMS` is separate from the CLI's `SHA256SUMS`.
 The CLI and desktop jobs can finish in either order without racing release
 creation. Installers are never silently overwritten. For a partial upload, inspect
 existing assets before retrying; do not move published tags or replace downloads
@@ -166,6 +191,31 @@ and Gatekeeper assessment. See
 Credentials are never committed to the repository and signing runs only on
 trusted version tags, not pull requests.
 
+## Updater signing key
+
+Updater signatures are separate from Apple/Windows code signing. The public key
+is committed in `src-tauri/updater.pub` and `tauri.conf.json`; the native updater
+and bundler must use the same key. The release workflow needs the private half in
+the repository secret `TAURI_SIGNING_PRIVATE_KEY`, and
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` if the key is password-protected. PR/manual
+builds do not need private keys and do not produce publishable update feeds.
+
+Keep a secure backup of the private key. **Do not generate a replacement key for
+each release.** Installed apps trust the public key they shipped with. Losing or
+replacing its private key breaks the update path for those users unless a key
+migration is shipped first. Never commit the private key or place it in an app
+bundle, log, release asset, or public environment variable.
+
+For a local signed updater build, point `TAURI_SIGNING_PRIVATE_KEY` to the private
+key file, set `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (an empty string for an
+unprotected key to prevent an interactive prompt), run
+`node scripts/desktop-release.mjs configure-updater`, then build
+with `--config src-tauri/updater.release.json`. The generated override enables
+`createUpdaterArtifacts`; ordinary local builds leave it disabled. Release CI
+collects `.app.tar.gz` archives for macOS and signatures for those archives, both
+Windows installers, and the Linux AppImage. It verifies all five signatures
+before publishing any update manifest.
+
 ## Platform acceptance checks
 
 Before publishing each platform's installers, validate installation, first-run
@@ -182,7 +232,10 @@ Fastify application and PGlite database used by the web version, listens only on
 credential establishes an HttpOnly session cookie before assets or API endpoints
 are accessible. Requests validate Host and Origin. On macOS, only the exact local
 origin receives permission to drag or zoom its own window; the webview receives
-no native filesystem or shell IPC capabilities. Arbitrary web pages cannot use the local
+no native filesystem or shell IPC capabilities. Its only additional update
+permission is to acknowledge save readiness. Update installation commands are
+restricted to the separate bundled update window, whose navigation is locked to
+local app content. Arbitrary web pages cannot use the local
 API. The regular CLI/Raycast clients cannot connect to this private desktop
 service; use a hosted installation for those clients.
 

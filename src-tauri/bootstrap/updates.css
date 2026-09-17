@@ -1,0 +1,153 @@
+:root {
+  color-scheme: light dark;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: light-dark(#20252a, #eef0f3);
+  background: light-dark(#f7f8fa, #202226);
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  user-select: none;
+}
+.drag {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 36px;
+}
+main {
+  padding: 42px 30px 22px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.app-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: #8de0c8;
+  color: #18352d;
+  font:
+    600 42px Georgia,
+    serif;
+  box-shadow:
+    inset 0 0 0 1px #00000010,
+    0 3px 10px #0000000c;
+}
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 1.8px;
+  font-weight: 600;
+  opacity: 0.55;
+  margin: 16px 0 7px;
+}
+h1 {
+  font-size: 23px;
+  letter-spacing: -0.65px;
+  margin: 0;
+  font-weight: 650;
+}
+.description {
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+  opacity: 0.7;
+  margin: 12px 0 20px;
+  max-width: 370px;
+}
+section {
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  border: 1px solid light-dark(#e1e4e8, #36393e);
+  background: light-dark(#ffffff, #282b30);
+  border-radius: 10px;
+  padding: 13px 15px;
+  overflow: auto;
+}
+h2 {
+  font-size: 12px;
+  margin: 0 0 10px;
+}
+pre {
+  font:
+    12px/1.6 -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+  user-select: text;
+  opacity: 0.8;
+}
+#progress-section {
+  width: 100%;
+  margin: auto 0;
+}
+progress {
+  width: 100%;
+  height: 7px;
+  accent-color: #368b71;
+}
+#progress-label {
+  font-size: 12px;
+  text-align: center;
+  opacity: 0.65;
+}
+#message {
+  font-size: 12px;
+  line-height: 1.5;
+  color: light-dark(#963e28, #f0b29d);
+  text-align: center;
+  margin-bottom: 0;
+}
+footer {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 22px;
+  margin-top: auto;
+  gap: 10px;
+}
+#version {
+  font-size: 11px;
+  opacity: 0.5;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+}
+button {
+  border: 1px solid light-dark(#d4d8dd, #484c54);
+  background: light-dark(#ffffff, #35383e);
+  color: inherit;
+  padding: 7px 12px;
+  font:
+    500 12px -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  border-radius: 7px;
+  cursor: default;
+}
+button.primary {
+  border-color: transparent;
+  background: light-dark(#246b56, #91dac4);
+  color: light-dark(#ffffff, #17392e);
+}
+button:focus-visible {
+  outline: 3px solid #7dc8e5;
+  outline-offset: 3px;
+}
+button:disabled {
+  opacity: 0.5;
+}
+[hidden] {
+  display: none !important;
+}

@@ -13,7 +13,8 @@
     "security": {
       "capabilities": [],
       "csp": "default-src 'self'"
-    }
+    },
+    "withGlobalTauri": true
   },
   "bundle": {
     "active": true,
@@ -49,6 +50,15 @@
     "linux": {
       "deb": {
         "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI5RkMxNzZBNjc0MTZFMDEKUldRQmJrRm5haGY4S2I0bDdnT3pWVy9jdTFXWlZaWlA3eksxT1NHY3FNOUFKdHdTOXZvUXpVOGEK",
+      "endpoints": ["https://github.com/saynain/trestl/releases/latest/download/latest.json"],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }
