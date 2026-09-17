@@ -1,0 +1,55 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Trestl",
+  "version": "0.4.0",
+  "identifier": "app.trestl.desktop",
+  "build": {
+    "beforeDevCommand": "pnpm desktop:prepare",
+    "beforeBuildCommand": "pnpm desktop:prepare",
+    "frontendDist": "bootstrap"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "capabilities": [],
+      "csp": "default-src 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Productivity",
+    "shortDescription": "A local workspace for projects and tasks",
+    "longDescription": "Plan projects, capture tasks, and keep your work on your computer. No server or database installation required.",
+    "copyright": "Trestl contributors",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": ["binaries/trestl-node"],
+    "resources": {
+      "resources/": "resources/"
+    },
+    "macOS": {
+      "minimumSystemVersion": "12.0",
+      "hardenedRuntime": true,
+      "entitlements": "Entitlements.plist"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      },
+      "webviewInstallMode": {
+        "type": "offlineInstaller"
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
+      }
+    }
+  }
+}

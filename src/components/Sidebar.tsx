@@ -117,6 +117,9 @@ export default function Sidebar({
   }
   return (
     <aside className="sidebar">
+      {import.meta.env.VITE_TRESTL_DESKTOP === 'true' && (
+        <div className="desktop-sidebar-drag-area" data-tauri-drag-region aria-hidden="true" />
+      )}
       <div className="workspace-brand">
         <Brand />
         <button
@@ -257,7 +260,10 @@ export default function Sidebar({
           className="sidebar-account"
           ref={accountRoot}
           onBlur={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget)) setAccountMenu(false);
+            // WebKit blurs buttons to the page before a mouse click; the outside
+            // pointer handler covers that case. Keep the menu alive for its click.
+            if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget))
+              setAccountMenu(false);
           }}
         >
           {accountMenu && (

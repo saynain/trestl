@@ -31,12 +31,12 @@ automatic deployment and no mutable `latest` tag.
 After merging and verifying a release commit on `main`, push a new version tag:
 
 ```sh
-git tag v0.2.0 <release-commit>
-git push origin v0.2.0
+git tag v0.4.0 <release-commit>
+git push origin v0.4.0
 ```
 
 Use the next unused version, optionally with a prerelease suffix such as
-`v0.2.0-rc.1`. The workflow rejects other tag formats and commits outside main's
+`v0.4.0-rc.1`. The workflow rejects other tag formats and commits outside main's
 history. Treat release tags as immutable: never move or reuse one. Deployment
 repositories must pin digests, not rely on tags being technically immutable.
 
@@ -89,3 +89,6 @@ network access to the internal registry or Kubernetes cluster.
 
 See [Harbor replication endpoints](https://goharbor.io/docs/main/administration/configuring-replication/create-replication-endpoints/)
 and [replication rules](https://goharbor.io/docs/main/administration/configuring-replication/create-replication-rules/).
+
+The same release tag also publishes the CLI and [desktop installers](desktop.md)
+to GitHub Releases. Configure desktop signing before tagging.

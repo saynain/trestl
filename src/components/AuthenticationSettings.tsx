@@ -13,6 +13,24 @@ type Settings = {
   proxySecretConfigured: boolean;
 };
 export default function AuthenticationSettings() {
+  if (import.meta.env.VITE_TRESTL_DESKTOP === 'true') {
+    return (
+      <section className="settings-section">
+        <h2>Authentication</h2>
+        <p>
+          This desktop installation uses local accounts. Your projects and account stay on this
+          computer.
+        </p>
+        <p>
+          Organization sign-in and authentication proxies are available in self-hosted web
+          installations.
+        </p>
+      </section>
+    );
+  }
+  return <HostedAuthenticationSettings />;
+}
+function HostedAuthenticationSettings() {
   const { toast, refresh } = useApp();
   const [settings, setSettings] = useState<Settings | null>(null),
     [error, setError] = useState(''),

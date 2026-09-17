@@ -1,3 +1,4 @@
+import { downloadFile } from '../lib/download';
 import ThemeColorEditor from './ThemeColorEditor';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
@@ -47,7 +48,7 @@ export default function AppearanceSettings() {
     setPreferences(next);
     if (!saveAppearance(data.user, next))
       toast(
-        'Theme applied, but browser storage is unavailable. Changes will not survive a reload.',
+        'Theme applied, but local storage is unavailable. Changes will not survive a restart.',
         'error',
       );
   }
@@ -100,14 +101,10 @@ export default function AppearanceSettings() {
     if (input.current) input.current.value = '';
   }
   function download(theme: ThemeDefinition) {
-    const url = URL.createObjectURL(
+    void downloadFile(
       new Blob([serializeTheme(theme)], { type: 'application/json' }),
-    );
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `${theme.id}.json`;
-    anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+      `${theme.id}.json`,
+    ).catch((error) => setError(error.message));
   }
   function remove(theme: ThemeDefinition) {
     update({
@@ -122,7 +119,10 @@ export default function AppearanceSettings() {
   return (
     <section className="settings-section appearance-settings">
       <h2>Colors &amp; themes</h2>
-      <p>Make room for your kind of focus. Saved for your profile in this browser.</p>
+      <p>
+        Make room for your kind of focus. Saved for your profile{' '}
+        {import.meta.env.VITE_TRESTL_DESKTOP === 'true' ? 'on this computer' : 'in this browser'}.
+      </p>
       <h3>Color scheme</h3>
       <div className="appearance-modes" role="group" aria-label="Color scheme">
         {modes.map(({ id, label, Icon }) => (

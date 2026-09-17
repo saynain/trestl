@@ -18,3 +18,6 @@ output
 **/dist
 *.tgz
 .DS_Store
+
+# Native bundles are not part of the hosted image build context.
+src-tauri

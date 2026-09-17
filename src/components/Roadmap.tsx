@@ -122,7 +122,12 @@ export default function RoadmapView({
       className={`roadmap ${presenting ? 'is-presenting' : ''}`}
       aria-label={`${project.name} roadmap`}
     >
-      <div className="roadmap-brandbar">
+      <div
+        className="roadmap-brandbar"
+        data-tauri-drag-region={
+          import.meta.env.VITE_TRESTL_DESKTOP_PLATFORM === 'darwin' ? 'deep' : undefined
+        }
+      >
         <div className="roadmap-brand">
           <Brand small />
         </div>

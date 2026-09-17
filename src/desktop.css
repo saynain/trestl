@@ -1,0 +1,104 @@
+/* Native macOS chrome: the content extends behind the real traffic lights. */
+.desktop-drag-strip,
+.desktop-sidebar-drag-area {
+  display: none;
+}
+:root[data-desktop='macos'] {
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  --desktop-toolbar-height: 56px;
+  --desktop-controls-width: 98px;
+}
+[data-desktop='macos'] body {
+  overscroll-behavior: none;
+}
+[data-desktop='macos'] .desktop-drag-strip {
+  display: block;
+  position: fixed;
+  inset: 0 0 auto;
+  height: 10px;
+  z-index: 90;
+  user-select: none;
+  -webkit-user-select: none;
+}
+[data-desktop='macos']:has(.auth-page, .loading-screen) .desktop-drag-strip {
+  height: var(--desktop-toolbar-height);
+}
+[data-desktop='macos'] .sidebar {
+  padding-top: 62px;
+  border-right-color: color-mix(in srgb, var(--border) 60%, transparent);
+}
+[data-desktop='macos'] .desktop-sidebar-drag-area {
+  display: block;
+  position: absolute;
+  inset: 0 0 auto;
+  height: var(--desktop-toolbar-height);
+  user-select: none;
+  -webkit-user-select: none;
+}
+[data-desktop='macos'] .workspace-brand {
+  padding-top: 0;
+  margin-bottom: 14px;
+}
+[data-desktop='macos'] .workspace-brand .logo {
+  width: 28px;
+  height: 24px;
+}
+[data-desktop='macos'] .workspace-brand .brand-wordmark {
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.65px;
+}
+[data-desktop='macos'] .workspace-trigger {
+  border-color: transparent;
+  background: transparent;
+  min-height: 28px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+[data-desktop='macos'] .sidebar-search {
+  margin-top: 12px;
+  background: color-mix(in srgb, var(--bg) 58%, transparent);
+  border-color: color-mix(in srgb, var(--border) 65%, transparent);
+  border-radius: 8px;
+}
+[data-desktop='macos'] .topbar {
+  height: var(--desktop-toolbar-height);
+  padding-right: 24px;
+  padding-left: 28px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+[data-desktop='macos'] .app-shell:not(.zen-mode) .sidebar-toggle {
+  position: fixed;
+  top: 14px;
+  left: calc(var(--sidebar-width) - 43px);
+  z-index: 40;
+  border-radius: 6px;
+}
+[data-desktop='macos'] .zen-mode .topbar {
+  padding-left: var(--desktop-controls-width);
+}
+[data-desktop='macos'] .topbar-actions {
+  gap: 16px;
+}
+[data-desktop='macos'] .canvas-editor-header {
+  padding-left: calc(var(--desktop-controls-width) + 10px);
+  min-height: 64px;
+}
+[data-desktop='macos'] .roadmap.is-presenting {
+  padding-top: 64px;
+}
+[data-desktop='macos'] .auth-page {
+  padding-top: 64px;
+}
+[data-desktop='macos'] [data-tauri-drag-region] {
+  cursor: default;
+}
+@media print {
+  .desktop-drag-strip,
+  .desktop-sidebar-drag-area {
+    display: none !important;
+  }
+}

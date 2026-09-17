@@ -1,3 +1,4 @@
+import { downloadFile as download } from '../lib/download';
 import { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
@@ -34,14 +35,6 @@ import { importCanvas, readCanvasImport } from '../lib/canvas-import';
 import CanvasSwitcher from './CanvasSwitcher';
 import '@excalidraw/excalidraw/index.css';
 
-function download(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob),
-    anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = name;
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
-}
 function sceneFrom(
   elements: readonly ExcalidrawElement[],
   appState: Partial<AppState>,
@@ -218,7 +211,7 @@ export default function CanvasEditor({
         format === 'png'
           ? await exportToBlob({ ...options, mimeType: 'image/png', maxWidthOrHeight: 4096 })
           : new Blob([(await exportToSvg(options)).outerHTML], { type: 'image/svg+xml' });
-      download(blob, `${filename}.${format}`);
+      await download(blob, `${filename}.${format}`);
     } catch (e) {
       setNotice((e as Error).message);
     } finally {
@@ -227,7 +220,12 @@ export default function CanvasEditor({
   }
   return (
     <section ref={root} className="canvas-editor" aria-label="Canvas editor">
-      <header className="canvas-editor-header">
+      <header
+        className="canvas-editor-header"
+        data-tauri-drag-region={
+          import.meta.env.VITE_TRESTL_DESKTOP_PLATFORM === 'darwin' ? 'deep' : undefined
+        }
+      >
         <button
           className="button"
           aria-label="Canvases"
@@ -323,7 +321,10 @@ export default function CanvasEditor({
               Reload latest
             </button>
           )}
-          <button className="button" onClick={exportJson}>
+          <button
+            className="button"
+            onClick={() => void exportJson().catch((e) => setNotice(e.message))}
+          >
             Download my copy
           </button>
           {queue.status === 'error' && (
@@ -382,7 +383,10 @@ export default function CanvasEditor({
             <MainMenu.Item icon={<Upload size={16} />} onSelect={() => input.current?.click()}>
               Import .excalidraw
             </MainMenu.Item>
-            <MainMenu.Item icon={<Download size={16} />} onSelect={exportJson}>
+            <MainMenu.Item
+              icon={<Download size={16} />}
+              onSelect={() => void exportJson().catch((e) => setNotice(e.message))}
+            >
               Download .excalidraw
             </MainMenu.Item>
             <MainMenu.Item onSelect={() => void exportImage('png')}>Export PNG</MainMenu.Item>

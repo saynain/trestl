@@ -6,6 +6,6 @@
     "resolveJsonModule": true, "allowImportingTsExtensions": true, "noEmit": true,
     "types": ["node", "vite/client"]
   },
-  "include": ["src", "shared", "server", "cli", "tests", "vite.config.ts"],
+  "include": ["src", "shared", "server", "desktop", "cli", "tests", "vite.config.ts"],
   "exclude": ["node_modules", "extensions"]
 }

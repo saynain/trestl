@@ -1,3 +1,4 @@
+import { downloadFile } from '../lib/download';
 import { useState, type FormEvent } from 'react';
 import { Upload } from 'lucide-react';
 import type { Project } from '../../shared/types';
@@ -20,14 +21,11 @@ export function ExportProject({ project, onClose }: { project: Project; onClose:
     setBusy(true);
     try {
       const contents = await api(`/projects/${project.id}/export`);
-      const url = URL.createObjectURL(
+      const saved = await downloadFile(
         new Blob([JSON.stringify(contents)], { type: 'application/json' }),
+        `${project.key.toLowerCase()}.trestl-project.json`,
       );
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `${project.key.toLowerCase()}.trestl-project.json`;
-      anchor.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 10000);
+      if (!saved) return;
       onClose();
       toast('Project export downloaded');
     } catch (error) {

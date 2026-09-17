@@ -1,0 +1,228 @@
+name: Desktop installers
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.2
+      - name: Check desktop version
+        run: node scripts/desktop-release.mjs verify
+      - name: Verify release tag and ancestry
+        if: github.event_name == 'push'
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          git merge-base --is-ancestor HEAD origin/main
+          node scripts/desktop-release.mjs verify "$RELEASE_TAG"
+
+  release-checks:
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/ci.yml
+
+  desktop:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            target: aarch64-apple-darwin
+            bundles: app,dmg
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            bundles: app,dmg
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            bundles: nsis,msi
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: deb,appimage,rpm
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.2
+      - run: corepack enable && corepack prepare pnpm@10.7.1 --activate
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev patchelf rpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test:desktop
+      - run: pnpm desktop:prepare
+      - run: pnpm test:desktop-package
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings
+      - name: Configure macOS release signing
+        if: github.event_name == 'push' && runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [[ -z "${!name}" ]]; then echo "::error::Missing release signing secret: $name"; exit 1; fi
+          done
+          [[ "$APPLE_SIGNING_IDENTITY" == "Developer ID Application:"* ]]
+      - name: Configure Windows release signing
+        if: github.event_name == 'push' && runner.os == 'Windows'
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+        run: |
+          foreach ($name in @('AZURE_CLIENT_ID', 'AZURE_CLIENT_SECRET', 'AZURE_TENANT_ID', 'AZURE_SIGNING_ENDPOINT', 'AZURE_SIGNING_ACCOUNT', 'AZURE_SIGNING_PROFILE')) {
+            if (-not [Environment]::GetEnvironmentVariable($name)) { throw "Missing signing setting: $name" }
+          }
+          cargo install artifact-signing-cli --version 0.11.0 --locked
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install Windows signing tool' }
+          $script = Join-Path $env:GITHUB_WORKSPACE 'scripts/sign-desktop-windows.ps1'
+          @{ bundle = @{ windows = @{ signCommand = @{ cmd = 'pwsh'; args = @('-NoProfile', '-File', $script, '%1') } } } } | ConvertTo-Json -Depth 6 | Set-Content src-tauri/signing.release.json
+      - name: Build test installers
+        if: github.event_name != 'push'
+        run: pnpm desktop:build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} -- --locked
+      - name: Build release installers
+        if: github.event_name == 'push'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+        run: |
+          args=()
+          if [[ "$RUNNER_OS" == Windows ]]; then args+=(--config src-tauri/signing.release.json); fi
+          pnpm desktop:build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} "${args[@]}" -- --locked
+      - name: Verify macOS signature and notarization
+        if: github.event_name == 'push' && runner.os == 'macOS'
+        run: |
+          app="src-tauri/target/${{ matrix.target }}/release/bundle/macos/Trestl.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign --verify --strict --verbose=2 "$app/Contents/MacOS/trestl-node"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+      - name: Smoke-test the installed macOS bundle runtime
+        if: runner.os == 'macOS'
+        env:
+          TRESTL_DESKTOP_TEST_BINARY: ${{ github.workspace }}/src-tauri/target/${{ matrix.target }}/release/bundle/macos/Trestl.app/Contents/MacOS/trestl-node
+          TRESTL_DESKTOP_TEST_RESOURCES: ${{ github.workspace }}/src-tauri/target/${{ matrix.target }}/release/bundle/macos/Trestl.app/Contents/Resources/resources
+        run: pnpm test:desktop-package
+      - name: Collect installers
+        run: node scripts/desktop-release.mjs collect ${{ matrix.target }}
+      - name: Verify Windows signatures
+        if: github.event_name == 'push' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem dist/desktop-release -File)
+          foreach ($file in $files) {
+            $signature = Get-AuthenticodeSignature $file.FullName
+            if ($signature.Status -ne 'Valid') { throw "Invalid signature: $($file.Name) ($($signature.Status))" }
+          }
+      - name: Extract and smoke-test the Windows MSI payload
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VERIFY_SIGNATURE: ${{ github.event_name == 'push' }}
+        run: |
+          $msi = (Get-ChildItem dist/desktop-release -Filter '*.msi').FullName
+          $destination = Join-Path $env:RUNNER_TEMP 'trestl-msi-payload'
+          $result = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @('/a', "`"$msi`"", '/qn', "TARGETDIR=`"$destination`"")
+          if ($result.ExitCode -ne 0) { throw "MSI extraction failed: $($result.ExitCode)" }
+          $apps = @(Get-ChildItem $destination -Recurse -Filter 'trestl-desktop.exe')
+          if ($apps.Count -ne 1) { throw 'Expected one desktop executable in the MSI' }
+          $env:TRESTL_DESKTOP_TEST_BINARY = Join-Path $apps[0].Directory.FullName 'trestl-node.exe'
+          $env:TRESTL_DESKTOP_TEST_RESOURCES = Join-Path $apps[0].Directory.FullName 'resources'
+          if ($env:VERIFY_SIGNATURE -eq 'true') {
+            # Tauri restores the unsigned build output; verify the shipped payload instead.
+            foreach ($file in @($apps[0].FullName, $env:TRESTL_DESKTOP_TEST_BINARY)) {
+              if ((Get-AuthenticodeSignature $file).Status -ne 'Valid') { throw "Invalid payload signature: $file" }
+            }
+          }
+          pnpm test:desktop-package
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged Windows runtime smoke test failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trestl-desktop-${{ matrix.target }}
+          if-no-files-found: error
+          path: dist/desktop-release/*
+          retention-days: 14
+
+  publish:
+    if: github.event_name == 'push'
+    needs: [verify, release-checks, desktop]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.2
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: trestl-desktop-*
+          merge-multiple: true
+          path: dist/desktop-release
+      - name: Validate complete release and checksum installers
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node scripts/desktop-release.mjs verify "$RELEASE_TAG"
+          node scripts/desktop-release.mjs checksums dist/desktop-release
+          (cd dist/desktop-release && sha256sum -c desktop-SHA256SUMS)
+      - name: Attach installers to the shared GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node scripts/ensure-release.mjs
+          # Never silently replace a published installer on rerun.
+          gh release upload "$RELEASE_TAG" dist/desktop-release/*

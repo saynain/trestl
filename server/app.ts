@@ -19,6 +19,7 @@ import { registerCanvases } from './canvases.ts';
 import { roadmapUpdate } from './roadmap.ts';
 import Fastify, { type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
+import { registerDesktopGateway } from './desktop-gateway.ts';
 import rateLimit from '@fastify/rate-limit';
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
 import { z } from 'zod';
@@ -214,6 +215,7 @@ export async function createApp(
     integrations?: boolean;
     githubFetch?: typeof fetch;
     proxyAuth?: ProxyAuthConfig | null;
+    desktopToken?: string;
   } = {},
 ) {
   const environmentProxy =
@@ -263,6 +265,7 @@ export async function createApp(
   app.decorateRequest('sessionMethod', null);
   app.decorateRequest('tokenScope', null);
   await app.register(cookie);
+  if (options.desktopToken) registerDesktopGateway(app, options.desktopToken);
   await app.register(rateLimit, { max: 300, timeWindow: '1 minute' });
   app.addHook('onClose', async () => db.close());
   app.setErrorHandler((error, request, reply) => {
