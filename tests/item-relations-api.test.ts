@@ -129,6 +129,15 @@ test('item relations expose both directions and display metadata without disclos
 
 test('OpenAPI documents item mutation envelopes, relation reads and revision preconditions', () => {
   const paths = openapi.paths as Record<string, Record<string, any>>;
+  const deletion = paths['/items/{id}'].delete;
+  assert.equal(deletion.requestBody.required, false);
+  assert.equal(
+    deletion.requestBody.content['application/json'].schema.properties.expectedRevision.maximum,
+    2147483646,
+  );
+  assert.deepEqual(deletion.requestBody.content['application/json'].schema.required, []);
+  assert.match(deletion.description, /stale revision returns 409/);
+  assert.doesNotMatch(deletion.description, /return the new revision/);
   assert.deepEqual(
     paths['/items/{id}'].patch.responses['200'].content['application/json'].schema.properties.item,
     { $ref: '#/components/schemas/WorkItem' },
