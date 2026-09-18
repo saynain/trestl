@@ -1,5 +1,6 @@
+import { MilestoneItems, MilestoneList } from './MilestoneItems';
 import { useLayoutEffect, useRef, useState, type PointerEvent, type RefObject } from 'react';
-import { Check, Diamond } from 'lucide-react';
+import { Diamond } from 'lucide-react';
 import type { Milestone } from '../../shared/types';
 import { patch } from '../lib/api';
 import { useApp } from '../lib/context';
@@ -48,7 +49,7 @@ export default function GanttMilestones({
       const x = (dayNumber(m.dueDate!) - origin + 0.5) * cell;
       let lane = ends.findIndex((end) => end < x - 16);
       if (lane < 0) lane = ends.length;
-      ends[lane] = x + Math.min(160, m.title.length * 6 + 22);
+      ends[lane] = x + Math.min(200, m.title.length * 6 + 65);
       return { milestone: m, x, lane };
     })
     // Keep DOM order stable while dragging past another marker.
@@ -155,7 +156,7 @@ export default function GanttMilestones({
             >
               <Diamond size={13} fill="currentColor" />
               <span>
-                {m.title}
+                {m.title} · {m.progress?.done ?? 0}/{m.progress?.total ?? 0}
                 {preview?.id === m.id && <small>{shortDate(m.dueDate)}</small>}
               </span>
             </button>
@@ -169,16 +170,7 @@ export default function GanttMilestones({
       </div>
       {listing && (
         <Modal title="Project milestones" onClose={() => setListing(false)}>
-          <div className="gantt-milestone-list">
-            {milestones.map((m) => (
-              <button key={m.id} onClick={() => edit(m)}>
-                <Diamond size={14} />
-                <strong>{m.title}</strong>
-                <span>{shortDate(m.dueDate) || 'Set a date'}</span>
-                {m.completed && <Check size={14} />}
-              </button>
-            ))}
-          </div>
+          <MilestoneList milestones={milestones} onEdit={edit} />
         </Modal>
       )}
       {editing && (
@@ -188,6 +180,7 @@ export default function GanttMilestones({
             if (!busy) setEditing(null);
           }}
         >
+          <MilestoneItems milestone={editing} />
           <form
             className="gantt-schedule-form"
             onSubmit={(e) => {

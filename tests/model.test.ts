@@ -304,3 +304,24 @@ test('personal inbox captures appear in Home, My work, and saved My work without
     );
   }
 });
+
+test('milestone filters include legacy unassigned items and compose with existing filters', () => {
+  const items = [
+    item('legacy'),
+    item('empty', { milestoneId: null }),
+    item('linked', { milestoneId: 'm' }),
+    item('done', { milestoneId: 'm', status: 'done' }),
+  ];
+  assert.deepEqual(
+    filterWorkItems(items, user.id, { milestoneId: 'null' }).map((i) => i.id),
+    ['legacy', 'empty'],
+  );
+  assert.deepEqual(
+    filterWorkItems(items, user.id, { milestoneId: 'm' }).map((i) => i.id),
+    ['linked'],
+  );
+  assert.deepEqual(
+    filterWorkItems(items, user.id, { milestoneId: 'm', status: 'done' }).map((i) => i.id),
+    ['done'],
+  );
+});

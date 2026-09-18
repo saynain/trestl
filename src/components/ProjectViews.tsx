@@ -1,3 +1,4 @@
+import { MilestoneItems, MilestoneProgress } from './MilestoneItems';
 import { ProjectUpdates } from './ProjectUpdates';
 import { Select } from './Select';
 import { useState, type FormEvent } from 'react';
@@ -127,6 +128,7 @@ export function AllProjects() {
 export function Overview({ project, items }: { project: Project; items: WorkItem[] }) {
   const { data, refresh, toast, createProject, editProject, openItem } = useApp();
   const [milestoneOpen, setMilestoneOpen] = useState(false);
+  const [selectedMilestone, setSelectedMilestone] = useState<string | null>(null);
   const [milestoneTitle, setMilestoneTitle] = useState('');
   const [milestoneDue, setMilestoneDue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -159,6 +161,14 @@ export function Overview({ project, items }: { project: Project; items: WorkItem
   }
   return (
     <div className="overview-content">
+      {selectedMilestone && milestones.find((m) => m.id === selectedMilestone) && (
+        <Modal
+          title={milestones.find((m) => m.id === selectedMilestone)!.title}
+          onClose={() => setSelectedMilestone(null)}
+        >
+          <MilestoneItems milestone={milestones.find((m) => m.id === selectedMilestone)!} />
+        </Modal>
+      )}
       <div className="overview-main">
         <ProjectUpdates key={project.id} project={project} />
         <section className="overview-section">
@@ -317,7 +327,13 @@ export function Overview({ project, items }: { project: Project; items: WorkItem
                 >
                   {m.completed ? <CircleCheck size={18} className="green" /> : <Circle size={18} />}
                 </button>
-                <span className={m.completed ? 'completed-title' : ''}>{m.title}</span>
+                <button
+                  className={`milestone-title-button ${m.completed ? 'completed-title' : ''}`}
+                  onClick={() => setSelectedMilestone(m.id)}
+                >
+                  {m.title}
+                </button>
+                <MilestoneProgress milestone={m} />
                 <small>{shortDate(m.dueDate) || 'No date'}</small>
                 <button
                   className="icon-button subtle"

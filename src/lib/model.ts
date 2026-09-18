@@ -146,6 +146,10 @@ export function filterWorkItems(
       (!filters.assigneeId ||
         item.assigneeId === (filters.assigneeId === 'me' ? userId : filters.assigneeId)) &&
       (!filters.type || item.type === filters.type) &&
+      (!filters.milestoneId ||
+        (filters.milestoneId === 'null'
+          ? !item.milestoneId
+          : item.milestoneId === filters.milestoneId)) &&
       (!filters.tag ||
         item.labels.some((tag) => tag.toLowerCase() === filters.tag.toLowerCase())) &&
       (filters.untagged !== 'true' || item.labels.length === 0) &&

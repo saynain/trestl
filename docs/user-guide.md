@@ -12,6 +12,10 @@ Projects, tasks, workspace members, exports, and repository connections are isol
 
 Open a project's **Gantt** tab to plan work with start and due dates, drag or resize bars, inspect milestones, and schedule undated items. **Fit** brings the schedule into view; **Completed** includes finished work. Click a bar or dependency badge to edit dates and inspect linked tasks. **Manage relationships** opens the task detail, where **Relationships → Blocks** adds a dependency.
 
+Choose a milestone in a work item’s **Properties** to link it to a release or checkpoint in the same project. The **Milestone** list filter supports a specific milestone or **No milestone**, and is preserved in saved views. Moving an item to another project clears its milestone; deleting a milestone unlinks its items.
+
+Milestones show **done/total** progress from linked work you can access (canceled items remain in the total). Expand a milestone on the Roadmap or in the Gantt milestone list to open its linked work; click its name in the project Overview for the same detail. Completion is still a separate manual milestone setting.
+
 Milestones can be clicked to edit their name, date, and completion state, or dragged to a new calendar date. Overlapping labels are arranged into separate rows. Click the **Milestones** row heading to find milestones outside the visible range or restore a cleared date. Edits use revision checks to avoid overwriting newer changes.
 
 **Critical path** highlights zero-float tasks and the dependency links that drive the longest chain, using forward and backward passes of the [critical path method](https://www.pmi.org/learning/library/critical-path-method-calculations-scheduling-8040). Float is the number of calendar days a task can slip without extending the calculated chain. The calculation covers unfinished project tasks and their visible unfinished upstream blockers, independent of search, collapsed groups, and the Completed toggle. Full planned durations are used, including for tasks already in progress; due-date-only points count as one day. Completed and canceled work is excluded. All tied critical branches are highlighted.

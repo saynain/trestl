@@ -90,6 +90,7 @@ function activityText(body: string, data: Bootstrap) {
     priority: 'priority',
     assigneeId: 'assignee',
     projectId: 'project',
+    milestoneId: 'milestone',
     parentId: 'parent item',
     type: 'type',
     startDate: 'start date',
@@ -126,17 +127,19 @@ function activityText(body: string, data: Bootstrap) {
                 ? data.users.find((entry) => entry.id === value)?.name || 'a member'
                 : key === 'projectId'
                   ? data.projects.find((entry) => entry.id === value)?.name || 'a project'
-                  : key === 'parentId'
-                    ? data.items.find((entry) => entry.id === value)?.identifier || 'a work item'
-                    : key === 'startDate' || key === 'dueDate' || key === 'followUpDate'
-                      ? shortDate(value)
-                      : key === 'visibility'
-                        ? value === 'private'
-                          ? 'Private'
-                          : 'Workspace'
-                        : key === 'recurrence'
-                          ? value.charAt(0).toUpperCase() + value.slice(1)
-                          : value;
+                  : key === 'milestoneId'
+                    ? data.milestones.find((entry) => entry.id === value)?.title || 'a milestone'
+                    : key === 'parentId'
+                      ? data.items.find((entry) => entry.id === value)?.identifier || 'a work item'
+                      : key === 'startDate' || key === 'dueDate' || key === 'followUpDate'
+                        ? shortDate(value)
+                        : key === 'visibility'
+                          ? value === 'private'
+                            ? 'Private'
+                            : 'Workspace'
+                          : key === 'recurrence'
+                            ? value.charAt(0).toUpperCase() + value.slice(1)
+                            : value;
       return `changed ${field} to ${readable || value}`;
     })
     .join(' · ');
@@ -1124,6 +1127,23 @@ export default function ItemDetail({
                       {p.name}
                     </option>
                   ))}
+                </Select>
+              </Property>
+              <Property name="Milestone">
+                <Select
+                  aria-label="Milestone"
+                  value={item.milestoneId || ''}
+                  disabled={!item.projectId}
+                  onChange={(e) => void update({ milestoneId: e.target.value || null })}
+                >
+                  <option value="">No milestone</option>
+                  {data.milestones
+                    .filter((m) => m.projectId === item.projectId)
+                    .map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.title}
+                      </option>
+                    ))}
                 </Select>
               </Property>
               <div className="item-property-divider" />

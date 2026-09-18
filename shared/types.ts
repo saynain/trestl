@@ -90,6 +90,8 @@ export interface IssueSource {
 }
 export interface WorkItem {
   importedFrom?: { authorName: string; identifier?: string };
+  /** Absent on records created before milestone linking. */
+  milestoneId?: string | null;
   revision?: number;
   workspaceId?: string;
   id: string;
@@ -168,6 +170,9 @@ export interface SavedView {
   userId: string;
 }
 export interface Milestone {
+  /** Computed from linked work items visible to the caller. */
+  itemIds?: string[];
+  progress?: { total: number; done: number };
   revision?: number;
   id: string;
   projectId: string;

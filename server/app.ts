@@ -132,6 +132,7 @@ const itemInput = z
     title,
     description: description.optional(),
     projectId: reference.optional(),
+    milestoneId: reference.optional(),
     parentId: reference.optional(),
     type: z.enum(['task', 'bug', 'idea', 'followup']).optional(),
     status: z.enum(['backlog', 'todo', 'in_progress', 'in_review', 'done', 'canceled']).optional(),
@@ -763,6 +764,13 @@ export async function createApp(
     };
     const projects = allProjects.filter((project) => projectVisible(project.id));
     const items = allItems.filter((item) => itemVisible(item.id));
+    const milestoneItems = new Map<string, WorkItem[]>();
+    for (const item of items) {
+      if (!item.milestoneId) continue;
+      const linked = milestoneItems.get(item.milestoneId) ?? [];
+      linked.push(item);
+      milestoneItems.set(item.milestoneId, linked);
+    }
     return {
       user,
       authMode:
@@ -791,7 +799,21 @@ export async function createApp(
       notifications: allNotifications
         .filter((n) => n.recipientId === user.id && sameWorkspace(n, user) && itemVisible(n.itemId))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)),
-      milestones: allMilestones.filter((milestone) => projectVisible(milestone.projectId)),
+      milestones: allMilestones
+        .filter((milestone) => projectVisible(milestone.projectId))
+        .map((milestone) => {
+          const linked = (milestoneItems.get(milestone.id) ?? []).filter(
+            (item) => item.projectId === milestone.projectId,
+          );
+          return {
+            ...milestone,
+            itemIds: linked.map((item) => item.id),
+            progress: {
+              total: linked.length,
+              done: linked.filter((item) => item.status === 'done').length,
+            },
+          };
+        }),
     };
   };
   app.get('/api/v1/bootstrap', async (request) => visibleData(requireUser(request)));
@@ -1019,6 +1041,11 @@ export async function createApp(
     if (item.startDate && item.dueDate && item.startDate > item.dueDate)
       fail(400, 'Start date must be on or before the due date');
     if (item.projectId) await checkedProject(s, u, item.projectId);
+    if (item.milestoneId) {
+      const milestone = await s.get<Milestone>('milestones', item.milestoneId);
+      if (!milestone || milestone.projectId !== item.projectId)
+        fail(400, 'Choose a milestone in this work item’s project');
+    }
     if (item.assigneeId) {
       const assignee = await workspaceUser(s, item.assigneeId, workspaceOf(u));
       if (!assignee || !sameWorkspace(u, assignee))
@@ -1049,6 +1076,7 @@ export async function createApp(
         type: z.enum(['task', 'bug', 'idea', 'followup']).optional(),
         assigneeId: z.string().optional(),
         parentId: z.string().optional(),
+        milestoneId: z.string().optional(),
         visibility: visibility.optional(),
         cursor: z
           .string()
@@ -1069,11 +1097,12 @@ export async function createApp(
       'assigneeId',
       'type',
       'parentId',
+      'milestoneId',
       'visibility',
     ] as const) {
       if (query[key])
         items = items.filter((i) =>
-          query[key] === 'null' ? i[key] === null : i[key] === query[key],
+          query[key] === 'null' ? i[key] == null : i[key] === query[key],
         );
     }
     if (query.q) {
@@ -1142,6 +1171,7 @@ export async function createApp(
         identifier: await nextItemIdentifier(tx, input.projectId ?? null, workspaceOf(u)),
         description: '',
         projectId: null,
+        milestoneId: null,
         parentId: null,
         type: 'task',
         status: 'todo',
@@ -1214,6 +1244,8 @@ export async function createApp(
       if (input.visibility && input.visibility !== old.visibility && old.creatorId !== u.id)
         fail(403, 'Only the creator can change item visibility');
       const item: WorkItem = { ...old, ...input, updatedAt: now() };
+      if (item.projectId !== old.projectId && input.milestoneId === undefined)
+        item.milestoneId = null;
       item.completedAt = item.status === 'done' ? (old.completedAt ?? now()) : null;
       await validateItem(s, u, item, old);
       if (item.startDate !== old.startDate || item.dueDate !== old.dueDate) {
@@ -1465,17 +1497,45 @@ export async function createApp(
   app.get('/api/v1/milestones', async (request) => ({
     data: (await visibleData(requireUser(request))).milestones,
   }));
+  app.get<{ Params: { id: string } }>('/api/v1/milestones/:id', async (request) => {
+    const milestone = (await visibleData(requireUser(request))).milestones.find(
+      (m) => m.id === request.params.id,
+    );
+    if (!milestone) fail(404, 'Milestone not found');
+    return milestone;
+  });
   app.post('/api/v1/milestones', async (request, reply) => {
     const input = milestoneInput.parse(request.body);
+    const user = requireUser(request);
+    const retry = retryContext(request, user, 'create-milestone', input);
     const result = await mutate(async (s) => {
-      await checkedProject(s, requireUser(request), input.projectId);
-      return s.put('milestones', {
+      await checkedProject(s, user, input.projectId);
+      if (retry) {
+        const previous = await s.get<{ id: string; fingerprint: string; result: Milestone }>(
+          'idempotency',
+          retry.id,
+        );
+        if (previous) {
+          if (previous.fingerprint !== retry.fingerprint)
+            fail(
+              409,
+              'Idempotency key was already used with different input. Use a new key for a new operation.',
+            );
+          const current = await s.get<Milestone>('milestones', previous.result.id);
+          if (!current) fail(404, 'Milestone not found');
+          await checkedProject(s, user, current.projectId);
+          return previous.result;
+        }
+      }
+      const result = await s.put('milestones', {
         id: id(),
         revision: 1,
         dueDate: null,
         completed: false,
         ...input,
       });
+      if (retry) await s.put('idempotency', { ...retry, result });
+      return result;
     });
     return reply.code(201).send(result);
   });
@@ -1492,6 +1552,11 @@ export async function createApp(
         fail(409, 'Milestone changed. Read it again before updating.');
       const next = { ...m, ...input, revision: (m.revision ?? 0) + 1 };
       await checkedProject(s, requireUser(request), next.projectId);
+      if (
+        next.projectId !== m.projectId &&
+        (await s.list<WorkItem>('items')).some((item) => item.milestoneId === m.id)
+      )
+        fail(409, 'Unlink work items before moving this milestone to another project');
       return s.put('milestones', next);
     });
   });
@@ -1500,6 +1565,9 @@ export async function createApp(
       const m = await s.get<Milestone>('milestones', request.params.id);
       if (!m) fail(404, 'Milestone not found');
       await checkedProject(s, requireUser(request), m.projectId);
+      for (const item of await s.list<WorkItem>('items'))
+        if (item.milestoneId === m.id)
+          await s.put('items', { ...item, milestoneId: null, updatedAt: now() });
       await s.remove('milestones', m.id);
     });
     return reply.code(204).send();
