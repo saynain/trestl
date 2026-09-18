@@ -1342,7 +1342,7 @@ export async function createApp(
               : {}),
           });
       }
-      return saved;
+      return { item: saved };
     });
   });
   app.delete<{ Params: { id: string } }>('/api/v1/items/:id', async (request, reply) => {
@@ -1498,6 +1498,29 @@ export async function createApp(
       await s.remove('milestones', m.id);
     });
     return reply.code(204).send();
+  });
+  app.get<{ Params: { id: string } }>('/api/v1/items/:id/relations', async (request) => {
+    const u = requireUser(request),
+      item = await checkedItem(store, u, request.params.id);
+    const data = [];
+    for (const relation of await store.list<Relation>('relations')) {
+      if (relation.itemId !== item.id && relation.targetId !== item.id) continue;
+      const outgoing = relation.itemId === item.id;
+      const relatedId = outgoing ? relation.targetId : relation.itemId;
+      if (!(await ctx.canItem(u, relatedId))) continue;
+      const relatedItem = await store.get<WorkItem>('items', relatedId);
+      if (!relatedItem) continue;
+      data.push({
+        ...relation,
+        direction: outgoing ? 'outgoing' : 'incoming',
+        relatedItem: {
+          id: relatedItem.id,
+          identifier: relatedItem.identifier,
+          title: relatedItem.title,
+        },
+      });
+    }
+    return { data };
   });
   app.post<{ Params: { id: string } }>('/api/v1/items/:id/relations', async (request, reply) => {
     const input = z

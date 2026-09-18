@@ -224,6 +224,28 @@ const list = (name: string) => ({
   type: 'object',
   properties: { data: { type: 'array', items: ref(name) }, nextCursor: string },
 });
+schemas.RelationDetail = {
+  allOf: [
+    ref('Relation'),
+    {
+      type: 'object',
+      required: ['direction', 'relatedItem'],
+      properties: {
+        direction: {
+          type: 'string',
+          enum: ['outgoing', 'incoming'],
+          description:
+            'Relative to the requested item. A blocks relation points from itemId to targetId.',
+        },
+        relatedItem: {
+          type: 'object',
+          required: ['id', 'identifier', 'title'],
+          properties: { id: uuid, identifier: string, title: string },
+        },
+      },
+    },
+  ],
+};
 schemas.ProjectRelation = {
   type: 'object',
   properties: { id: uuid, itemId: uuid, projectId: uuid },
@@ -341,6 +363,7 @@ function operation(
     created?: boolean;
     noContent?: boolean;
     parameters?: unknown[];
+    description?: string;
   } = {},
 ) {
   const params = [
@@ -353,8 +376,16 @@ function operation(
     ...(options.parameters ?? []),
   ];
   const code = options.noContent ? '204' : options.created ? '201' : '200';
+  const revisionBody = body as
+    { properties?: { expectedRevision?: unknown }; required?: string[] } | undefined;
+  const revisionDescription = revisionBody?.properties?.expectedRevision
+    ? `${revisionBody.required?.includes('expectedRevision') ? 'Required' : 'Optional'} expectedRevision compares the submitted revision with the current resource revision${path.endsWith('/roadmap') ? ' (roadmap.revision)' : ''}. Read the resource first and send its revision; a stale revision returns 409 without applying changes. After a conflict, read the resource again before retrying. Successful updates return the new revision in the updated resource.${revisionBody.required?.includes('expectedRevision') ? '' : ' Omit expectedRevision only when overwriting the current revision is intended.'}`
+    : undefined;
   (paths[path] ??= {})[method] = {
     summary,
+    ...((options.description || revisionDescription) && {
+      description: [options.description, revisionDescription].filter(Boolean).join(' '),
+    }),
     operationId: `${method}${path.replace(/[^a-zA-Z]/g, '_')}`,
     security: options.public
       ? []
@@ -564,7 +595,7 @@ for (const [path, schema, omit, required] of resources) {
     `/${path}/{id}`,
     'patch',
     `Update ${schema}${path === 'items' ? '; linked title, description and externalUrl changes return 409. Planning fields stay local.' : ''}`,
-    ref(schema),
+    path === 'items' ? object({ item: ref('WorkItem') }, ['item']) : ref(schema),
     path === 'items' || path === 'milestones'
       ? {
           ...writable(schema, [...omit]),
@@ -589,6 +620,17 @@ operation(
   ref('Activity'),
   object({ body: { type: 'string', minLength: 1, maxLength: 50000 } }, ['body']),
   { created: true, parameters: [idempotencyParameter] },
+);
+operation(
+  '/items/{id}/relations',
+  'get',
+  'List accessible item relationships in both directions',
+  object({ data: { type: 'array', items: ref('RelationDetail') } }, ['data']),
+  undefined,
+  {
+    description:
+      'Accepts an item UUID or identifier. Includes only relationships whose two items are accessible. relatedItem identifies the opposite endpoint for display; itemId and targetId retain the original direction.',
+  },
 );
 operation(
   '/items/{id}/relations',
@@ -1284,7 +1326,7 @@ export const openapi = {
   openapi: '3.1.0',
   info: {
     title: 'Trestl API',
-    version: '0.2.0',
+    version: '0.4.0',
     description:
       'Repository-independent project planning. Authenticate with a browser session or a scoped personal token. Core collection responses use data arrays; /integrations returns a direct array; item pagination uses opaque cursor values returned as nextCursor. Private project access is inherited by descendants. All dates are ISO YYYY-MM-DD and timestamps are UTC ISO 8601. The bootstrap endpoint is intended for small self-hosted workspaces. Repository imports require an admin account. Git and Confluence connections use individual credentials and explicit allowed origins. Work mutations never post to external providers; GitHub App authorization and refresh exchange credentials with GitHub.',
   },

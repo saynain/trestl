@@ -790,7 +790,7 @@ test('linked issue content is source-owned while planning and recurring successo
       title: item.title,
     });
     assert.equal(updated.statusCode, 200, updated.body);
-    assert.equal(updated.json().source.state, 'closed');
+    assert.equal(updated.json().item.source.state, 'closed');
     const bootstrap = (await api('GET', '/bootstrap')).json();
     assert.deepEqual(bootstrap.items[0].source, source);
     const note = await api('POST', `/items/${item.id}/comments`, { body: 'Internal note' });
@@ -807,7 +807,10 @@ test('linked issue content is source-owned while planning and recurring successo
       (await api('PATCH', `/items/${successor.id}`, { title: 'My native follow-up' })).statusCode,
       200,
     );
-    await ctx.store.put('items', { ...updated.json(), source: { ...source, connected: false } });
+    await ctx.store.put('items', {
+      ...updated.json().item,
+      source: { ...source, connected: false },
+    });
     assert.equal(
       (await api('PATCH', `/items/${item.id}`, { title: 'Still source-owned' })).statusCode,
       409,
@@ -841,7 +844,7 @@ test('API numbering follows projects, moves, recurrence and deletion', async () 
     );
     const moved = await api('PATCH', `/items/${first.id}`, { projectId: b.id });
     assert.equal(moved.statusCode, 200, moved.body);
-    assert.equal(moved.json().identifier, 'BB-02');
+    assert.equal(moved.json().item.identifier, 'BB-02');
     const completed = await api('PATCH', `/items/${first.id}`, { status: 'done' });
     assert.equal(completed.statusCode, 200, completed.body);
     const followup = (await api('GET', '/bootstrap'))

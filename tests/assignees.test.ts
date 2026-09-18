@@ -84,7 +84,7 @@ test('disabled accounts cannot receive new assignments while their existing work
     assert.equal(unchanged.json().item.assigneeId, null);
     const edit = await api('PATCH', `/items/${itemId}`, { title: 'Still editable', assigneeId });
     assert.equal(edit.statusCode, 200, edit.body);
-    assert.equal(edit.json().assigneeId, assigneeId);
+    assert.equal(edit.json().item.assigneeId, assigneeId);
     const completed = await api('PATCH', `/items/${itemId}`, { status: 'done' });
     assert.equal(completed.statusCode, 200, completed.body);
     const bootstrap = (await api('GET', '/bootstrap')).json();
@@ -97,10 +97,10 @@ test('disabled accounts cannot receive new assignments while their existing work
     assert.equal(next.assigneeId, null, 'New recurrence must not inherit a disabled assignee');
     const cleared = await api('PATCH', `/items/${itemId}`, { assigneeId: null });
     assert.equal(cleared.statusCode, 200, cleared.body);
-    assert.equal(cleared.json().assigneeId, null);
+    assert.equal(cleared.json().item.assigneeId, null);
     const reassigned = await api('PATCH', `/items/${itemId}`, { assigneeId: setup.json().id });
     assert.equal(reassigned.statusCode, 200, reassigned.body);
-    assert.equal(reassigned.json().assigneeId, setup.json().id);
+    assert.equal(reassigned.json().item.assigneeId, setup.json().id);
     assert.equal(
       (await api('PATCH', `/users/${assigneeId}/access`, { disabled: false })).statusCode,
       200,
