@@ -121,7 +121,7 @@ test('CLI API supports project keys, filtering, revisions and durable, scoped re
       expectedRevision: 0,
     });
     assert.equal(legacyUpdate.statusCode, 200, legacyUpdate.body);
-    assert.equal(legacyUpdate.json().revision, 1);
+    assert.equal(legacyUpdate.json().item.revision, 1);
     const comments = await Promise.all(
       Array.from({ length: 2 }, () =>
         api('POST', `/items/${item.identifier}/comments`, { body: 'Retry-safe note' }, 'note-1'),
