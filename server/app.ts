@@ -1346,8 +1346,13 @@ export async function createApp(
     });
   });
   app.delete<{ Params: { id: string } }>('/api/v1/items/:id', async (request, reply) => {
+    const { expectedRevision } = z
+      .object({ expectedRevision: z.number().int().min(0).max(2147483646).optional() })
+      .parse(request.body ?? {});
     await mutate(async (s) => {
       const item = await checkedItem(s, requireUser(request), request.params.id);
+      if (expectedRevision !== undefined && expectedRevision !== (item.revision ?? 0))
+        fail(409, 'Work item changed. Read it again before deleting.');
       if ((await s.list<WorkItem>('items')).some((x) => x.parentId === item.id))
         fail(409, 'Move or delete subtasks first');
       for (const a of await s.list<Activity>('activity'))

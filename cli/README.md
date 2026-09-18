@@ -6,24 +6,24 @@ A standalone Node.js client for Trestl. Run it from any repository or directory;
 
 Install [Node.js 22.9 or newer](https://nodejs.org/), then download the `.tgz` and `SHA256SUMS` from the [latest GitHub release](https://github.com/saynain/trestl/releases/latest). The same package works on macOS, Linux and Windows and contains no runtime dependencies.
 
-For version 0.2.0, using the GitHub CLI (also works while the repository is private):
+For version 0.4.0, using the GitHub CLI (also works while the repository is private):
 
 ```sh
-gh release download v0.2.0 --repo saynain/trestl --pattern 'trestl-cli-*.tgz' --pattern SHA256SUMS
+gh release download v0.4.0 --repo saynain/trestl --pattern 'trestl-cli-*.tgz' --pattern SHA256SUMS
 # macOS; on Linux use sha256sum -c SHA256SUMS
 shasum -a 256 -c SHA256SUMS
-npm install --global ./trestl-cli-0.2.0.tgz --ignore-scripts
+npm install --global ./trestl-cli-0.4.0.tgz --ignore-scripts
 trestl --version
 ```
 
-On Windows, compare `(Get-FileHash .\trestl-cli-0.2.0.tgz -Algorithm SHA256).Hash` with `SHA256SUMS`, then run the same npm install command. npm must have a writable global prefix; use a Node version manager or a user-owned prefix if needed.
+On Windows, compare `(Get-FileHash .\trestl-cli-0.4.0.tgz -Algorithm SHA256).Hash` with `SHA256SUMS`, then run the same npm install command. npm must have a writable global prefix; use a Node version manager or a user-owned prefix if needed.
 
 The identical tarball is also distributed as an OCI artifact in GHCR. With [ORAS](https://oras.land/docs/installation/) installed:
 
 ```sh
-oras pull ghcr.io/saynain/trestl-cli:v0.2.0
+oras pull ghcr.io/saynain/trestl-cli:v0.4.0
 shasum -a 256 -c SHA256SUMS
-npm install --global ./trestl-cli-0.2.0.tgz --ignore-scripts
+npm install --global ./trestl-cli-0.4.0.tgz --ignore-scripts
 ```
 
 This is a downloadable package artifact, not a Docker image. Registry mirrors can copy it with `oras copy`; use a digest reference for reproducible installs. While private, GHCR requires `oras login ghcr.io` with a GitHub account/token that can read the package. GitHub source/release visibility and GHCR package visibility are separate settings. This package is not published to npm.
@@ -49,7 +49,7 @@ For automation or an older server, create a personal API token in Settings and u
 pnpm install --frozen-lockfile
 pnpm build:cli
 node scripts/package-cli.mjs
-npm install --global ./dist/cli-release/trestl-cli-0.2.0.tgz --ignore-scripts
+npm install --global ./dist/cli-release/trestl-cli-0.4.0.tgz --ignore-scripts
 ```
 
 During development, `pnpm cli` runs the same CLI from source. Use `pnpm -s cli` to suppress pnpm's banner when processing JSON. See [CLI releases](../docs/cli-releases.md) for publishing and [proxy deployment](../docs/proxy-auth.md) for gateway configuration.
@@ -90,7 +90,7 @@ trestl comment K8S-12 "Rollout plan reviewed." --idempotency-key review-note-1
 trestl export > trestl-export.json
 ```
 
-Projects accept keys or IDs; item commands accept identifiers or IDs. Use `none` to clear a project, assignee or date. `list --project none` selects inbox items; use `--no-config` to list across all projects. Run `trestl --help` for the supported flags; unsupported flags fail rather than being silently ignored.
+Projects accept keys or IDs; item commands accept identifiers or IDs. Use `none` to clear a project, assignee or date. `list --project none` selects inbox items; use `--no-config` to list across all projects. Run `trestl --help` for command discovery and `trestl update --help` (or any command with `--help`) for its supported flags; unsupported flags fail rather than being silently ignored.
 
 `get --json` returns `{item, activity, relations, links}` including the full description. List/search fetch filtered pages from the API rather than downloading the whole workspace to filter locally. Server permission checks still apply. The server's underlying storage and permission filtering remain optimized for small workspaces, not large indexed searches.
 
@@ -142,7 +142,7 @@ trestl update K8S-12 --status done --expected-revision 7 --json
 
 Older records without a revision have revision 0. On a conflict, reread and reconcile; do not blindly retry with a newer revision. Revisions increment on all item writes, including repository synchronization. The API keeps revision checks optional for compatibility with existing clients, but the CLI always sends one.
 
-For creates and comments, provide one `--idempotency-key` per logical operation. Reuse that key with the same account, server and input after a timeout. The server stores retry records in the database and replays the original result without creating duplicates. A reused key with different input returns 409. Keys are scoped to the user and operation, have 1–128 letters/digits/`._:-`, and persist until the database is reset or records are administratively removed. Replays require current access to the original item; deleted items are not recreated. Requests without keys remain ordinary mutations. The CLI does not automatically retry mutations.
+For item creates, milestone creates and comments, provide one `--idempotency-key` per logical operation. Reuse that key with the same account, server and input after a timeout. The server stores retry records in the database and replays the original result without creating duplicates. A reused key with different input returns 409. Keys are scoped to the user and operation, have 1–128 letters/digits/`._:-`, and persist until the database is reset or records are administratively removed. Replays require current access to the original item; deleted items are not recreated. Requests without keys remain ordinary mutations. The CLI does not automatically retry mutations.
 
 ## Agents in other contexts
 
@@ -170,9 +170,29 @@ trestl project-update DEMO --due 2026-10-15 --profile work
 trestl milestone-update <milestone-id> --due 2026-10-15 --expected-revision 2 --profile work
 ```
 
-`--start` and `--due` accept `none` to clear a date. `--labels` accepts comma-separated names, or `none` to clear all tags. A project requires an explicit `--key`; a new milestone requires an explicit `--project`. `--completed` creates an already-completed milestone. Project keys must be unique in the workspace. Project and milestone creation do not support idempotency keys: after an uncertain response, inspect `projects` or `milestones` before trying again. Work-item creation supports `--idempotency-key` as usual.
+`--start` and `--due` accept `none` to clear a date. `--labels` accepts comma-separated names, or `none` to clear all tags. A project requires an explicit `--key`; a new milestone requires an explicit `--project`. `--completed` creates an already-completed milestone. Project keys must be unique in the workspace. Milestone creation supports `--idempotency-key`, with the same retry rules as work-item creation. Project creation does not support idempotency keys: inspect `projects` after an uncertain response before trying again.
 
-`relation-add` takes the blocker first and dependent second, resolving either IDs or identifiers. An existing identical dependency is returned without duplication; cycles are rejected by the server. `project-update` accepts description and start/due dates. `milestone-update` accepts title and due date and requires the revision from `milestones --json` (use 0 if absent); stale revisions fail without overwriting another edit.
+`relation-add` and `relation-remove` take the blocker first and dependent second, resolving either IDs or identifiers. Removal deletes only that directed dependency and returns exit 4 if it is absent. An existing identical dependency is returned without duplication; cycles are rejected by the server. `project-update` accepts description and start/due dates. `milestone-update` accepts title and due date and requires the revision from `milestones --json` (use 0 if absent); stale revisions fail without overwriting another edit.
+
+## Hierarchy, milestones, and deletion
+
+```sh
+trestl create "Release onboarding" --project DEMO --type task
+trestl create "Welcome screen" --project DEMO --parent DEMO-12 --milestone "Internal preview"
+trestl update DEMO-13 --parent DEMO-12 --milestone <milestone-id> --expected-revision 3
+trestl update DEMO-13 --no-parent --no-milestone --expected-revision 4
+trestl relation-remove DEMO-04 DEMO-09
+trestl get DEMO-13 --json
+trestl delete DEMO-13 --expected-revision 5
+```
+
+Hierarchy represents epics and features: create an ordinary parent item and group child items under it. The item types remain `task`, `bug`, `idea`, and `followup`; optional labels can describe an umbrella item's role. `--parent` resolves an item ID or identifier; `--no-parent` clears it. Parents must be accessible to the caller, and the server rejects cycles.
+
+`--milestone` accepts an ID or an exact title in the item's project. On create, the project comes from `--project` or the repository default. On update, the existing item's project applies unless explicitly changed. Duplicate titles in one project require an ID. `--no-milestone` clears assignment. Do not combine an assignment flag with its `--no-…` counterpart. Moving an item to another project clears its old milestone unless a valid milestone in the new project is supplied.
+
+`milestones` displays linked-item progress as done / total and the revision. `milestones --json` includes `progress: {done, total}` and `itemIds`, scoped to items visible to the caller. Completion remains a separate milestone field.
+
+`delete` requires the revision observed with `get --json`; it returns exit 5 on a stale revision. Move or delete child items before deleting their parent. Successful JSON deletion returns `{deleted: true, id: <supplied-item-reference>}`; relation removal returns the removed relation ID in the same shape.
 
 ## Canvases
 
