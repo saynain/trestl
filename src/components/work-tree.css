@@ -29,7 +29,11 @@
   cursor: default;
   opacity: 0.6;
 }
-.tree-count {
+.work-tree-row .tree-count {
+  width: auto;
+  height: auto;
+  flex: 0 0 auto;
+  white-space: nowrap;
   padding: 2px 5px;
   font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
@@ -88,6 +92,10 @@
   }
   .work-tree-row .item-title-line {
     gap: 5px;
+    flex-wrap: wrap;
+  }
+  .work-tree-row .item-title-line > span:first-child {
+    flex: 1 1 100%;
   }
   .work-tree-row .priority-cell,
   .work-tree-row .due-cell {
