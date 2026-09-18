@@ -11,6 +11,7 @@ export interface BoardPreferences {
   compact: boolean;
   showLabels: boolean;
   showDone: boolean;
+  collapseSubtasks: boolean;
 }
 export function defaultBoardPreferences(showDone = false): BoardPreferences {
   return {
@@ -18,6 +19,7 @@ export function defaultBoardPreferences(showDone = false): BoardPreferences {
     compact: false,
     showLabels: true,
     showDone,
+    collapseSubtasks: false,
   };
 }
 export function parseBoardPreferences(value: string | null, showDone = false): BoardPreferences {
@@ -45,6 +47,7 @@ export function parseBoardPreferences(value: string | null, showDone = false): B
     return {
       columns,
       compact: saved.compact === true,
+      collapseSubtasks: saved.collapseSubtasks === true,
       showLabels: saved.showLabels !== false,
       showDone: typeof saved.showDone === 'boolean' ? saved.showDone : showDone,
     };

@@ -1,0 +1,89 @@
+.hierarchy-menu {
+  display: inline-flex;
+}
+.hierarchy-actions {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: 260px;
+  max-width: calc(100vw - 16px);
+  flex-direction: column;
+  padding: 5px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+.hierarchy-actions:popover-open {
+  display: flex;
+}
+.hierarchy-actions > button {
+  text-align: left;
+  padding: 9px 10px;
+  border-radius: 5px;
+}
+.hierarchy-actions > button:hover,
+.hierarchy-actions > button:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.hierarchy-selection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.work-tree-main > .hierarchy-select {
+  margin: 0;
+  width: 16px;
+  height: 16px;
+}
+.work-tree-row[aria-selected='true'] {
+  background: var(--accent-soft);
+}
+.hierarchy-progress {
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+.work-tree-row .due-cell {
+  gap: 4px;
+}
+@media (max-width: 760px) {
+  .work-tree-main > .hierarchy-select {
+    grid-row: 1 / 3;
+  }
+  .work-view .work-tree-row .due-cell:has(.hierarchy-menu) {
+    display: flex;
+  }
+  .work-tree-row .due-cell > :not(.hierarchy-menu) {
+    display: none;
+  }
+  .work-view .work-row.work-tree-row {
+    grid-template-columns: minmax(0, 1fr) 28px 28px;
+  }
+}
+.hierarchy-selecting .work-tree-main {
+  grid-template-columns: 22px 24px 28px 78px minmax(0, 1fr);
+}
+@media (min-width: 1500px) {
+  .hierarchy-selecting .work-tree-main {
+    grid-template-columns: 22px 24px 30px 85px minmax(0, 1fr);
+  }
+}
+@media (max-width: 1200px) {
+  .hierarchy-selecting .work-tree-main {
+    grid-template-columns: 22px 24px 26px 68px minmax(0, 1fr);
+  }
+}
+@media (max-width: 760px) {
+  .hierarchy-selecting .work-tree-main {
+    grid-template-columns: 22px 24px 24px minmax(0, 1fr);
+  }
+  .hierarchy-selecting .work-tree-main > .item-identifier,
+  .hierarchy-selecting .work-tree-main > .item-name {
+    grid-column: 4;
+  }
+}

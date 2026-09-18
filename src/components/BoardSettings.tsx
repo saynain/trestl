@@ -118,6 +118,17 @@ export function BoardSettings({
           <label className="check-field">
             <input
               type="checkbox"
+              checked={draft.collapseSubtasks}
+              onChange={(event) => setDraft({ ...draft, collapseSubtasks: event.target.checked })}
+            />
+            Show subtasks as counts on parent cards
+          </label>
+          <p className="muted">
+            Children remain visible when their parent is excluded by the current filters.
+          </p>
+          <label className="check-field">
+            <input
+              type="checkbox"
               checked={draft.compact}
               onChange={(event) => setDraft({ ...draft, compact: event.target.checked })}
             />
