@@ -75,6 +75,7 @@ export default function WorkList({
   const [priorityFilter, setPriorityFilter] = useState(initialFilters.priority || '');
   const [assigneeFilter, setAssigneeFilter] = useState(initialFilters.assigneeId || '');
   const [typeFilter, setTypeFilter] = useState(initialFilters.type || '');
+  const [milestoneFilter, setMilestoneFilter] = useState(initialFilters.milestoneId || '');
   const [sourceFilter, setSourceFilter] = useState(initialFilters.source || '');
   const [tagFilter, setTagFilter] = useState(
     initialFilters.untagged === 'true'
@@ -149,6 +150,7 @@ export default function WorkList({
     Number(!!priorityFilter) +
     Number(!!assigneeFilter) +
     Number(!!typeFilter) +
+    Number(!!milestoneFilter) +
     Number(!!sourceFilter) +
     Number(!!tagFilter);
   const visible = useMemo(
@@ -163,6 +165,7 @@ export default function WorkList({
             assigneeId: assigneeFilter,
             type: typeFilter,
             source: sourceFilter,
+            milestoneId: milestoneFilter,
             tag,
             untagged,
             search,
@@ -180,6 +183,7 @@ export default function WorkList({
       assigneeFilter,
       typeFilter,
       sourceFilter,
+      milestoneFilter,
       tag,
       untagged,
       search,
@@ -196,6 +200,7 @@ export default function WorkList({
     assigneeFilter,
     typeFilter,
     sourceFilter,
+    milestoneFilter,
     tagFilter,
   ]);
   const tree = useMemo(
@@ -519,6 +524,7 @@ export default function WorkList({
       assigneeId: assigneeFilter,
       type: typeFilter,
       source: sourceFilter,
+      milestoneId: milestoneFilter,
       tag,
       untagged,
       search: search.trim(),
@@ -797,6 +803,28 @@ export default function WorkList({
                   </Select>
                 </label>
                 <label className="field">
+                  Milestone
+                  <Select
+                    value={milestoneFilter}
+                    onChange={(e) => setMilestoneFilter(e.target.value)}
+                  >
+                    <option value="">All milestones</option>
+                    <option value="null">No milestone</option>
+                    {data.milestones
+                      .filter(
+                        (m) =>
+                          !projectId ||
+                          m.projectId === projectId ||
+                          items.some((item) => item.projectId === m.projectId),
+                      )
+                      .map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.title} · {data.projects.find((p) => p.id === m.projectId)?.name}
+                        </option>
+                      ))}
+                  </Select>
+                </label>
+                <label className="field">
                   Status
                   <Select
                     className="select"
@@ -863,6 +891,7 @@ export default function WorkList({
                     setPriorityFilter('');
                     setAssigneeFilter('');
                     setTypeFilter('');
+                    setMilestoneFilter('');
                     setSourceFilter('');
                     setTagFilter('');
                   }}

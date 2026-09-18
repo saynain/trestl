@@ -47,6 +47,7 @@ const item = z
     title,
     description: text,
     projectId: id,
+    milestoneId: id.nullable().optional(),
     parentId: id.nullable(),
     type: z.enum(['task', 'bug', 'idea', 'followup']),
     status: z.enum(['backlog', 'todo', 'in_progress', 'in_review', 'done', 'canceled']),
@@ -185,6 +186,7 @@ export function validatePackage(data: ProjectPackage): string | null {
       return 'Duplicate IDs in project file';
   const projects = new Map(data.projects.map((v) => [v.id, v]));
   const items = new Map(data.items.map((v) => [v.id, v]));
+  const milestones = new Map(data.milestones.map((v) => [v.id, v]));
   const people = new Set(data.people.map((v) => v.id));
   const collections = new Map(data.canvasCollections.map((v) => [v.id, v]));
   if (!projects.has(data.rootProjectId)) return 'Root project is missing';
@@ -215,6 +217,8 @@ export function validatePackage(data: ProjectPackage): string | null {
       return 'Project dates are out of order';
   }
   for (const i of data.items) {
+    if (i.milestoneId && milestones.get(i.milestoneId)?.projectId !== i.projectId)
+      return 'Work item references a missing milestone or a milestone in another project';
     if (
       !projects.has(i.projectId) ||
       !people.has(i.creatorId) ||

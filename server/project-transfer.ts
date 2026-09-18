@@ -303,6 +303,7 @@ export function registerProjectTransfer(
         }
         const projectIds = new Map(data.projects.map((p) => [p.id, id()]));
         const itemIds = new Map(data.items.map((i) => [i.id, id()]));
+        const milestoneIds = new Map(data.milestones.map((m) => [m.id, id()]));
         const collectionIds = new Map(data.canvasCollections.map((c) => [c.id, id()]));
         const workspaceId = workspaceOf(user);
         for (const p of data.projects)
@@ -336,6 +337,7 @@ export function registerProjectTransfer(
             projectId,
             identifier: await nextItemIdentifier(tx, projectId, workspaceId),
             parentId: item.parentId ? itemIds.get(item.parentId)! : null,
+            milestoneId: item.milestoneId ? milestoneIds.get(item.milestoneId)! : null,
             creatorId: user.id,
             assigneeId: item.assigneeId ? (body.options.assignees[item.assigneeId] ?? null) : null,
             importedFrom: item.importedFrom ?? {
@@ -376,7 +378,7 @@ export function registerProjectTransfer(
         for (const m of data.milestones)
           await s.put<Milestone>('milestones', {
             ...m,
-            id: id(),
+            id: milestoneIds.get(m.id)!,
             projectId: projectIds.get(m.projectId)!,
             revision: 1,
           });

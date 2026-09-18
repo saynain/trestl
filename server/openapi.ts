@@ -136,6 +136,11 @@ const schemas: Record<string, unknown> = {
       title: string,
       description: string,
       projectId: nullableString,
+      milestoneId: {
+        ...nullableString,
+        description:
+          'Milestone in the item’s project. Moving projects clears this unless explicitly supplied.',
+      },
       parentId: nullableString,
       type: itemType,
       status,
@@ -210,6 +215,13 @@ const schemas: Record<string, unknown> = {
   Milestone: {
     type: 'object',
     properties: {
+      itemIds: { type: 'array', items: uuid, readOnly: true },
+      progress: {
+        type: 'object',
+        readOnly: true,
+        description: 'Counts visible linked items; only done counts as completed.',
+        properties: { total: { type: 'integer' }, done: { type: 'integer' } },
+      },
       revision: { type: 'integer', minimum: 0, readOnly: true },
       id: uuid,
       projectId: uuid,
@@ -526,7 +538,7 @@ const resources = [
   ],
   ['views', 'SavedView', ['id', 'userId', 'workspaceId'], ['name', 'filters', 'layout']],
   ['links', 'ResourceLink', ['id'], ['title', 'url', 'kind']],
-  ['milestones', 'Milestone', ['id', 'revision'], ['projectId', 'title']],
+  ['milestones', 'Milestone', ['id', 'revision', 'itemIds', 'progress'], ['projectId', 'title']],
 ] as const;
 for (const [path, schema, omit, required] of resources) {
   const parameters =
@@ -535,6 +547,7 @@ for (const [path, schema, omit, required] of resources) {
           'q',
           'projectId',
           'parentId',
+          'milestoneId',
           'assigneeId',
           'status',
           'priority',
@@ -551,13 +564,16 @@ for (const [path, schema, omit, required] of resources) {
     `Create ${schema}`,
     ref(schema),
     writable(schema, [...omit], [...required]),
-    { created: true, ...(path === 'items' ? { parameters: [idempotencyParameter] } : {}) },
+    {
+      created: true,
+      ...(['items', 'milestones'].includes(path) ? { parameters: [idempotencyParameter] } : {}),
+    },
   );
-  if (path === 'items' || path === 'projects')
+  if (path === 'items' || path === 'projects' || path === 'milestones')
     operation(
       `/${path}/{id}`,
       'get',
-      `Get ${schema}${path === 'items' ? ' by UUID or identifier' : ' by UUID or key'}`,
+      `Get ${schema}${path === 'items' ? ' by UUID or identifier' : path === 'projects' ? ' by UUID or key' : ' by UUID'}`,
       ref(path === 'items' ? 'ItemDetail' : schema),
     );
   operation(

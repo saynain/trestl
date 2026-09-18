@@ -129,13 +129,15 @@ test('portable project transfer preserves content, isolates access, validates re
       url: 'https://git.example.test/team/app',
       kind: 'repository',
     });
+    const milestoneId = randomUUID();
     await sourceContext.store.put('milestones', {
-      id: randomUUID(),
+      id: milestoneId,
       projectId: child.id,
       title: 'Launch',
       dueDate: '2026-12-01',
       completed: false,
     });
+    await sourceContext.store.put('items', { ...childItem, milestoneId });
     await sourceContext.store.put('relations', {
       id: randomUUID(),
       itemId: item.id,
@@ -272,6 +274,7 @@ test('portable project transfer preserves content, isolates access, validates re
         .every((u: ProjectUpdate) => u.importedFrom?.authorName === 'Original'),
     );
     assert.equal(pack.relations.length, 1);
+    assert.equal(pack.items.find((i: WorkItem) => i.id === childItem.id).milestoneId, milestoneId);
     assert.equal(pack.activity[0].importedFrom.authorName, 'Former contributor');
     assert(!exported.body.includes('MUST_NOT_EXPORT'));
     assert(!exported.body.includes('password'));
@@ -346,6 +349,13 @@ test('portable project transfer preserves content, isolates access, validates re
     const newItems = await destContext.store.list<WorkItem>('items');
     assert.equal(newItems.length, 3);
     const newItem = newItems.find((i) => i.title === item.title)!;
+    const linkedMilestone = (await dst('GET', '/milestones')).json().data[0];
+    assert.notEqual(linkedMilestone.id, milestoneId);
+    assert.equal(
+      newItems.find((i) => i.title === childItem.title)?.milestoneId,
+      linkedMilestone.id,
+    );
+    assert.deepEqual(linkedMilestone.progress, { total: 1, done: 0 });
     assert.equal(newItem.identifier, 'MOVE2-01');
     assert.equal(newItem.assigneeId, dstUser.id);
     assert.equal(newItem.source, undefined);
@@ -425,6 +435,10 @@ test('portable project transfer preserves content, isolates access, validates re
       fn(p);
       badPackages.push(p);
     };
+    change((p) => (p.items[0].milestoneId = randomUUID()));
+    change(
+      (p) => (p.items.find((i: WorkItem) => i.projectId === project.id).milestoneId = milestoneId),
+    );
     change((p) => (p.version = 2));
     change((p) => p.projectUpdates.push(p.projectUpdates[0]));
     change((p) => (p.projectUpdates[0].projectId = randomUUID()));
@@ -516,6 +530,7 @@ test('portable project transfer preserves content, isolates access, validates re
     // Legacy v1 packages omit this optional collection entirely.
     const legacy = structuredClone(pack);
     delete legacy.projectUpdates;
+    legacy.items.forEach((i: WorkItem) => delete i.milestoneId);
     const legacyPreview = (
       await dst('POST', '/project-import/preview', { package: legacy })
     ).json();
