@@ -41,6 +41,12 @@ existing window.
 
 ## Updates
 
+To see the installed version, choose **Trestl → About Trestl**. The footer of
+**Trestl → Check for Updates…** also shows the current version, even when the
+release feed is unavailable. Development builds can share a version number:
+replacing a local `0.4.0` build with a newer `0.4.0` build requires a manual
+installation because the updater only offers higher versions.
+
 Trestl checks once after startup and every six hours while open. Checks that find
 no update or cannot reach GitHub stay quiet. A newly available version opens a
 small update window without taking keyboard focus. The menu's **Check for
@@ -59,6 +65,17 @@ and Linux AppImage. Linux `.deb`/`.rpm` installations show a link to downloads
 instead of replacing files managed by the package manager. Updater downloads use
 public GitHub Releases; a private repository's downloads will not work without
 GitHub authentication, and no GitHub credential is bundled into the app.
+
+Before publishing, rehearse an update with two separately versioned test builds
+using the same dedicated test bundle identifier and signing key. Use a separate
+app-data folder and a test feed configured only in a disposable source copy;
+keep the production GitHub endpoint and download restrictions unchanged.
+Create a task in the older build, check for updates, download, install, and
+verify the automatic restart reports the newer version with the task and
+`app-secret` preserved. Also verify a modified download is rejected and an
+unsaved draft prevents installation. Repeat the check after upgrading to ensure
+the same version is not offered again. Local feed testing does not replace
+testing signed/notarized installers and public GitHub downloads on each platform.
 
 ## Local data and backups
 

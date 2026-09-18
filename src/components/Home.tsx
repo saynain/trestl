@@ -95,7 +95,12 @@ function QuickCapture() {
     }
   }
   return (
-    <form className="home-capture" onSubmit={capture} aria-label="Add to personal inbox">
+    <form
+      className="home-capture"
+      onSubmit={capture}
+      aria-label="Add to personal inbox"
+      data-update-safe={!title && !date && kind === 'task' && !saving ? 'true' : undefined}
+    >
       <input
         ref={input}
         className="input home-capture-title"

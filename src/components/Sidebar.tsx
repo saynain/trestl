@@ -121,7 +121,9 @@ export default function Sidebar({
         <div className="desktop-sidebar-drag-area" data-tauri-drag-region aria-hidden="true" />
       )}
       <div className="workspace-brand">
-        <Brand />
+        <button className="brand-home" aria-label="Trestl Home" onClick={() => go('home')}>
+          <Brand />
+        </button>
         <button
           className="icon-button mobile-only"
           aria-label="Close navigation"

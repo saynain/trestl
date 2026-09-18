@@ -34,7 +34,7 @@ export function watchDesktopUpdates() {
     let error: string | null = null;
     try {
       // Open forms may hold drafts that have never been submitted to the server.
-      if (document.querySelector('[role="dialog"], form'))
+      if (document.querySelector('[role="dialog"], form:not([data-update-safe="true"])'))
         throw new Error(
           'Save and close open forms or editors, then try Install and Restart again.',
         );
