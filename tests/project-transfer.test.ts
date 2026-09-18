@@ -137,7 +137,7 @@ test('portable project transfer preserves content, isolates access, validates re
       dueDate: '2026-12-01',
       completed: false,
     });
-    await sourceContext.store.put('items', { ...childItem, milestoneId });
+    await src('PATCH', `/items/${childItem.id}`, { milestoneId });
     await sourceContext.store.put('relations', {
       id: randomUUID(),
       itemId: item.id,
@@ -274,8 +274,15 @@ test('portable project transfer preserves content, isolates access, validates re
         .every((u: ProjectUpdate) => u.importedFrom?.authorName === 'Original'),
     );
     assert.equal(pack.relations.length, 1);
+    assert.equal(
+      pack.activity.find((a: Activity) => a.kind === 'event').body,
+      'Changed milestone to Launch',
+    );
     assert.equal(pack.items.find((i: WorkItem) => i.id === childItem.id).milestoneId, milestoneId);
-    assert.equal(pack.activity[0].importedFrom.authorName, 'Former contributor');
+    assert.equal(
+      pack.activity.find((a: Activity) => a.kind === 'comment').importedFrom.authorName,
+      'Former contributor',
+    );
     assert(!exported.body.includes('MUST_NOT_EXPORT'));
     assert(!exported.body.includes('password'));
     assert(!exported.body.includes('@transfer.test'));
@@ -365,9 +372,10 @@ test('portable project transfer preserves content, isolates access, validates re
     assert.equal(newItems.find((i) => i.title === subtask.title)?.parentId, newItem.id);
     assert.equal(newItems.find((i) => i.title === subtask.title)?.visibility, 'private');
     const newActivity = await destContext.store.list<Activity>('activity');
-    assert.equal(newActivity[0].importedFrom?.authorName, 'Former contributor');
-    assert.equal(newActivity[0].createdAt, '2025-01-01T12:00:00.000Z');
-    assert.equal(newActivity[0].itemId, newItem.id);
+    const originalComment = newActivity.find((a) => a.kind === 'comment')!;
+    assert.equal(originalComment.importedFrom?.authorName, 'Former contributor');
+    assert.equal(originalComment.createdAt, '2025-01-01T12:00:00.000Z');
+    assert.equal(originalComment.itemId, newItem.id);
     const newCanvas = (await destContext.store.list<ProjectCanvas>('canvases'))[0];
     assert.deepEqual(newCanvas.scene, canvas.scene);
     assert.notEqual(newCanvas.collectionId, collection.id);
@@ -379,7 +387,10 @@ test('portable project transfer preserves content, isolates access, validates re
     const nextItem = (await dst('POST', '/items', { title: 'Next', projectId: newRoot.id })).json();
     assert.equal(nextItem.identifier, 'MOVE2-03');
     const again = (await dst('GET', `/projects/${newRoot.id}/export`)).json();
-    assert.equal(again.activity[0].importedFrom.authorName, 'Former contributor');
+    assert.equal(
+      again.activity.find((a: Activity) => a.kind === 'comment').importedFrom.authorName,
+      'Former contributor',
+    );
     assert.equal(again.projectUpdates.length, 3);
     assert(
       again.projectUpdates

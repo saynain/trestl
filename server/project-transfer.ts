@@ -92,6 +92,9 @@ export function registerProjectTransfer(
         )
           items.push(item);
       const itemIds = new Set(items.map((i) => i.id));
+      const milestones = (await s.list<Milestone>('milestones')).filter((m) =>
+        selected.has(m.projectId),
+      );
       const members = await workspaceMembers(s, workspaceOf(user));
       const names = new Map(members.map((m) => [m.id, m.name]));
       const name = (userId: string) => names.get(userId) ?? 'Former member';
@@ -104,16 +107,19 @@ export function registerProjectTransfer(
               ? a.body
                   .split(' · ')
                   .map((part) => {
-                    const match = /^(assigneeId|projectId|parentId): (.+)$/.exec(part);
+                    const match = /^(assigneeId|projectId|parentId|milestoneId): (.+)$/.exec(part);
                     if (!match || match[2] === 'cleared') return part;
                     const label =
                       match[1] === 'assigneeId'
                         ? name(match[2])
                         : match[1] === 'projectId'
                           ? (projects.find((p) => p.id === match[2])?.name ?? 'another project')
-                          : (items.find((i) => i.id === match[2])?.identifier ??
-                            'another work item');
-                    return `Changed ${match[1] === 'assigneeId' ? 'assignee' : match[1] === 'projectId' ? 'project' : 'parent item'} to ${label}`;
+                          : match[1] === 'milestoneId'
+                            ? (milestones.find((m) => m.id === match[2])?.title ??
+                              'another milestone')
+                            : (items.find((i) => i.id === match[2])?.identifier ??
+                              'another work item');
+                    return `Changed ${match[1] === 'assigneeId' ? 'assignee' : match[1] === 'projectId' ? 'project' : match[1] === 'milestoneId' ? 'milestone' : 'parent item'} to ${label}`;
                   })
                   .join(' · ')
               : a.body,
@@ -162,9 +168,7 @@ export function registerProjectTransfer(
             (!l.projectId || selected.has(l.projectId)) &&
             (!l.itemId || itemIds.has(l.itemId)),
         ),
-        milestones: (await s.list<Milestone>('milestones')).filter((m) =>
-          selected.has(m.projectId),
-        ),
+        milestones,
         canvases,
         canvasCollections: (await s.list<CanvasCollection>('canvasCollections')).filter(
           (c) => selected.has(c.projectId) && sameWorkspace(user, c),
