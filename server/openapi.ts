@@ -362,6 +362,7 @@ function operation(
     browserOnly?: boolean;
     created?: boolean;
     noContent?: boolean;
+    optionalBody?: boolean;
     parameters?: unknown[];
     description?: string;
   } = {},
@@ -379,7 +380,7 @@ function operation(
   const revisionBody = body as
     { properties?: { expectedRevision?: unknown }; required?: string[] } | undefined;
   const revisionDescription = revisionBody?.properties?.expectedRevision
-    ? `${revisionBody.required?.includes('expectedRevision') ? 'Required' : 'Optional'} expectedRevision compares the submitted revision with the current resource revision${path.endsWith('/roadmap') ? ' (roadmap.revision)' : ''}. Read the resource first and send its revision; a stale revision returns 409 without applying changes. After a conflict, read the resource again before retrying. Successful updates return the new revision in the updated resource.${revisionBody.required?.includes('expectedRevision') ? '' : ' Omit expectedRevision only when overwriting the current revision is intended.'}`
+    ? `${revisionBody.required?.includes('expectedRevision') ? 'Required' : 'Optional'} expectedRevision compares the submitted revision with the current resource revision${path.endsWith('/roadmap') ? ' (roadmap.revision)' : ''}. Read the resource first and send its revision; a stale revision returns 409 without applying changes. After a conflict, read the resource again before retrying.${method === 'delete' ? '' : ' Successful updates return the new revision in the updated resource.'}${revisionBody.required?.includes('expectedRevision') ? '' : ' Omit expectedRevision only when applying the operation regardless of the current revision is intended.'}`
     : undefined;
   (paths[path] ??= {})[method] = {
     summary,
@@ -394,7 +395,12 @@ function operation(
         : [{ bearerAuth: [] }, { cookieAuth: [] }],
     ...(params.length ? { parameters: params } : {}),
     ...(body
-      ? { requestBody: { required: true, content: { 'application/json': { schema: body } } } }
+      ? {
+          requestBody: {
+            required: !options.optionalBody,
+            content: { 'application/json': { schema: body } },
+          },
+        }
       : {}),
     responses: {
       [code]: {
@@ -611,7 +617,23 @@ for (const [path, schema, omit, required] of resources) {
         }
       : writable(schema, [...omit]),
   );
-  operation(`/${path}/{id}`, 'delete', `Delete ${schema}`, {}, undefined, { noContent: true });
+  operation(
+    `/${path}/{id}`,
+    'delete',
+    `Delete ${schema}`,
+    {},
+    path === 'items'
+      ? object({
+          expectedRevision: {
+            type: 'integer',
+            minimum: 0,
+            maximum: 2147483646,
+            description: 'Optional compare-and-set revision; stale deletions return 409.',
+          },
+        })
+      : undefined,
+    { noContent: true, ...(path === 'items' ? { optionalBody: true } : {}) },
+  );
 }
 operation(
   '/items/{id}/comments',
