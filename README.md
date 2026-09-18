@@ -25,12 +25,12 @@ See the [user guide](docs/user-guide.md) for the complete workflows.
 
 ## Install the CLI
 
-Download the tarball and checksum from [GitHub Releases](https://github.com/saynain/trestl/releases/latest), or pull the identical artifact from `ghcr.io/saynain/trestl-cli:v0.3.0` using ORAS. Node.js 22.9+ is required on macOS, Linux and Windows.
+Download the tarball and checksum from [GitHub Releases](https://github.com/saynain/trestl/releases/latest), or pull the identical artifact from `ghcr.io/saynain/trestl-cli:v0.4.0` using ORAS. Node.js 22.9+ is required on macOS, Linux and Windows.
 
 ```sh
-gh release download v0.3.0 --repo saynain/trestl --pattern 'trestl-cli-*.tgz' --pattern SHA256SUMS
+gh release download v0.4.0 --repo saynain/trestl --pattern 'trestl-cli-*.tgz' --pattern SHA256SUMS
 shasum -a 256 -c SHA256SUMS  # Linux: sha256sum -c SHA256SUMS
-npm install --global ./trestl-cli-0.3.0.tgz --ignore-scripts
+npm install --global ./trestl-cli-0.4.0.tgz --ignore-scripts
 trestl login --profile work --url https://projects.example.com
 trestl auth status --profile work
 ```
