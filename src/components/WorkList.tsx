@@ -1,3 +1,5 @@
+import { ParentPicker, HierarchyMenu } from './ParentPicker';
+import { childProgress, parentBoardItems } from '../lib/hierarchy';
 import { assigneeOptions } from '../lib/assignees';
 import { useShortcuts, activateItemControl } from '../lib/keyboard';
 import { itemActions, formatShortcut, type ItemAction } from '../lib/shortcuts';
@@ -77,6 +79,16 @@ export default function WorkList({
   const [typeFilter, setTypeFilter] = useState(initialFilters.type || '');
   const [milestoneFilter, setMilestoneFilter] = useState(initialFilters.milestoneId || '');
   const [sourceFilter, setSourceFilter] = useState(initialFilters.source || '');
+  const [hierarchyFilter, setHierarchyFilter] = useState(
+    initialFilters.hierarchy || (initialFilters.parentId ? 'subtasks' : ''),
+  );
+  const [parentFilter, setParentFilter] = useState(initialFilters.parentId || '');
+  const [indentSubtasks, setIndentSubtasks] = useState(initialFilters.indentSubtasks !== 'false');
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState(new Set<string>());
+  const [parentTargets, setParentTargets] = useState<WorkItem[] | null>(null);
+  const progress = useMemo(() => childProgress(data.items), [data.items]);
+  const hierarchyParentId = hierarchyFilter === 'subtasks' ? parentFilter : '';
   const [tagFilter, setTagFilter] = useState(
     initialFilters.untagged === 'true'
       ? 'untagged'
@@ -152,7 +164,8 @@ export default function WorkList({
     Number(!!typeFilter) +
     Number(!!milestoneFilter) +
     Number(!!sourceFilter) +
-    Number(!!tagFilter);
+    Number(!!tagFilter) +
+    Number(!!hierarchyFilter);
   const visible = useMemo(
     () =>
       sortWorkItems(
@@ -166,11 +179,14 @@ export default function WorkList({
             type: typeFilter,
             source: sourceFilter,
             milestoneId: milestoneFilter,
+            hierarchy: hierarchyFilter,
+            parentId: hierarchyParentId,
             tag,
             untagged,
             search,
           },
           showDone,
+          data.items,
         ),
         board ? {} : initialFilters,
       ),
@@ -184,6 +200,9 @@ export default function WorkList({
       typeFilter,
       sourceFilter,
       milestoneFilter,
+      hierarchyFilter,
+      hierarchyParentId,
+      data.items,
       tag,
       untagged,
       search,
@@ -202,7 +221,12 @@ export default function WorkList({
     sourceFilter,
     milestoneFilter,
     tagFilter,
+    hierarchyFilter,
+    hierarchyParentId,
   ]);
+  useEffect(() => {
+    setSelected(new Set());
+  }, [treeFilterKey]);
   const tree = useMemo(
     () => buildWorkTree(items, visible, sortWorkItems(data.items, initialFilters), treeFiltered),
     [items, visible, data.items, treeFiltered, initialFilters.due, initialFilters.followUp],
@@ -222,7 +246,13 @@ export default function WorkList({
       ),
     );
   }, [tree, treeFiltered, treeFilterKey, board]);
-  const groupedItems = board ? visible : tree.roots.map((node) => node.item);
+  const groupedItems = board
+    ? boardPreferences.collapseSubtasks
+      ? parentBoardItems(visible)
+      : visible
+    : indentSubtasks
+      ? tree.roots.map((node) => node.item)
+      : visible;
   const groupOptions = board
     ? boardPreferences.columns.filter((column) => !column.hidden || column.id === statusFilter)
     : groupBy === 'status'
@@ -369,7 +399,7 @@ export default function WorkList({
     });
   }
   function navigateTree(direction: 'open' | 'close') {
-    if (board) return false;
+    if (board || !indentSubtasks) return false;
     const row = activeRow();
     if (!row) return false;
     const focused = document.activeElement as HTMLElement | null;
@@ -497,6 +527,40 @@ export default function WorkList({
       setSaving(false);
     }
   }
+  async function setParentForItems(targets: WorkItem[], parentId: string | null) {
+    if (saving) return false;
+    setSaving(true);
+    const completed = new Set<string>();
+    let failure = '';
+    try {
+      for (const item of targets) {
+        try {
+          await patch(`/items/${item.id}`, { parentId, expectedRevision: item.revision ?? 0 });
+          completed.add(item.id);
+        } catch (error) {
+          failure = (error as Error).message;
+          break;
+        }
+      }
+      await refresh();
+      setSelected((previous) => new Set([...previous].filter((id) => !completed.has(id))));
+      if (failure) {
+        toast(`${completed.size} of ${targets.length} updated. ${failure}`, 'error');
+        // Close the dialog so another attempt uses fresh revisions from bootstrap.
+      } else
+        toast(
+          parentId
+            ? `Parent set for ${completed.size} work items`
+            : `Moved ${completed.size} work items to top level`,
+        );
+      return true;
+    } catch (error) {
+      toast((error as Error).message, 'error');
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
   async function saveView() {
     if (!viewName.trim()) return;
     const filters: Record<string, string> = {
@@ -505,6 +569,7 @@ export default function WorkList({
       ...(projectId ? { projectId } : {}),
       showDone: String(showDone),
       groupBy,
+      indentSubtasks: String(indentSubtasks),
       ...(board ? { board: JSON.stringify(boardPreferences) } : {}),
     };
     for (const key of [
@@ -513,6 +578,8 @@ export default function WorkList({
       'assigneeId',
       'type',
       'source',
+      'hierarchy',
+      'parentId',
       'tag',
       'untagged',
       'search',
@@ -525,6 +592,8 @@ export default function WorkList({
       type: typeFilter,
       source: sourceFilter,
       milestoneId: milestoneFilter,
+      hierarchy: hierarchyFilter,
+      parentId: hierarchyParentId,
       tag,
       untagged,
       search: search.trim(),
@@ -584,6 +653,7 @@ export default function WorkList({
         style={{ '--tree-depth': Math.min(depth, 4) } as CSSProperties}
         tabIndex={0}
         role="treeitem"
+        aria-selected={selecting ? selected.has(item.id) : undefined}
         aria-level={depth + 1}
         aria-posinset={position}
         aria-setsize={setSize}
@@ -603,6 +673,22 @@ export default function WorkList({
         }}
       >
         <div className="work-tree-main">
+          {selecting && (
+            <input
+              type="checkbox"
+              className="hierarchy-select"
+              aria-label={`Select ${item.identifier}`}
+              checked={selected.has(item.id)}
+              onClick={(event) => event.stopPropagation()}
+              onChange={(event) =>
+                setSelected((previous) => {
+                  const next = new Set(previous);
+                  event.target.checked ? next.add(item.id) : next.delete(item.id);
+                  return next;
+                })
+              }
+            />
+          )}
           {node.childCount > 0 ? (
             <button
               className="tree-toggle tree-chevron"
@@ -612,7 +698,9 @@ export default function WorkList({
               title={
                 node.children.length
                   ? `${expanded ? 'Collapse' : 'Expand'} subtasks (← / →)`
-                  : 'No subtasks match the current filters'
+                  : !indentSubtasks
+                    ? 'Subtasks are displayed as separate rows'
+                    : 'No subtasks match the current filters'
               }
               onClick={(event) => {
                 event.stopPropagation();
@@ -645,7 +733,7 @@ export default function WorkList({
                     toggleItem(item.id);
                   }}
                 >
-                  {node.completedChildren}/{node.childCount}
+                  {node.completedChildren}/{node.childCount} subtasks done
                 </button>
               )}
               {item.visibility === 'private' && <LockKeyhole size={12} className="muted" />}
@@ -714,13 +802,19 @@ export default function WorkList({
           ) : (
             <span className="empty-date">—</span>
           )}
+          <HierarchyMenu
+            item={item}
+            disabled={saving}
+            onParent={() => setParentTargets([item])}
+            onClear={() => void setParentForItems([item], null)}
+          />
         </span>
       </div>
     );
   }
   return (
     <div
-      className={`work-view ${board ? 'board-view' : ''} ${board && boardPreferences.compact ? 'board-compact' : ''}`}
+      className={`work-view ${selecting ? 'hierarchy-selecting' : ''} ${board ? 'board-view' : ''} ${board && boardPreferences.compact ? 'board-compact' : ''}`}
     >
       <div className="work-toolbar">
         <div className="popover-parent">
@@ -756,6 +850,44 @@ export default function WorkList({
                 }}
               >
                 <h4>Filter work items</h4>
+                <label className="field">
+                  Hierarchy
+                  <Select
+                    className="select"
+                    value={hierarchyFilter}
+                    onChange={(event) => setHierarchyFilter(event.target.value)}
+                  >
+                    <option value="">All levels</option>
+                    <option value="top-level">Top level only</option>
+                    <option value="has-subtasks">Has subtasks</option>
+                    <option value="subtasks">Subtasks of…</option>
+                  </Select>
+                </label>
+                {hierarchyFilter === 'subtasks' && (
+                  <label className="field">
+                    Subtasks of
+                    <Select
+                      className="select"
+                      searchable
+                      aria-label="Subtasks of"
+                      value={parentFilter}
+                      onChange={(event) => setParentFilter(event.target.value)}
+                    >
+                      <option value="">Choose a parent…</option>
+                      {data.items
+                        .filter((item) => progress.has(item.id))
+                        .map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.identifier} · {item.title}
+                          </option>
+                        ))}
+                      {parentFilter &&
+                        !data.items.some(
+                          (item) => item.id === parentFilter && progress.has(item.id),
+                        ) && <option value={parentFilter}>Saved parent (no subtasks here)</option>}
+                    </Select>
+                  </label>
+                )}
                 <label className="field">
                   Tag
                   <Select
@@ -894,6 +1026,8 @@ export default function WorkList({
                     setMilestoneFilter('');
                     setSourceFilter('');
                     setTagFilter('');
+                    setHierarchyFilter('');
+                    setParentFilter('');
                   }}
                 >
                   Clear filters
@@ -927,6 +1061,18 @@ export default function WorkList({
           )}
         </label>
         <div className="toolbar-spacer" />
+        {!board && (
+          <button
+            className="button"
+            aria-pressed={selecting}
+            onClick={() => {
+              setSelecting(!selecting);
+              setSelected(new Set());
+            }}
+          >
+            {selecting ? 'Done selecting' : 'Select items'}
+          </button>
+        )}
         <button
           className="icon-button save-view-button"
           title="Save view"
@@ -992,6 +1138,16 @@ export default function WorkList({
                     </Select>
                   </label>
                 )}
+                {!board && (
+                  <label className="check-field">
+                    <input
+                      type="checkbox"
+                      checked={indentSubtasks}
+                      onChange={(event) => setIndentSubtasks(event.target.checked)}
+                    />
+                    Show subtasks under their parent
+                  </label>
+                )}
                 <label className="check-field">
                   <input
                     type="checkbox"
@@ -1017,6 +1173,31 @@ export default function WorkList({
           Drag column handles to rearrange. Drag cards to move or reorder; use Alt + ↑ / ↓ on a
           focused card to reorder with the keyboard.
         </p>
+      )}
+      {selecting && !board && (
+        <div className="hierarchy-selection">
+          <strong>{selected.size} selected</strong>
+          <button
+            className="button small"
+            onClick={() => setSelected(new Set(visible.map((item) => item.id)))}
+          >
+            Select all {visible.length} matching
+          </button>
+          <button
+            className="button small"
+            disabled={!selected.size || saving}
+            onClick={() => setParentTargets(data.items.filter((item) => selected.has(item.id)))}
+          >
+            Set parent
+          </button>
+          <button
+            className="button small ghost"
+            disabled={!selected.size}
+            onClick={() => setSelected(new Set())}
+          >
+            Clear selection
+          </button>
+        </div>
       )}
       <div ref={listRef} className={board ? 'board-columns' : 'work-groups'}>
         {(board ? groups.length === 0 : visible.length === 0) ? (
@@ -1141,6 +1322,11 @@ export default function WorkList({
                       <PriorityIcon priority={item.priority} />
                     </div>
                     <h3>{item.title}</h3>
+                    {progress.has(item.id) && (
+                      <span className="hierarchy-progress">
+                        {progress.get(item.id)!.done}/{progress.get(item.id)!.total} subtasks done
+                      </span>
+                    )}
                     <SourceBadge item={item} />
                     {boardPreferences.showLabels && item.labels.length > 0 && (
                       <div className="board-labels">
@@ -1199,7 +1385,9 @@ export default function WorkList({
                       ) : null}
                     </span>
                     <strong>{group.name}</strong>
-                    <small title={`${group.items.length} top-level items`}>
+                    <small
+                      title={`${group.items.length} ${indentSubtasks ? 'top-level ' : ''}items`}
+                    >
                       {group.items.length}
                     </small>
                   </button>
@@ -1215,9 +1403,17 @@ export default function WorkList({
                       role="tree"
                       aria-label={groupBy === 'none' ? group.name : `${group.name} work items`}
                     >
-                      {flattenWorkTree(
-                        group.items.map((item) => tree.nodes.get(item.id)!),
-                        expandedItems,
+                      {(indentSubtasks
+                        ? flattenWorkTree(
+                            group.items.map((item) => tree.nodes.get(item.id)!),
+                            expandedItems,
+                          )
+                        : group.items.map((item, index) => ({
+                            node: { ...tree.nodes.get(item.id)!, children: [] },
+                            depth: 0,
+                            position: index + 1,
+                            setSize: group.items.length,
+                          }))
                       ).map(itemRow)}
                     </div>
                     <button
@@ -1266,6 +1462,13 @@ export default function WorkList({
           )}
         </span>
       </div>
+      {parentTargets && (
+        <ParentPicker
+          items={parentTargets}
+          onClose={() => setParentTargets(null)}
+          onSave={(parentId) => setParentForItems(parentTargets, parentId)}
+        />
+      )}
       {saveOpen && (
         <Modal title="Save this view" onClose={() => setSaveOpen(false)}>
           <form

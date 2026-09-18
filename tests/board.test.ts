@@ -114,3 +114,14 @@ test('tied or exhausted ranks rebalance in the requested order and preserve othe
     );
   }
 });
+
+test('collapsed subtasks default off and round trip with saved board preferences', () => {
+  assert.equal(defaultBoardPreferences().collapseSubtasks, false);
+  const preferences = { ...defaultBoardPreferences(), collapseSubtasks: true };
+  assert.deepEqual(parseBoardPreferences(JSON.stringify(preferences)), preferences);
+  assert.equal(
+    parseBoardPreferences(JSON.stringify({ ...preferences, collapseSubtasks: 'yes' }))
+      .collapseSubtasks,
+    false,
+  );
+});

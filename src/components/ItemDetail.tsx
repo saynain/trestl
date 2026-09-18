@@ -1,3 +1,4 @@
+import { ParentSelect, ParentPicker, HierarchyMenu } from './ParentPicker';
 import { MentionTextarea } from './MentionTextarea';
 import { assigneeOptions } from '../lib/assignees';
 import { useShortcuts, activateItemControl } from '../lib/keyboard';
@@ -196,6 +197,7 @@ export default function ItemDetail({
   const [linkTitle, setLinkTitle] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
   const [linkKind, setLinkKind] = useState('link');
+  const [showParent, setShowParent] = useState(false);
   const [showRelation, setShowRelation] = useState(false);
   const [relationTarget, setRelationTarget] = useState('');
   const [relationKind, setRelationKind] = useState('blocks');
@@ -214,6 +216,7 @@ export default function ItemDetail({
     setTagDraft('');
     setConfirmDelete(false);
     setShowRelation(false);
+    setShowParent(false);
     setShowLink(false);
     api<Detail>(`/items/${id}`)
       .then((next) => {
@@ -233,7 +236,10 @@ export default function ItemDetail({
     setSaving(true);
     setError('');
     try {
-      const item = await patch<WorkItem>(`/items/${id}`, changes);
+      const { item } = await patch<{ item: WorkItem }>(`/items/${id}`, {
+        ...changes,
+        ...(changes.parentId !== undefined ? { expectedRevision: detail?.item.revision ?? 0 } : {}),
+      });
       setDetail((current) => current && { ...current, item });
       await Promise.all([reload(), refresh()]);
       return true;
@@ -409,6 +415,12 @@ export default function ItemDetail({
                 </span>
               )}
               <div className="item-action-spacer" />
+              <HierarchyMenu
+                item={item}
+                disabled={saving}
+                onParent={() => setShowParent(true)}
+                onClear={() => void update({ parentId: null })}
+              />
               <button
                 className="icon-button"
                 aria-label="Copy work item link"
@@ -1115,6 +1127,15 @@ export default function ItemDetail({
                   ))}
                 </Select>
               </Property>
+              <Property name="Parent">
+                <ParentSelect
+                  items={data.items}
+                  movingIds={[id]}
+                  value={item.parentId}
+                  onChange={(parentId) => void update({ parentId })}
+                  disabled={saving}
+                />
+              </Property>
               <Property name="Project">
                 <Select
                   shortcut="shift+p"
@@ -1284,6 +1305,13 @@ export default function ItemDetail({
             )}
           </aside>
         </div>
+      )}
+      {showParent && item && (
+        <ParentPicker
+          items={[item]}
+          onClose={() => setShowParent(false)}
+          onSave={(parentId) => update({ parentId })}
+        />
       )}
     </Modal>
   );
