@@ -94,7 +94,7 @@ test('Raycast client works with real bearer auth, permissions, pagination, item 
     const recurrence = await read<Page<Item>>(itemsPath('First capture', { status: 'todo' }));
     assert.equal(recurrence.data.length, 1);
     assert.equal(recurrence.data[0].dueDate, '2026-09-17');
-    const cleared = await write<Item>(`items/${first.id}`, {
+    const { item: cleared } = await write<{ item: Item }>(`items/${first.id}`, {
       method: 'PATCH',
       body: { assigneeId: null, dueDate: null, followUpDate: null, priority: 'high' },
     });
