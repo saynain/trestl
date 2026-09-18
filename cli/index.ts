@@ -39,10 +39,12 @@ Commands:
   search <text>                 Search titles, descriptions, identifiers
   create <title>                Create a work item
   update <id-or-identifier>      Update a work item
+  delete <id-or-identifier>      Delete an item using --expected-revision
   projects                      List projects
   project-create <name>         Create a project (requires --key)
   project-update <id-or-key>    Update project dates or description
   relation-add <blocker> <dependent>  Add a finish-to-start dependency
+  relation-remove <blocker> <dependent>  Remove a finish-to-start dependency
   milestone-update <id>         Update milestone title or date
   milestones                    List milestones (optional --project)
   milestone-create <title>     Create a milestone (requires --project)
@@ -59,8 +61,8 @@ Options:
   --page                        Return one page as {data,nextCursor?}
   --limit <1-500>               Page size (default: 100)
   --cursor <cursor>             Continue a page (requires --page)
-  --expected-revision <number>  Update only the revision you previously read
-  --idempotency-key <key>       Deduplicate a create/comment across retries
+  --expected-revision <number>  Change or delete only the revision you read
+  --idempotency-key <key>       Deduplicate item/milestone creation or comments
   --version                     Show CLI version
   --profile <name>              Saved account profile (default: default)
   --url <server-url>            Server URL; saved during login
@@ -70,6 +72,10 @@ Options:
   --token                       Enter an existing API token using a hidden prompt
   --token-stdin                 Read an existing token from standard input
   --project <id-or-key>          Filter or set project (use "none" to clear)
+  --parent <id-or-identifier>   Set a parent work item
+  --no-parent                  Clear the parent work item
+  --milestone <id-or-title>     Set a milestone in the item project
+  --no-milestone               Clear the milestone
   --status <status>             backlog|todo|in_progress|in_review|done|canceled
   --priority <priority>         none|low|medium|high|urgent
   --type <type>                 task|bug|idea|followup
@@ -105,6 +111,10 @@ Examples:
 const common = ['profile', 'url', 'json', 'no-config'];
 const fields = [
   'project',
+  'parent',
+  'no-parent',
+  'milestone',
+  'no-milestone',
   'status',
   'priority',
   'type',
@@ -137,13 +147,15 @@ const commandOptions: Record<string, string[]> = {
   list: filters,
   search: filters,
   get: [],
+  delete: ['expected-revision'],
   projects: [],
   'project-create': ['key', 'description', 'lifecycle', 'color', 'start', 'due', 'visibility'],
   'project-update': ['description', 'start', 'due'],
   'relation-add': [],
+  'relation-remove': [],
   'milestone-update': ['title', 'due', 'expected-revision'],
   milestones: ['project'],
-  'milestone-create': ['project', 'due', 'completed'],
+  'milestone-create': ['project', 'due', 'completed', 'idempotency-key'],
   export: [],
   canvases: ['project', 'title', 'collection', 'expected-revision'],
   create: [...fields, 'idempotency-key'],
@@ -160,10 +172,41 @@ const booleanOptions = [
   'no-config',
   'page',
   'completed',
+  'no-parent',
+  'no-milestone',
 ];
 const stringOptions = [...new Set([...common, ...Object.values(commandOptions).flat()])].filter(
   (key) => !booleanOptions.includes(key),
 );
+function commandHelp(command: string): string {
+  if (!Object.hasOwn(commandOptions, command))
+    throw usage(`Unknown command "${command}". Run trestl --help.`);
+  const options = commandOptions[command];
+  const usageLines = help
+    .split('\n')
+    .filter((line) => line.startsWith(`  ${command} `))
+    .map((line) => `Usage: trestl ${line.trim().split(/\s{2,}/)[0]} [options]`);
+  const accepted = new Set([...common, ...options, 'help']);
+  const flagLines = help.split('\n').filter((line) => {
+    const flag = /^  --([a-z-]+)/.exec(line)?.[1];
+    return flag && accepted.has(flag);
+  });
+  const notes: Record<string, string> = {
+    create:
+      'Use a parent item to group work into epics or features; keep --type task, bug, idea or followup. Milestones must belong to the item project; parents must be accessible.',
+    update:
+      'Only supplied fields change. Use none to clear dates, project, assignee or labels. --no-parent and --no-milestone clear those assignments. Without --expected-revision the CLI reads the current revision before updating.',
+    delete:
+      'Requires --expected-revision from get --json. Stale revisions fail without deleting. Move or delete child items first.',
+    'relation-remove':
+      'Pass the blocker first and dependent second, using IDs or identifiers. Removes only that directed blocks relation.',
+    'milestone-create':
+      'Requires an explicit --project. Reuse --idempotency-key with identical input after an uncertain response.',
+    milestones:
+      'Shows done / total progress for linked items, plus the revision used by milestone-update.',
+  };
+  return `${usageLines.join('\n')}\n\nOptions:\n${flagLines.join('\n')}\n${notes[command] ? `\n${notes[command]}\n` : ''}`;
+}
 const jsonRequested = process.argv.slice(2).includes('--json');
 
 async function main() {
@@ -199,8 +242,9 @@ async function main() {
     return;
   }
   if (values.help || !parsed.positionals.length) {
-    if (values.json) output({ help });
-    else process.stdout.write(help);
+    const text = parsed.positionals.length ? commandHelp(parsed.positionals[0]) : help;
+    if (values.json) output({ help: text });
+    else process.stdout.write(text);
     return;
   }
   const [command, ...args] = parsed.positionals;
@@ -231,10 +275,11 @@ async function main() {
       ? canvasAction === 'list'
         ? 1
         : 2
-      : ['comment', 'relation-add'].includes(command)
+      : ['comment', 'relation-add', 'relation-remove'].includes(command)
         ? 2
         : [
               'get',
+              'delete',
               'search',
               'create',
               'update',
@@ -256,6 +301,9 @@ async function main() {
   if (command === 'project-create' && !values.key) throw usage('project-create requires --key.');
   if (command === 'milestone-create' && (!values.project || values.project === 'none'))
     throw usage('milestone-create requires an explicit --project.');
+  for (const field of ['parent', 'milestone'])
+    if (values[field] !== undefined && values[`no-${field}`])
+      throw usage(`Choose --${field} or --no-${field}, not both.`);
   if (values.cursor !== undefined && !values.page) throw usage('--cursor requires --page.');
   function integer(key: string, min: number, max: number): number | undefined {
     if (values[key] === undefined) return undefined;
@@ -267,6 +315,8 @@ async function main() {
   }
   integer('limit', 1, 500);
   const expectedRevision = integer('expected-revision', 0, 2147483646);
+  if (command === 'delete' && expectedRevision === undefined)
+    throw usage('delete requires --expected-revision from get --json.');
   if (canvasAction === 'delete' && expectedRevision === undefined)
     throw usage('canvases delete requires --expected-revision from canvases show --json.');
   if (
@@ -546,9 +596,29 @@ async function main() {
     );
     return;
   }
-  if (command === 'relation-add') {
+  if (command === 'delete') {
+    await api(itemPath(), 'DELETE', { expectedRevision });
+    if (values.json) output({ deleted: true, id: args[0] });
+    else process.stdout.write('Work item deleted.\n');
+    return;
+  }
+  if (command === 'relation-add' || command === 'relation-remove') {
     const blocker = await api<ItemDetail>(itemPath());
     const dependent = await api<ItemDetail>(`items/${encodeURIComponent(args[1])}`);
+    if (command === 'relation-remove') {
+      const relation = blocker.relations.find(
+        (r) =>
+          r.kind === 'blocks' && r.itemId === blocker.item.id && r.targetId === dependent.item.id,
+      );
+      if (!relation) throw new CliError('Dependency not found in that direction.', 'not_found', 4);
+      await api(
+        `items/${encodeURIComponent(blocker.item.id)}/relations/${encodeURIComponent(relation.id)}`,
+        'DELETE',
+      );
+      if (values.json) output({ deleted: true, id: relation.id });
+      else process.stdout.write('Dependency removed.\n');
+      return;
+    }
     output(
       await api(`items/${encodeURIComponent(blocker.item.id)}/relations`, 'POST', {
         targetId: dependent.item.id,
@@ -598,9 +668,9 @@ async function main() {
       ? await api<Project>(`projects/${encodeURIComponent(String(values.project))}`)
       : null;
     if (command === 'milestones') {
-      const milestones = (await all<Milestone>('milestones')).filter(
-        (m) => !project || m.projectId === project.id,
-      );
+      const milestones = (
+        await all<Milestone & { progress?: { done: number; total: number } }>('milestones')
+      ).filter((m) => !project || m.projectId === project.id);
       output(
         milestones,
         milestones.map((m) => ({
@@ -608,6 +678,8 @@ async function main() {
           Title: m.title,
           Due: m.dueDate || '—',
           Completed: m.completed,
+          Progress: m.progress ? `${m.progress.done} / ${m.progress.total}` : '—',
+          Revision: m.revision ?? 0,
         })),
       );
     } else {
@@ -683,19 +755,49 @@ async function main() {
       project === 'none'
         ? null
         : (await api<Project>(`projects/${encodeURIComponent(String(project))}`)).id;
+  let currentItem: WorkItem | undefined;
+  async function current() {
+    return (currentItem ??= (await api<ItemDetail>(itemPath())).item);
+  }
+  if (values['no-parent']) body.parentId = null;
+  if (values.parent !== undefined)
+    body.parentId = (
+      await api<ItemDetail>(`items/${encodeURIComponent(String(values.parent))}`)
+    ).item.id;
+  if (values['no-milestone']) body.milestoneId = null;
+  if (values.milestone !== undefined) {
+    const projectId = Object.hasOwn(body, 'projectId')
+      ? body.projectId
+      : command === 'update'
+        ? (await current()).projectId
+        : null;
+    if (!projectId) throw usage('A milestone requires an item project. Set --project first.');
+    const milestones = await all<Milestone>('milestones');
+    const byId = milestones.find((m) => m.id === values.milestone);
+    const matches = byId
+      ? [byId]
+      : milestones.filter((m) => m.projectId === projectId && m.title === values.milestone);
+    if (!matches.length)
+      throw new CliError('Milestone not found in the item project.', 'not_found', 4);
+    if (matches.length > 1)
+      throw usage('Milestone title is ambiguous in this project. Use its ID.');
+    if (matches[0].projectId !== projectId)
+      throw usage('Milestone belongs to a different project.');
+    body.milestoneId = matches[0].id;
+  }
   if (command === 'create') body.title = args[0];
   if (!Object.keys(body).length)
     throw usage('No changes specified. Use --status, --title, --due, or another update option.');
   if (command === 'update') {
-    body.expectedRevision =
-      expectedRevision ?? (await api<ItemDetail>(itemPath())).item.revision ?? 0;
+    body.expectedRevision = expectedRevision ?? (await current()).revision ?? 0;
   }
-  const result = await api<WorkItem>(
+  const result = await api<WorkItem | { item: WorkItem }>(
     command === 'create' ? 'items' : itemPath(),
     command === 'create' ? 'POST' : 'PATCH',
     body,
   );
-  output(result, rows([result]));
+  const item = 'item' in result ? result.item : result;
+  output(item, rows([item]));
 }
 
 main().catch((error: unknown) => {
