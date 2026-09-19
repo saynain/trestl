@@ -1,3 +1,4 @@
+import packageInfo from '../package.json' with { type: 'json' };
 import {
   initializeCliLogin,
   registerCliDeviceEndpoints,
@@ -562,6 +563,7 @@ export async function createApp(
   });
   app.get('/api/v1/openapi.json', async () => openapi);
   app.get('/api/v1/auth/status', async (request) => ({
+    desktop: { bridgeVersion: 1, serverVersion: packageInfo.version },
     needsSetup: !(await installation(store)),
     authMode: request.authMode,
     installationName: (

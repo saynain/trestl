@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-connection-close-session"
+description = "Enables the connection_close_session command without any pre-configured scope."
+commands.allow = ["connection_close_session"]
+
+[[permission]]
+identifier = "deny-connection-close-session"
+description = "Denies the connection_close_session command without any pre-configured scope."
+commands.deny = ["connection_close_session"]

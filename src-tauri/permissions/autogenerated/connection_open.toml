@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-connection-open"
+description = "Enables the connection_open command without any pre-configured scope."
+commands.allow = ["connection_open"]
+
+[[permission]]
+identifier = "deny-connection-open"
+description = "Denies the connection_open command without any pre-configured scope."
+commands.deny = ["connection_open"]

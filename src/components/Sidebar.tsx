@@ -1,3 +1,5 @@
+import DesktopConnectionButton from './DesktopConnectionButton';
+import { desktopPlatform } from '../lib/desktop';
 import { useEffect, useRef, useState } from 'react';
 import {
   Home,
@@ -117,7 +119,7 @@ export default function Sidebar({
   }
   return (
     <aside className="sidebar">
-      {import.meta.env.VITE_TRESTL_DESKTOP === 'true' && (
+      {desktopPlatform === 'macos' && (
         <div className="desktop-sidebar-drag-area" data-tauri-drag-region aria-hidden="true" />
       )}
       <div className="workspace-brand">
@@ -132,6 +134,7 @@ export default function Sidebar({
           <PanelLeftClose size={17} />
         </button>
       </div>
+      <DesktopConnectionButton />
       <div className="workspace-trigger">
         <span className="workspace-trigger-text">{data.workspace?.name}</span>
       </div>

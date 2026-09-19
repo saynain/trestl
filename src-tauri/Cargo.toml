@@ -20,3 +20,6 @@ rfd = "0.17"
 tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["time", "sync"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+tempfile = "3"

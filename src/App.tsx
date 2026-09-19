@@ -1,3 +1,4 @@
+import { desktopPlatform } from './lib/desktop';
 import { watchAppearance } from './lib/themes';
 import CliLoginApproval from './components/CliLoginApproval';
 import { WeeklyReview } from './components/ProjectUpdates';
@@ -427,9 +428,7 @@ export default function App() {
         <main className="main-area">
           <header
             className="topbar"
-            data-tauri-drag-region={
-              import.meta.env.VITE_TRESTL_DESKTOP_PLATFORM === 'darwin' ? 'deep' : undefined
-            }
+            data-tauri-drag-region={desktopPlatform === 'macos' ? 'deep' : undefined}
           >
             <button
               className="icon-button sidebar-toggle"
