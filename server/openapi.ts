@@ -382,8 +382,6 @@ operation(
     needsSetup: { type: 'boolean' },
     authenticated: { type: 'boolean' },
     authMode: { type: 'string', enum: ['local', 'google', 'oidc', 'proxy'] },
-    installationName: string,
-    desktop: object({ bridgeVersion: { type: 'integer' }, serverVersion: string }),
     user: ref('User'),
   }),
   undefined,

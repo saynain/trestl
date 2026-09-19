@@ -1,6 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod connections;
 mod updates;
 
 use std::{
@@ -78,35 +77,6 @@ fn external(url: &tauri::Url) {
     if matches!(url.scheme(), "https" | "http" | "mailto") {
         let _ = open::that_detached(url.as_str());
     }
-}
-
-fn download(webview: tauri::Webview<tauri::Wry>, event: DownloadEvent<'_>) -> bool {
-    let notify = |url: &tauri::Url, status: &str| {
-        let detail = serde_json::json!({"url": url.as_str(), "status": status});
-        let _ = webview.eval(format!(
-            "window.dispatchEvent(new CustomEvent('trestl:download', {{detail: {detail}}}))"
-        ));
-    };
-    match event {
-        DownloadEvent::Requested { destination, url } => {
-            let name = destination
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned();
-            if let Some(path) = rfd::FileDialog::new().set_file_name(name).save_file() {
-                *destination = path;
-            } else {
-                notify(&url, "cancelled");
-                return false;
-            }
-        }
-        DownloadEvent::Finished { url, success, .. } => {
-            notify(&url, if success { "saved" } else { "failed" })
-        }
-        _ => (),
-    }
-    true
 }
 
 fn start(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
@@ -219,24 +189,6 @@ fn start(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             .permission("allow-update-releases")
             .permission("core:window:allow-start-dragging"),
     )?;
-    app.add_capability(
-        tauri::ipc::CapabilityBuilder::new("local-connections")
-            .local(false)
-            .window("main")
-            .remote(format!("{}/*", origin.ascii_serialization()))
-            .permission("allow-connection-open"),
-    )?;
-    app.add_capability(
-        tauri::ipc::CapabilityBuilder::new("connection-manager")
-            .window("connections")
-            .permission("allow-connection-list")
-            .permission("allow-connection-add")
-            .permission("allow-connection-switch")
-            .permission("allow-connection-close-session")
-            .permission("allow-connection-browser")
-            .permission("core:window:allow-start-dragging"),
-    )?;
-    app.manage(connections::Connections::load(data.clone()));
     app.manage(service);
     let menu = Menu::with_items(
         app,
@@ -251,27 +203,6 @@ fn start(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                     &MenuItem::with_id(app, "data", "Open Data Folder", true, None::<&str>)?,
                     &PredefinedMenuItem::separator(app)?,
                     &PredefinedMenuItem::quit(app, Some("Quit Trestl"))?,
-                ],
-            )?,
-            &Submenu::with_items(
-                app,
-                "Connections",
-                true,
-                &[
-                    &MenuItem::with_id(
-                        app,
-                        "connections",
-                        "Switch Connection…",
-                        true,
-                        Some("CmdOrCtrl+Shift+K"),
-                    )?,
-                    &MenuItem::with_id(
-                        app,
-                        "connection-local",
-                        "Local",
-                        true,
-                        Some("CmdOrCtrl+1"),
-                    )?,
                 ],
             )?,
             &Submenu::with_items(
@@ -303,19 +234,10 @@ fn start(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     app.set_menu(menu)?;
     app.on_menu_event(move |app, event| {
         if event.id().as_ref() == "updates" {
+            let _ = updates::open(app, true);
             let handle = app.clone();
             tauri::async_runtime::spawn(async move {
-                let _ = updates::open(&handle, true);
                 updates::check(handle, false).await;
-            });
-        }
-        if event.id().as_ref() == "connections" {
-            connections::open_async(app);
-        }
-        if event.id().as_ref() == "connection-local" {
-            let handle = app.clone();
-            tauri::async_runtime::spawn(async move {
-                let _ = connections::activate(&handle, "local").await;
             });
         }
         if event.id().as_ref() == "data" {
@@ -329,7 +251,7 @@ fn start(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .hidden_title(true)
         .traffic_light_position(tauri::LogicalPosition::new(18.0, 20.0));
     window
-        .title("Trestl — Local")
+        .title("Trestl")
         .inner_size(1320.0, 860.0)
         .min_inner_size(900.0, 600.0)
         .on_navigation(move |url| {
@@ -345,7 +267,26 @@ fn start(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             }
             NewWindowResponse::Deny
         })
-        .on_download(download)
+        .on_download(|webview, event| {
+            let notify = |url: &tauri::Url, status: &str| {
+                let detail = serde_json::json!({"url": url.as_str(), "status": status});
+                let _ = webview.eval(format!("window.dispatchEvent(new CustomEvent('trestl:download', {{detail: {detail}}}))"));
+            };
+            match event {
+                DownloadEvent::Requested { destination, url } => {
+                    let name = destination.file_name().unwrap_or_default().to_string_lossy().into_owned();
+                    if let Some(path) = rfd::FileDialog::new().set_file_name(name).save_file() {
+                        *destination = path;
+                    } else {
+                        notify(&url, "cancelled");
+                        return false;
+                    }
+                }
+                DownloadEvent::Finished { url, success, .. } => notify(&url, if success { "saved" } else { "failed" }),
+                _ => (),
+            }
+            true
+        })
         .build()?;
     let handle = app.handle().clone();
     std::thread::spawn(move || loop {
@@ -376,26 +317,13 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![updates::update_status, updates::update_check,
             updates::update_download, updates::update_install, updates::update_prepared,
-            updates::update_close, updates::update_releases,
-            connections::connection_open, connections::connection_list, connections::connection_add,
-            connections::connection_switch, connections::connection_metadata,
-            connections::connection_close_session, connections::connection_browser])
+            updates::update_close, updates::update_releases])
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
-            connections::show_active(app);
-        }))
-        .plugin(tauri_plugin_window_state::Builder::default()
-            // Connection switching owns visibility. Restoring it could expose a hidden session.
-            .with_state_flags(tauri_plugin_window_state::StateFlags::all() & !tauri_plugin_window_state::StateFlags::VISIBLE)
-            .with_filter(|label| label == "main" || label.starts_with("remote-"))
-            .build())
-        .on_window_event(|window, event| {
-            if window.label() == "main" || window.label().starts_with("remote-") {
-                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                    api.prevent_close();
-                    window.app_handle().exit(0);
-                }
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize(); let _ = window.show(); let _ = window.set_focus();
             }
-        })
+        }))
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
             app.manage(updates::Updates::new(app.package_info().version.to_string()));
             if let Err(error) = start(app) {
@@ -404,7 +332,6 @@ fn main() {
                     .set_level(rfd::MessageLevel::Error).show();
                 return Err(error);
             }
-            tauri::async_runtime::spawn(connections::restore(app.handle().clone()));
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(Duration::from_secs(30)).await;
@@ -418,16 +345,6 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("Could not initialize Trestl desktop");
     app.run(|app, event| {
-        if let RunEvent::ExitRequested { api, .. } = &event {
-            if connections::has_open_remote(app) && !updates::installing(app) {
-                let result = rfd::MessageDialog::new().set_title("Quit Trestl?")
-                    .set_description("Open remote sessions will close. Save changes in each connection before quitting.")
-                    .set_buttons(rfd::MessageButtons::OkCancelCustom("Quit Trestl".into(), "Cancel".into())).show();
-                if result != rfd::MessageDialogResult::Custom("Quit Trestl".into()) && result != rfd::MessageDialogResult::Ok {
-                    api.prevent_exit(); return;
-                }
-            }
-        }
         if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
             if let Some(service) = app.try_state::<Service>() {
                 service.stop();

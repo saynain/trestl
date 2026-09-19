@@ -1,4 +1,3 @@
-import DesktopConnectionButton from './DesktopConnectionButton';
 import { useState, type FormEvent } from 'react';
 import { ArrowRight, Check, LoaderCircle, LockKeyhole } from 'lucide-react';
 import { post } from '../lib/api';
@@ -52,7 +51,6 @@ export default function Auth({
       <div className="auth-page">
         <div className="auth-brand">
           <Brand />
-          <DesktopConnectionButton />
         </div>
         <main className="auth-card">
           <div className="auth-symbol">
@@ -81,7 +79,6 @@ export default function Auth({
     <div className="auth-page">
       <div className="auth-brand">
         <Brand />
-        <DesktopConnectionButton />
       </div>
       <main className="auth-card">
         <div className="auth-symbol">

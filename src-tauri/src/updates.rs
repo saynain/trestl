@@ -49,14 +49,6 @@ impl Updates {
         }))
     }
 }
-pub fn installing(app: &tauri::AppHandle) -> bool {
-    app.try_state::<Updates>().is_some_and(|state| {
-        matches!(
-            state.0.lock().unwrap().status.phase.as_str(),
-            "preparing" | "installing"
-        )
-    })
-}
 fn trusted(window: &WebviewWindow) -> Result<(), String> {
     if window.label() == "updates" {
         Ok(())
@@ -239,14 +231,6 @@ fn thaw(app: &tauri::AppHandle) {
 #[tauri::command]
 pub async fn update_install(window: WebviewWindow, app: tauri::AppHandle) -> Result<(), String> {
     trusted(&window)?;
-    let connections = app.state::<crate::connections::Connections>();
-    let _operation = connections.operation.lock().await;
-    if crate::connections::has_open_remote(&app) {
-        change(&app, |inner| {
-            inner.status.message = "Save your remote work, then use Connections → Close session for each open remote connection before installing.".into()
-        });
-        return Ok(());
-    }
     let (receiver, request) = {
         let state = app.state::<Updates>();
         let mut inner = state.0.lock().unwrap();

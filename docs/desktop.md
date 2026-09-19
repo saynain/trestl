@@ -28,8 +28,9 @@ manager or download the newer package; AppImage installations update in the app.
 
 Open the application and create your local administrator account. Choose an
 empty workspace or the example projects. This account belongs to this desktop
-installation. It does not require a Trestl cloud account. Local uses its own
-accounts; saved remote connections use the hosted installation's sign-in method.
+installation. It does not require a Trestl cloud account. Desktop installations
+use local accounts; organization OIDC/Google/proxy sign-in belongs to the hosted
+web version.
 
 Use the native **Trestl → Open Data Folder** menu to find your data. Standard
 editing shortcuts, an integrated macOS title bar with real traffic lights,
@@ -37,63 +38,6 @@ window size/position restoration, external links in your
 browser, and native download dialogs are supported. Closing the application
 also stops the local database process. Launching a second copy focuses the
 existing window.
-
-## Local and remote connections
-
-Choose **Local** in the sidebar or **Connections → Switch Connection…**
-(`⌘⇧K` on macOS, `Ctrl+Shift+K` on Windows/Linux). Add the base HTTPS address of
-an existing Trestl installation. The app discovers its installation name and
-shows the address underneath, so similarly named installations remain distinct.
-HTTP is allowed only for loopback addresses used in development. Installations
-must be served at the domain root; subpath hosting is not supported.
-
-**Local** always refers to the database on this computer. Each remote connection
-loads that server's own interface and uses that server's database. Nothing is
-synchronized or copied between installations. Sign in separately to each remote
-connection; existing browser logins are not imported. Password sign-in and
-identity-provider redirects use the connection's isolated webview. Providers
-that disallow embedded browsers or require unsupported popup flows may need
-**Open in browser**; this opens the web application and does not transfer its
-browser session back to the desktop app.
-
-Switching hides the previous workspace and preserves its current page and drafts
-while Trestl remains open. Use `⌘1` / `Ctrl+1` to return to Local. The last active
-connection is reopened at its home page on the next launch. If it cannot be
-reached, Trestl returns to Local and shows the connection error. Remote work
-requires a network connection; it has no offline editing or synchronization.
-The local database process continues running while a remote connection is active.
-
-Saved logins are isolated per connection, including installations on the same
-hostname at different ports. They persist between launches on Windows, Linux,
-and macOS 14+. On macOS 12/13, remote sessions are isolated but temporary; sign
-in again after quitting. Session expiration and logout are still controlled by
-the remote installation.
-
-The connection's **•••** menu shows its reported server version and lets you open
-it in a browser, close its session, or remove it. **Close session** closes the
-workspace but retains the connection and saved login. **Remove connection** also
-clears its webview browsing data and forgets the address; it does not delete
-server data or revoke sessions server-side. Both ask you to save drafts first.
-Quitting with remote sessions open also warns that those workspaces will close.
-
-### Desktop and server versions
-
-The desktop and server do not need identical Trestl versions. Remote mode loads
-the server's frontend with its matching API. A small, separately versioned
-optional desktop bridge supplies the connection button and integrated macOS
-chrome. Servers without a recognized bridge still work with ordinary native
-window chrome and the **Connections** menu. Older servers may not report their
-version. A future server that requires web features unavailable in the operating
-system's webview can still require an OS update or use of **Open in browser**.
-This design avoids a frontend/API version mismatch; it does not guarantee every
-future server or identity provider will work in every older webview.
-
-Only the connection's exact origin can request the picker or report its own
-name/version. It cannot access the local database, install updates, or invoke
-filesystem commands. Redirected sign-in pages receive no desktop permissions.
-Connection metadata is stored atomically in `connections.json`; cookies remain
-in separate operating-system webview stores. A damaged or unsupported metadata
-file leaves Local available and is preserved for recovery.
 
 ## Updates
 
@@ -111,10 +55,8 @@ Updates…** action always lets you check manually.
 The update window shows the new version, release notes, download progress, and
 **Install and Restart**. Downloads are verified against the public key shipped
 with the app. Downloading does not interrupt your work. Before installation,
-save and close open forms or editors. For each open remote workspace, save your
-work and choose **Connections → Switch Connection… → ••• → Close session**;
-installation is blocked until all remote sessions are closed. The app then
-flushes Local's canvas autosaves, waits for pending API writes, and requires the database process to exit successfully. A
+save and close open forms or editors; the app flushes canvas autosaves, waits for
+pending API writes, and requires the database process to exit successfully. A
 save failure or shutdown timeout stops installation. Local data and the persistent
 encryption key remain in the app-data folder, outside the replaced application.
 
@@ -296,13 +238,7 @@ before publishing any update manifest.
 Before publishing each platform's installers, validate installation, first-run
 setup, restart persistence, import/export (including cancellation of the save
 dialog), canvas editing/export, external links, second-launch focus, offline
-operation, quit, and upgrade with a copied database. Also test switching between
-Local and at least two remote installations (including an older server), separate
-logins, retained drafts while switching, session persistence after restart,
-remote unavailability, close/remove cancellation, and update blocking while a
-remote session is open. Exercise the deployed installation's real identity
-provider on each platform; browser preview tests cannot verify native cookie
-isolation or embedded sign-in behavior. CI tests the packaged
+operation, quit, and upgrade with a copied database. CI tests the packaged
 service but does not replace native webview/installer QA on all platforms.
 
 ## Architecture and troubleshooting

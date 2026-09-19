@@ -4422,7 +4422,6 @@ name = "trestl-desktop"
 version = "0.4.0"
 dependencies = [
  "open",
- "reqwest",
  "rfd",
  "serde",
  "serde_json",
@@ -4431,9 +4430,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
- "tempfile",
  "tokio",
- "uuid",
 ]
 
 [[package]]
