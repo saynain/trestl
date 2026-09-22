@@ -10,6 +10,14 @@ export const docPages = [
     description: 'Run Trestl locally and create your first account.',
   },
   {
+    slug: 'desktop',
+    title: 'Desktop app',
+    group: 'Get started',
+    icon: 'box',
+    file: 'docs/desktop.md',
+    description: 'Install Trestl on macOS, Windows, or Linux and keep your work locally.',
+  },
+  {
     slug: 'installation',
     title: 'Installation & accounts',
     group: 'Get started',

@@ -127,6 +127,8 @@ jobs:
           node scripts/desktop-release.mjs configure-updater
       - name: Build test installers
         if: github.ref_type != 'tag'
+        env:
+          APPLE_SIGNING_IDENTITY: '-'
         run: pnpm desktop:build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} -- --locked
       - name: Build release installers
         if: github.ref_type == 'tag'
@@ -146,12 +148,16 @@ jobs:
           AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
           AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
         run: pnpm desktop:build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --config src-tauri/updater.release.json -- --locked
-      - name: Verify macOS signature and notarization
-        if: github.ref_type == 'tag' && runner.os == 'macOS'
+      - name: Verify macOS bundle integrity
+        if: runner.os == 'macOS'
         run: |
           app="src-tauri/target/${{ matrix.target }}/release/bundle/macos/Trestl.app"
           codesign --verify --deep --strict --verbose=2 "$app"
           codesign --verify --strict --verbose=2 "$app/Contents/MacOS/trestl-node"
+      - name: Verify macOS notarization
+        if: github.ref_type == 'tag' && runner.os == 'macOS'
+        run: |
+          app="src-tauri/target/${{ matrix.target }}/release/bundle/macos/Trestl.app"
           xcrun stapler validate "$app"
           spctl --assess --type execute --verbose=2 "$app"
       - name: Smoke-test the installed macOS bundle runtime

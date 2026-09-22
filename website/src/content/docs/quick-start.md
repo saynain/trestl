@@ -1,6 +1,12 @@
 # Quick start
 
-Trestl is a self-hosted project workspace for personal projects and small teams. Run it locally with an embedded database, or use [Docker Compose](/docs/self-hosting/docker/) for a packaged installation.
+Trestl is a project workspace for personal projects and small teams. Use the [desktop app](/docs/desktop/) for a local workspace, or [Docker Compose](/docs/self-hosting/docker/) for a shared self-hosted installation.
+
+## Desktop app
+
+Download the installer for your platform from [GitHub Releases](https://github.com/saynain/trestl/releases/latest). Trestl Desktop includes its runtime and embedded database; it does not require Node.js, Docker, or a server. See the [desktop guide](/docs/desktop/) for installation, platform requirements, updates, and backups. Release downloads require repository access while the project is private.
+
+The commands below run the web application from source.
 
 ## Before you begin
 
