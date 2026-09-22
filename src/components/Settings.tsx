@@ -1,3 +1,4 @@
+import { downloadFile } from '../lib/download';
 import AuthenticationSettings from './AuthenticationSettings';
 import WorkspacePeople from './WorkspacePeople';
 import WorkspaceGeneral from './WorkspaceGeneral';
@@ -162,8 +163,11 @@ export default function Settings({
               <section className="settings-section">
                 <h2>Work item view</h2>
                 <p>
-                  Choose how work items open. This preference is saved for your profile in this
-                  browser.
+                  Choose how work items open. This preference is saved for your profile{' '}
+                  {import.meta.env.VITE_TRESTL_DESKTOP === 'true'
+                    ? 'on this computer'
+                    : 'in this browser'}
+                  .
                 </p>
                 <div className="settings-item-layout" role="group" aria-label="Work item view">
                   {[
@@ -574,16 +578,11 @@ function ApiSettings({ mode = 'both' }: { mode?: 'tokens' | 'export' | 'both' })
     setError('');
     try {
       const exported = await api<unknown>('/export');
-      const url = URL.createObjectURL(
+      const saved = await downloadFile(
         new Blob([JSON.stringify(exported, null, 2)], { type: 'application/json' }),
+        `trestl-export-${new Date().toISOString().slice(0, 10)}.json`,
       );
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `trestl-export-${new Date().toISOString().slice(0, 10)}.json`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 3000);
+      if (!saved) return;
       toast('Export downloaded');
     } catch (e) {
       setError(errorMessage(e));

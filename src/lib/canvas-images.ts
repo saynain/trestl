@@ -1,3 +1,4 @@
+import { downloadFile } from './download';
 import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types';
 import type { BinaryFiles } from '@excalidraw/excalidraw/types';
 import type { CanvasScene } from '../../shared/types';
@@ -25,12 +26,10 @@ export async function renderCanvasImage(
 }
 
 export function downloadCanvasImage(blob: Blob, title: string, format: 'png' | 'svg') {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `${title.replace(/[^\p{L}\p{N} ._-]/gu, '-').trim() || 'canvas'}.${format}`;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  return downloadFile(
+    blob,
+    `${title.replace(/[^\p{L}\p{N} ._-]/gu, '-').trim() || 'canvas'}.${format}`,
+  );
 }
 
 // Limit expensive scene loading/rendering when an overview contains many canvases.

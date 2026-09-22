@@ -23,6 +23,14 @@ still developing.
 
 See the [user guide](docs/user-guide.md) for the complete workflows.
 
+## Install the desktop app
+
+Starting with v0.4.0, download the macOS, Windows, or Linux installer from
+[GitHub Releases](https://github.com/saynain/trestl/releases/latest). The app
+includes its runtime and local database; no server setup is needed. See the
+[desktop guide](docs/desktop.md) for platform requirements, backups, and checksum
+verification. Downloads require access while this repository is private.
+
 ## Install the CLI
 
 Download the tarball and checksum from [GitHub Releases](https://github.com/saynain/trestl/releases/latest), or pull the identical artifact from `ghcr.io/saynain/trestl-cli:v0.4.0` using ORAS. Node.js 22.9+ is required on macOS, Linux and Windows.
@@ -57,6 +65,7 @@ Imported updates retain their original health, text, date, and author name, labe
 
 | Mode                                      | Best for                                  | Data                                     |
 | ----------------------------------------- | ----------------------------------------- | ---------------------------------------- |
+| [Desktop app](docs/desktop.md) | A native, offline workspace on your computer | PGlite in the OS app-data folder |
 | [Development server](docs/development.md) | Local use and development with hot reload | PGlite in `.data/`, or PostgreSQL        |
 | [Docker Compose](deploy/README.md)        | A packaged self-hosted installation       | PostgreSQL in a persistent Docker volume |
 | [Kubernetes](deploy/kubernetes/README.md) | Running on an existing cluster            | External PostgreSQL                      |
@@ -130,6 +139,7 @@ configuration outside the product repository.
 
 - [User guide](docs/user-guide.md)
 - [Transfer projects between installations](docs/project-transfer.md)
+- [Desktop app: downloads, local storage, and backups](docs/desktop.md)
 - [Development and checks](docs/development.md)
 - [Docker, configuration, backups, and upgrades](deploy/README.md)
 - [Kubernetes deployment](deploy/kubernetes/README.md)

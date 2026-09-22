@@ -37,15 +37,16 @@ export function subscribeAppearance(listener: () => void) {
 }
 const themeKey = (user: Profile) => `trestl.theme.v1.${user.id}`;
 export function readTheme(user: Profile): string {
+  const fallback = import.meta.env?.VITE_TRESTL_DESKTOP === 'true' ? 'system' : 'light';
   try {
     const saved = localStorage.getItem(themeKey(user));
     // Preserve the original administrator's pre-profile preference only.
     const legacy = !user.workspaceId || user.workspaceId === 'default';
     const value =
       saved ?? (legacy && user.role === 'admin' ? localStorage.getItem('trestl-theme') : null);
-    return value === 'dark' || value === 'system' ? value : 'light';
+    return value === 'light' || value === 'dark' || value === 'system' ? value : fallback;
   } catch {
-    return 'light';
+    return fallback;
   }
 }
 export function saveTheme(user: Profile, theme: string) {

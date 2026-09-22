@@ -21,3 +21,12 @@ output/
 # Local design and verification notes, not product documentation.
 design-qa.md
 docs/design/verification.md
+
+# Generated desktop builds and bundled runtime
+src-tauri/target/
+src-tauri/resources/
+src-tauri/binaries/
+src-tauri/gen/
+src-tauri/signing.release.json
+src-tauri/updater.release.json
+scripts/verify-update/target/

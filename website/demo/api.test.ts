@@ -12,7 +12,8 @@ test('the real application gets an authenticated sample workspace and isolated s
   seed.items[0].title='Cannot mutate the backing state';
   assert.notEqual((await first<Bootstrap>('/bootstrap')).items[0].title,seed.items[0].title);
   const item=await first<WorkItem>('/items',write('POST',{title:'A new idea',projectId:'studio'}));
-  await first(`/items/${item.id}`,write('PATCH',{status:'done',expectedRevision:item.revision}));
+  const updated=await first<{item:WorkItem}>(`/items/${item.id}`,write('PATCH',{status:'done',expectedRevision:item.revision}));
+  assert.equal(updated.item.status,'done');assert.equal(updated.item.revision,2);
   const detail=await first<ItemDetail>(`/items/${item.id}`);
   assert.equal(detail.item.status,'done');assert.ok(detail.item.completedAt);
   assert.equal((await second<Bootstrap>('/bootstrap')).items.length,seed.items.length);

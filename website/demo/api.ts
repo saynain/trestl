@@ -172,7 +172,7 @@ export function createDemoApi() {
           body: 'Updated this work item',
           createdAt: now(),
         });
-        return result;
+        return { item: result };
       }
       if (!child && method === 'DELETE') {
         const removed = new Set([key]);

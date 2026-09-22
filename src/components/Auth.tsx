@@ -175,7 +175,11 @@ export default function Auth({
         </form>
         <div className="auth-note">
           <Check size={14} />
-          {setup ? 'Self-hosted. Your data stays yours.' : 'Built for the way you work.'}
+          {setup
+            ? import.meta.env.VITE_TRESTL_DESKTOP === 'true'
+              ? 'On your computer. Your data stays yours.'
+              : 'Self-hosted. Your data stays yours.'
+            : 'Built for the way you work.'}
         </div>
       </main>
       <div className="auth-footer">A steady place for work.</div>

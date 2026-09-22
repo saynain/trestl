@@ -425,7 +425,12 @@ export default function App() {
           />
         )}
         <main className="main-area">
-          <header className="topbar">
+          <header
+            className="topbar"
+            data-tauri-drag-region={
+              import.meta.env.VITE_TRESTL_DESKTOP_PLATFORM === 'darwin' ? 'deep' : undefined
+            }
+          >
             <button
               className="icon-button sidebar-toggle"
               aria-label={uiPreferences.zenMode ? 'Show sidebar' : 'Hide sidebar'}
