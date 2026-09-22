@@ -25,6 +25,16 @@ export function saveUiPreferences(user: Profile, preferences: UiPreferences) {
     /* Preferences may be unavailable in private browsing. */
   }
 }
+/** Subscribe to appearance changes made by the host or another browser tab. */
+export function subscribeAppearance(listener: () => void) {
+  const observer = new MutationObserver(listener);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  window.addEventListener('storage', listener);
+  return () => {
+    observer.disconnect();
+    window.removeEventListener('storage', listener);
+  };
+}
 const themeKey = (user: Profile) => `trestl.theme.v1.${user.id}`;
 export function readTheme(user: Profile): string {
   try {

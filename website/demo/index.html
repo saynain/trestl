@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="robots" content="noindex" /><meta name="referrer" content="no-referrer" /><title>Trestl — interactive product demo</title><link rel="icon" href="../../public/favicon.svg" /><script>
+(() => {
+  const read = key => { try { return localStorage.getItem(key); } catch { return null; } };
+  const valid = value => value === 'light' || value === 'dark';
+  let inherited = read('trestl.website.theme');
+  try { if (parent !== window) inherited = parent.document.documentElement.dataset.theme || inherited; } catch {}
+  const manual = read('trestl.demo.theme') || read('trestl.theme.v1.demo-you');
+  document.documentElement.dataset.theme = valid(manual) ? manual : valid(inherited) ? inherited : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+})();
+</script></head>
+<body><div id="root"></div><script type="module" src="/main.tsx"></script></body>
+</html>

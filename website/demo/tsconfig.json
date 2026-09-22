@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": [
+    "*.ts",
+    "*.tsx"
+  ],
+  "exclude": [
+    "../node_modules",
+    "../public/demo",
+    "vite.config.ts"
+  ]
+}

@@ -20,5 +20,7 @@ Derived assets:
 - `extensions/raycast/assets/icon.png`: 512 × 512 px rendering of that icon.
 
 When changing the mark, regenerate these assets from its paths and update the
-asset revision in `index.html` and `src/components/ui.tsx` to refresh cached icons.
+favicon revision in `index.html` to refresh cached icons. The shared `Logo`
+component and website import the source artwork through their bundlers, so their
+asset URLs refresh automatically when the SVG changes.
 Inspect the 16 px favicon and 24 px compact logo as well as the full-size artwork.

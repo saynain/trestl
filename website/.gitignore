@@ -1,0 +1,8 @@
+.astro/
+node_modules/
+dist/
+
+# Generated from the actual product source on dev/build.
+public/demo/
+
+.generated/
