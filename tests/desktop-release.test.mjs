@@ -39,6 +39,20 @@ test('release tag and every app version must agree', async () => {
     await assert.rejects(verifyVersion(root, 'v0.4.0'), /versions must match/);
   });
 });
+test('release version checks support Windows checkout line endings', async () => {
+  await fixture(async (root) => {
+    for (const file of ['src-tauri/Cargo.toml', 'src-tauri/Cargo.lock']) {
+      const path = join(root, file);
+      await writeFile(path, (await readFile(path, 'utf8')).replaceAll('\n', '\r\n'));
+    }
+    assert.equal(await verifyVersion(root, 'v0.4.0'), '0.4.0');
+    await writeFile(
+      join(root, 'src-tauri/Cargo.lock'),
+      'name = "trestl-desktop"\r\nversion = "0.3.0"\r\n',
+    );
+    await assert.rejects(verifyVersion(root, 'v0.4.0'), /versions must match/);
+  });
+});
 test('release collection rejects missing or duplicate installers and preserves bytes', async () => {
   await fixture(async (root) => {
     const target = 'x86_64-pc-windows-msvc';

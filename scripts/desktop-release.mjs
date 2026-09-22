@@ -21,7 +21,7 @@ export async function verifyVersion(root = '.', tag) {
     (await json('cli/package.json')).version,
     (await json('src-tauri/tauri.conf.json')).version,
     cargo.match(/^version = "([^"]+)"/m)?.[1],
-    lock.match(/name = "trestl-desktop"\nversion = "([^"]+)"/)?.[1],
+    lock.match(/name = "trestl-desktop"\r?\nversion = "([^"]+)"/)?.[1],
   ];
   if (versions.some((value) => value !== version))
     throw new Error('Root, CLI, Tauri, Cargo and Cargo.lock versions must match');
