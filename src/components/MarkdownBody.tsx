@@ -22,11 +22,13 @@ const markdownComponents: Components = {
     const target =
       mention.kind === 'user'
         ? app.data.users.find((u) => u.id === mention.id)
-        : mention.kind === 'canvas'
-          ? app.data.canvases?.find((c) => c.id === mention.id)
-          : mention.kind === 'project'
-            ? app.data.projects.find((p) => p.id === mention.id)
-            : app.data.items.find((i) => i.id === mention.id);
+        : mention.kind === 'milestone'
+          ? app.data.milestones.find((m) => m.id === mention.id)
+          : mention.kind === 'canvas'
+            ? app.data.canvases?.find((c) => c.id === mention.id)
+            : mention.kind === 'project'
+              ? app.data.projects.find((p) => p.id === mention.id)
+              : app.data.items.find((i) => i.id === mention.id);
     if (!target)
       return (
         <span className="mention mention-unavailable">
@@ -48,7 +50,9 @@ const markdownComponents: Components = {
         href={
           mention.kind === 'canvas' && 'projectId' in target
             ? `#/project/${target.projectId}?tab=${encodeURIComponent(`canvases/${mention.id}`)}`
-            : `#/${mention.kind}/${mention.id}`
+            : mention.kind === 'milestone' && 'projectId' in target
+              ? `#/project/${target.projectId}?tab=overview/${mention.id}`
+              : `#/${mention.kind}/${mention.id}`
         }
         title={'title' in target ? target.title : label}
         onClick={(event) => {
@@ -57,6 +61,8 @@ const markdownComponents: Components = {
           if (mention.kind === 'item') app.openItem(mention.id);
           else if (mention.kind === 'canvas' && 'projectId' in target)
             navigate('project', target.projectId!, `canvases/${mention.id}`);
+          else if (mention.kind === 'milestone' && 'projectId' in target)
+            navigate('project', target.projectId!, `overview/${mention.id}`);
           else navigate('project', mention.id);
         }}
       >

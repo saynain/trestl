@@ -9,6 +9,7 @@ Project descriptions also support canvas references using `!`:
 | `/` | Work item | Identifier or title |
 | `$` | Project | Name or key |
 | `!` | Canvas | Title or project name |
+| `%` | Milestone | Title or project name |
 
 Type a trigger at the start of a line or after a space, then choose a suggestion.
 Use the arrow keys and Enter or Tab, or click a suggestion. Escape dismisses the
@@ -49,9 +50,22 @@ responses, with `id`, `itemId`, and `projectId` fields. Both endpoints must be
 visible to the current user. Remove one with
 `DELETE /api/v1/items/{id}/project-relations/{relationId}`.
 
-Mention IDs are local to an installation. Project transfer bundles do not
-currently remap these references or include the new project relationships;
-reselect mentions after importing a project into another installation.
+Mention IDs are local to an installation. Project imports remap references to
+included projects, items, milestones, and canvases in descriptions and discussion.
+References to targets outside the bundle keep their original IDs and may be
+unavailable on another installation. Project relationships are not imported.
+
+## Milestone references
+
+Type `%` in a work item description or comment to choose an accessible milestone.
+A milestone reference displays its current title and opens its project overview
+with the milestone details visible. References are stored as
+`[%Launch](#/mention/milestone/UUID)` and survive renaming.
+
+These are references only: saving, editing, or removing one does not change the
+work item's assigned milestone, create a relationship, or affect milestone progress.
+Use the work item's milestone field to assign it. Missing or inaccessible targets
+render an unavailable placeholder without exposing their saved title.
 
 
 ## In-app notifications

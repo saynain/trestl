@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { mentionMarkdown } from '../shared/mentions.ts';
 import { createApp } from '../server/app.ts';
 import type { AppContext } from '../server/context.ts';
 import type {
@@ -137,7 +138,10 @@ test('portable project transfer preserves content, isolates access, validates re
       dueDate: '2026-12-01',
       completed: false,
     });
+    const milestoneReference = mentionMarkdown({ kind: 'milestone', id: milestoneId }, 'Launch');
     await src('PATCH', `/items/${childItem.id}`, { milestoneId });
+    await src('PATCH', `/items/${childItem.id}`, { description: milestoneReference });
+    await src('POST', `/items/${childItem.id}/comments`, { body: milestoneReference });
     await sourceContext.store.put('relations', {
       id: randomUUID(),
       itemId: item.id,
@@ -275,12 +279,15 @@ test('portable project transfer preserves content, isolates access, validates re
     );
     assert.equal(pack.relations.length, 1);
     assert.equal(
-      pack.activity.find((a: Activity) => a.kind === 'event').body,
+      pack.activity.find(
+        (a: Activity) => a.kind === 'event' && a.body.includes('Changed milestone'),
+      ).body,
       'Changed milestone to Launch',
     );
     assert.equal(pack.items.find((i: WorkItem) => i.id === childItem.id).milestoneId, milestoneId);
     assert.equal(
-      pack.activity.find((a: Activity) => a.kind === 'comment').importedFrom.authorName,
+      pack.activity.find((a: Activity) => a.kind === 'comment' && a.body === 'Original discussion')
+        .importedFrom.authorName,
       'Former contributor',
     );
     assert(!exported.body.includes('MUST_NOT_EXPORT'));
@@ -363,6 +370,17 @@ test('portable project transfer preserves content, isolates access, validates re
       linkedMilestone.id,
     );
     assert.deepEqual(linkedMilestone.progress, { total: 1, done: 0 });
+    const importedReference = mentionMarkdown(
+      { kind: 'milestone', id: linkedMilestone.id },
+      'Launch',
+    );
+    const newChildItem = newItems.find((i) => i.title === childItem.title)!;
+    assert.equal(newChildItem.description, importedReference);
+    assert(
+      (await destContext.store.list<Activity>('activity')).some(
+        (a) => a.itemId === newChildItem.id && a.kind === 'comment' && a.body === importedReference,
+      ),
+    );
     assert.equal(newItem.identifier, 'MOVE2-01');
     assert.equal(newItem.assigneeId, dstUser.id);
     assert.equal(newItem.source, undefined);
@@ -372,7 +390,9 @@ test('portable project transfer preserves content, isolates access, validates re
     assert.equal(newItems.find((i) => i.title === subtask.title)?.parentId, newItem.id);
     assert.equal(newItems.find((i) => i.title === subtask.title)?.visibility, 'private');
     const newActivity = await destContext.store.list<Activity>('activity');
-    const originalComment = newActivity.find((a) => a.kind === 'comment')!;
+    const originalComment = newActivity.find(
+      (a) => a.kind === 'comment' && a.body === 'Original discussion',
+    )!;
     assert.equal(originalComment.importedFrom?.authorName, 'Former contributor');
     assert.equal(originalComment.createdAt, '2025-01-01T12:00:00.000Z');
     assert.equal(originalComment.itemId, newItem.id);
@@ -388,7 +408,8 @@ test('portable project transfer preserves content, isolates access, validates re
     assert.equal(nextItem.identifier, 'MOVE2-03');
     const again = (await dst('GET', `/projects/${newRoot.id}/export`)).json();
     assert.equal(
-      again.activity.find((a: Activity) => a.kind === 'comment').importedFrom.authorName,
+      again.activity.find((a: Activity) => a.kind === 'comment' && a.body === 'Original discussion')
+        .importedFrom.authorName,
       'Former contributor',
     );
     assert.equal(again.projectUpdates.length, 3);

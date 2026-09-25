@@ -45,21 +45,28 @@ export function MentionTextarea({
           .map((u) => ({ kind: 'user', id: u.id, label: u.name, detail: u.email }))
       : query?.kind === 'project'
         ? data.projects.map((p) => ({ kind: 'project', id: p.id, label: p.name, detail: p.key }))
-        : query?.kind === 'canvas'
-          ? (data.canvases ?? []).map((c) => ({
-              kind: 'canvas',
-              id: c.id,
-              label: c.title,
-              detail: data.projects.find((p) => p.id === c.projectId)?.name ?? '',
+        : query?.kind === 'milestone'
+          ? data.milestones.map((m) => ({
+              kind: 'milestone',
+              id: m.id,
+              label: m.title,
+              detail: data.projects.find((p) => p.id === m.projectId)?.name ?? '',
             }))
-          : query?.kind === 'item'
-            ? workItemOptions(data.items, data.projects, {
-                projectId,
-                excludeItemId,
-                query: query.query,
-                limit: 8,
-              }).map((option) => ({ ...option, kind: 'item' }))
-            : [];
+          : query?.kind === 'canvas'
+            ? (data.canvases ?? []).map((c) => ({
+                kind: 'canvas',
+                id: c.id,
+                label: c.title,
+                detail: data.projects.find((p) => p.id === c.projectId)?.name ?? '',
+              }))
+            : query?.kind === 'item'
+              ? workItemOptions(data.items, data.projects, {
+                  projectId,
+                  excludeItemId,
+                  query: query.query,
+                  limit: 8,
+                }).map((option) => ({ ...option, kind: 'item' }))
+              : [];
   const options = candidates
     .filter((o) =>
       `${o.label} ${o.detail}`.toLowerCase().includes(query?.query.toLowerCase() ?? ''),
@@ -169,9 +176,11 @@ export function MentionTextarea({
                 ? 'People'
                 : query.kind === 'item'
                   ? 'Work items'
-                  : query.kind === 'canvas'
-                    ? 'Canvases'
-                    : 'Projects'}
+                  : query.kind === 'milestone'
+                    ? 'Milestones'
+                    : query.kind === 'canvas'
+                      ? 'Canvases'
+                      : 'Projects'}
             </div>
             <div id={listId} role="listbox" aria-label="Mention suggestions">
               {options.map((option, index) => (
@@ -204,7 +213,7 @@ export function MentionTextarea({
       <div className="mention-help">
         {kinds?.length === 1 && kinds[0] === 'canvas'
           ? '! canvases'
-          : '@ people · / work items · $ projects · ! canvases'}
+          : '@ people · / work items · $ projects · ! canvases · % milestones'}
       </div>
     </div>
   );

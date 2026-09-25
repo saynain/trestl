@@ -668,7 +668,11 @@ export default function App() {
                 <nav className="page-tabs">
                   {project && (
                     <button
-                      className={route.tab === 'overview' ? 'active' : ''}
+                      className={
+                        route.tab === 'overview' || route.tab.startsWith('overview/')
+                          ? 'active'
+                          : ''
+                      }
                       onClick={() => navigate(route.page, route.id, 'overview')}
                     >
                       Overview
@@ -747,8 +751,13 @@ export default function App() {
                   )
                 ) : project && route.tab === 'gantt' ? (
                   <GanttView key={project.id} project={project} items={items} />
-                ) : project && route.tab === 'overview' ? (
-                  <Overview project={project} items={items} />
+                ) : project && (route.tab === 'overview' || route.tab.startsWith('overview/')) ? (
+                  <Overview
+                    key={`${project.id}:${route.tab}`}
+                    project={project}
+                    items={items}
+                    milestoneId={route.tab.split('/')[1]}
+                  />
                 ) : project && (route.tab === 'roadmap' || presentingRoadmap) ? (
                   <RoadmapView key={project.id} project={project} presenting={presentingRoadmap} />
                 ) : project && (route.tab === 'canvases' || route.tab.startsWith('canvases/')) ? (
