@@ -8,10 +8,15 @@ remote repository and documentation integrations still need a connection.
 
 ## Install and get started
 
-Starting with v0.4.0, the **Desktop installers** workflow attaches installers and
+The desktop app and bundled server use **v0.5.0**, matching the web app and CLI.
+Signed installers for this release are **pending signing configuration** and are
+not included in its web/CLI downloads. The **Desktop installers** workflow
+provides test artifacts from successful pull-request or branch workflow runs.
+These are not signed release installers and do not provide a published updater feed.
+
+Once signing is configured, the workflow attaches installers and
 `desktop-SHA256SUMS` to the same [GitHub Release](https://github.com/saynain/trestl/releases)
-as the CLI. Downloads require repository access while the repository is private.
-Pull requests and manual workflow runs produce unsigned test artifacts only:
+as the CLI. Downloads require repository access while the repository is private:
 
 | Platform      | Architecture                             | Installer                      |
 | ------------- | ---------------------------------------- | ------------------------------ |
@@ -44,7 +49,7 @@ existing window.
 To see the installed version, choose **Trestl → About Trestl**. The footer of
 **Trestl → Check for Updates…** also shows the current version, even when the
 release feed is unavailable. Development builds can share a version number:
-replacing a local `0.4.0` build with a newer `0.4.0` build requires a manual
+replacing a local `0.5.0` build with a newer `0.5.0` build requires a manual
 installation because the updater only offers higher versions.
 
 Trestl checks once after startup and every six hours while open. Checks that find
@@ -134,19 +139,19 @@ installed applications do not. Generated runtime/resources live in ignored
 `src-tauri/binaries/` and `src-tauri/resources/`. Tauri emits installers under
 `src-tauri/target/release/bundle/` (or the target triple's release directory).
 
-## Release v0.4.0
+## Release v0.5.0
 
-The desktop branch is based on `v0.4.0`. Integrate it into that release branch,
-finish the platform checks below, and merge the release into `main`. The existing
-CLI/image publishing rule is retained: a release tag must point to a commit
-already incorporated into `main`.
+Merge the tested release into `main` before tagging. The app, CLI, and desktop
+share one version and release tag, which must point to a commit already in
+main's history. Desktop publication can follow the web/CLI release after the
+required signing configuration is available.
 
 Before tagging, run `pnpm desktop:version`. The root package, CLI package,
-Tauri config, Cargo manifest, and Cargo lockfile must all say `0.4.0`. The workflow
-also checks the tag equals `v0.4.0`. Desktop installer releases currently use
+Tauri config, Cargo manifest, and Cargo lockfile must all say `0.5.0`. The workflow
+also checks the tag equals `v0.5.0`. Desktop installer releases currently use
 stable `major.minor.patch` versions; use manual workflow artifacts for candidates.
 
-Pushing the `v0.4.0` tag starts the image, CLI, and desktop workflows. Desktop
+Pushing the `v0.5.0` tag starts the image, CLI, and desktop workflows. Desktop
 publication waits for the reusable application/container/Raycast CI and all four
 native build jobs (Apple Silicon, Intel Mac, Windows x64, Linux x64). Each native
 runner tests the bundled service, including first setup, writing a project and
@@ -156,7 +161,7 @@ tests its shipped runtime and resources. Release builds verify the signatures of
 that extracted application and runtime.
 
 The seven installers are named
-`trestl-desktop-0.4.0-<target-triple>.<extension>`. The publishing job validates the
+`trestl-desktop-0.5.0-<target-triple>.<extension>`. The publishing job validates the
 complete set, verifies updater signatures with the same Minisign verifier used
 by Tauri, calculates SHA-256 checksums, and attaches the files to the shared
 GitHub Release. It uploads `latest.json` last, after every referenced artifact.
@@ -170,14 +175,16 @@ After downloading the installers and checksum file, verify with
 `shasum -a 256 -c desktop-SHA256SUMS` on macOS or
 `sha256sum -c desktop-SHA256SUMS` on Linux (download all listed files for a full
 manifest check). On Windows, compare
-`Get-FileHash .\trestl-desktop-0.4.0-x86_64-pc-windows-msvc.exe -Algorithm SHA256`
+`Get-FileHash .\trestl-desktop-0.5.0-x86_64-pc-windows-msvc.exe -Algorithm SHA256`
 with the matching line in the checksum file.
 
 ## Signing setup
 
-PR and manual builds need no signing credentials. **Tagged desktop releases fail
-instead of publishing unsigned macOS or Windows installers.** Configure these
-repository secrets before tagging:
+PR and branch workflow builds need no signing credentials. **Tagged releases
+never publish unsigned desktop installers.** If required signing settings are
+missing, the workflow reports desktop publication as pending and skips native
+release builds and uploads. Invalid configured credentials still fail the build.
+Configure these repository secrets before publishing desktop installers:
 
 | Secret                       | Purpose                                               |
 | ---------------------------- | ----------------------------------------------------- |
@@ -207,6 +214,11 @@ and Gatekeeper assessment. See
 [Tauri's macOS signing guide](https://v2.tauri.app/distribute/sign/macos/).
 Credentials are never committed to the repository and signing runs only on
 trusted version tags, not pull requests.
+
+After configuring the signing settings and the existing updater private key,
+rerun **Desktop installers** for the immutable `v0.5.0` tag. Do not move the tag,
+replace existing release assets, or generate a new updater key. Verify all
+installers, checksums, and `latest.json` before marking desktop downloads available.
 
 ## Updater signing key
 

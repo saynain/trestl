@@ -26,20 +26,22 @@ See the [user guide](docs/user-guide.md) for the complete workflows.
 
 ## Install the desktop app
 
-Starting with v0.4.0, download the macOS, Windows, or Linux installer from
-[GitHub Releases](https://github.com/saynain/trestl/releases/latest). The app
-includes its runtime and local database; no server setup is needed. See the
+The desktop app and its bundled server are aligned to **v0.5.0**. Signed macOS,
+Windows, and Linux release installers are pending signing configuration; they
+are not included in the current web/CLI release. Test installers are available
+from successful **Desktop installers** workflow runs in GitHub Actions.
+The app includes its runtime and local database; no server setup is needed. See the
 [desktop guide](docs/desktop.md) for platform requirements, backups, and checksum
 verification. Downloads require access while this repository is private.
 
 ## Install the CLI
 
-Download the tarball and checksum from [GitHub Releases](https://github.com/saynain/trestl/releases/latest), or pull the identical artifact from `ghcr.io/saynain/trestl-cli:v0.4.0` using ORAS. Node.js 22.9+ is required on macOS, Linux and Windows.
+Download the tarball and checksum from [GitHub Releases](https://github.com/saynain/trestl/releases/latest), or pull the identical artifact from `ghcr.io/saynain/trestl-cli:v0.5.0` using ORAS. Node.js 22.9+ is required on macOS, Linux and Windows.
 
 ```sh
-gh release download v0.4.0 --repo saynain/trestl --pattern 'trestl-cli-*.tgz' --pattern SHA256SUMS
+gh release download v0.5.0 --repo saynain/trestl --pattern 'trestl-cli-*.tgz' --pattern SHA256SUMS
 shasum -a 256 -c SHA256SUMS  # Linux: sha256sum -c SHA256SUMS
-npm install --global ./trestl-cli-0.4.0.tgz --ignore-scripts
+npm install --global ./trestl-cli-0.5.0.tgz --ignore-scripts
 trestl login --profile work --url https://projects.example.com
 trestl auth status --profile work
 ```
