@@ -19,6 +19,7 @@ export async function addMentionRelations(
   check: {
     item: (id: string) => Promise<unknown>;
     project: (id: string) => Promise<unknown>;
+    milestone: (id: string) => Promise<unknown>;
     recipientCanRead: (recipient: User) => Promise<boolean>;
   },
   activityId: string | null = null,
@@ -68,6 +69,9 @@ export async function addMentionRelations(
           kind: 'related',
         }),
       );
+    } else if (mention.kind === 'milestone') {
+      // Inline references never assign a milestone or create a relationship.
+      await check.milestone(mention.id);
     } else {
       await check.project(mention.id);
       if (projects.some((r) => r.itemId === item.id && r.projectId === mention.id)) continue;

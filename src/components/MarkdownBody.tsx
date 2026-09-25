@@ -24,14 +24,21 @@ const markdownComponents: Components = {
         ? app.data.users.find((u) => u.id === mention.id)
         : mention.kind === 'project'
           ? app.data.projects.find((p) => p.id === mention.id)
-          : app.data.items.find((i) => i.id === mention.id);
+          : mention.kind === 'milestone'
+            ? app.data.milestones.find((m) => m.id === mention.id)
+            : app.data.items.find((i) => i.id === mention.id);
     if (!target)
       return (
         <span className="mention mention-unavailable">
           Unavailable {mention.kind === 'user' ? 'person' : mention.kind}
         </span>
       );
-    const label = 'identifier' in target ? target.identifier : target.name;
+    const label =
+      'identifier' in target ? target.identifier : 'name' in target ? target.name : target.title;
+    const href =
+      mention.kind === 'milestone' && 'projectId' in target
+        ? `#/project/${target.projectId}?tab=overview/${mention.id}`
+        : `#/${mention.kind}/${mention.id}`;
     if (mention.kind === 'user')
       return (
         <span className="mention" title={label}>
@@ -42,12 +49,13 @@ const markdownComponents: Components = {
     return (
       <a
         className="mention"
-        href={`#/${mention.kind}/${mention.id}`}
+        href={href}
         title={'title' in target ? target.title : label}
         onClick={(event) => {
           if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
           event.preventDefault();
           if (mention.kind === 'item') app.openItem(mention.id);
+          else if (mention.kind === 'milestone') window.location.hash = href;
           else navigate('project', mention.id);
         }}
       >

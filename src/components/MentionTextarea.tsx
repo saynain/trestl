@@ -42,7 +42,14 @@ export function MentionTextarea({
           ? data.items
               .filter((i) => i.id !== excludeItemId)
               .map((i) => ({ kind: 'item', id: i.id, label: i.identifier, detail: i.title }))
-          : [];
+          : query?.kind === 'milestone'
+            ? data.milestones.map((m) => ({
+                kind: 'milestone',
+                id: m.id,
+                label: m.title,
+                detail: data.projects.find((p) => p.id === m.projectId)?.name ?? '',
+              }))
+            : [];
   const options = candidates
     .filter((o) =>
       `${o.label} ${o.detail}`.toLowerCase().includes(query?.query.toLowerCase() ?? ''),
@@ -148,7 +155,13 @@ export function MentionTextarea({
           <div className="mention-menu" ref={menuRef} style={menuPosition}>
             <div className="mention-menu-heading">
               {mentionTriggers[query.kind]}{' '}
-              {query.kind === 'user' ? 'People' : query.kind === 'item' ? 'Work items' : 'Projects'}
+              {query.kind === 'user'
+                ? 'People'
+                : query.kind === 'item'
+                  ? 'Work items'
+                  : query.kind === 'milestone'
+                    ? 'Milestones'
+                    : 'Projects'}
             </div>
             <div id={listId} role="listbox" aria-label="Mention suggestions">
               {options.map((option, index) => (
@@ -178,7 +191,7 @@ export function MentionTextarea({
           </div>,
           document.body,
         )}
-      <div className="mention-help">@ people · / work items · $ projects</div>
+      <div className="mention-help">@ people · / work items · $ projects · % milestones</div>
     </div>
   );
 }

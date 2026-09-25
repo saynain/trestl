@@ -379,6 +379,12 @@ export async function createApp(
       {
         item: (targetId) => checkedItem(s, u, targetId),
         project: (projectId) => checkedProject(s, u, projectId),
+        milestone: async (milestoneId) => {
+          const milestone = await s.get<Milestone>('milestones', milestoneId);
+          if (!milestone) return fail(404, 'Milestone not found');
+          await checkedProject(s, u, milestone.projectId);
+          return milestone;
+        },
         recipientCanRead: (recipient) => canItemIn(s, recipient, item.id),
       },
       activityId,
