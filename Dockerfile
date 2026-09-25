@@ -19,6 +19,13 @@ FROM build AS production-dependencies
 RUN pnpm prune --prod
 
 FROM node:22-bookworm-slim AS runtime
+# Public build provenance only. Never pass credentials in these arguments.
+ARG TRESTL_BUILD_COMMIT=""
+ARG TRESTL_BUILD_REF=""
+ARG TRESTL_BUILD_ID=""
+ARG TRESTL_BUILD_DATE=""
+ENV TRESTL_BUILD_COMMIT=$TRESTL_BUILD_COMMIT TRESTL_BUILD_REF=$TRESTL_BUILD_REF
+ENV TRESTL_BUILD_ID=$TRESTL_BUILD_ID TRESTL_BUILD_DATE=$TRESTL_BUILD_DATE
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=4317
 WORKDIR /app
 # tsx is a production dependency; compilers and other development tools stay out.

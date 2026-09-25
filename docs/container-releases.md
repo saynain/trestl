@@ -92,3 +92,36 @@ and [replication rules](https://goharbor.io/docs/main/administration/configuring
 
 The same release tag also publishes the CLI and [desktop installers](desktop.md)
 to GitHub Releases. Configure desktop signing before tagging.
+
+## Version information in Administration
+
+Installation administrators can open **Administration → Server version** to see
+this server's installed package version, commit, build identifier and build time.
+The server checks the latest stable GitHub Release from `saynain/trestl` and links
+to its release notes. It does not install or deploy updates.
+
+Release checks use an anonymous GitHub request with a five-second timeout. Results
+(including failures) are cached for 15 minutes. **Check for updates** bypasses that
+cache at most once per minute across administrators. If the repository is private,
+has no published release, GitHub rate limits requests, or the server is offline,
+the running version remains visible and update status becomes unknown. No GitHub
+integration credentials are used or sent by this feature.
+
+Published images capture commit, tag/branch, workflow run identifier and UTC build
+time through these non-secret Docker build arguments (also available as runtime
+environment variables for other deployment systems):
+
+- `TRESTL_BUILD_COMMIT`: full source commit.
+- `TRESTL_BUILD_REF`: source tag or branch, such as `v0.5.0` or `main`.
+- `TRESTL_BUILD_ID`: deployment/build identifier.
+- `TRESTL_BUILD_DATE`: ISO 8601 UTC build timestamp.
+
+The package version is always read from the installed server's `package.json`.
+Source checkouts detect their commit, exact tag and modified tracked files at
+startup. Desktop packaging captures equivalent metadata into its server bundle.
+Containers built outside the publication workflow should provide the arguments;
+missing provenance is displayed as unavailable. An equal-version custom build
+is reported as development/unreleased unless identified by a clean matching
+`v<package-version>` tag. A version ahead of the latest release is also unreleased,
+not an update error. Older versions report an available update. Restart the server
+after changing a source checkout or deployment metadata.

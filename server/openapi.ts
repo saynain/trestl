@@ -903,6 +903,42 @@ schemas.GitConnection = object({
   configured: { type: 'boolean' },
 });
 
+operation(
+  '/admin/version',
+  'get',
+  'Read running server version and latest stable release (admin only)',
+  object({
+    running: object({
+      version: string,
+      commit: nullableString,
+      buildId: nullableString,
+      builtAt: nullableString,
+      release: { type: 'boolean' },
+    }),
+    latest: {
+      ...object({ version: string, url: string, publishedAt: nullableString }),
+      type: ['object', 'null'],
+    },
+    status: { type: 'string', enum: ['up-to-date', 'update-available', 'unreleased', 'unknown'] },
+    checkedAt: string,
+    message: nullableString,
+  }),
+  undefined,
+  {
+    browserOnly: true,
+    description:
+      'Checks the public saynain/trestl GitHub Releases API with no credentials. Results, including failures, are cached for 15 minutes. Manual refresh is bounded to one upstream check per minute.',
+    parameters: [
+      {
+        name: 'refresh',
+        in: 'query',
+        schema: { type: 'boolean' },
+        description: 'Request a fresh release check, subject to the one-minute minimum interval.',
+      },
+    ],
+  },
+);
+
 const authenticationFields = {
   mode: { type: 'string', enum: ['local', 'google', 'oidc', 'proxy'] },
   origin: string,
