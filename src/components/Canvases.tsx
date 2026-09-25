@@ -3,6 +3,7 @@ import { Pencil, PencilRuler, Plus, Search, Trash2, Upload } from 'lucide-react'
 import type { CanvasCollection, CanvasSummary, Project, ProjectCanvas } from '../../shared/types';
 import { api, post } from '../lib/api';
 import { navigate } from '../lib/model';
+import { useApp } from '../lib/context';
 import { EmptyState, Modal } from './ui';
 import CanvasCard from './CanvasCard';
 import CanvasCollectionDialog from './CanvasCollectionDialog';
@@ -37,6 +38,7 @@ class EditorBoundary extends Component<
 }
 
 export default function Canvases({ project, canvasId }: { project: Project; canvasId?: string }) {
+  const { refresh } = useApp();
   const [canvases, setCanvases] = useState<CanvasSummary[]>([]);
   const [collections, setCollections] = useState<CanvasCollection[]>([]);
   const [collectionFilter, setCollectionFilter] = useState('all');
@@ -95,6 +97,7 @@ export default function Canvases({ project, canvasId }: { project: Project; canv
             );
           }
         }
+        if (active) void refresh();
       } catch (e) {
         if (active) setError((e as Error).message);
       } finally {
@@ -105,7 +108,7 @@ export default function Canvases({ project, canvasId }: { project: Project; canv
     return () => {
       active = false;
     };
-  }, [base, canvasId, retry]);
+  }, [base, canvasId, retry, refresh]);
   if (loading)
     return (
       <div className="canvas-loading" role="status">

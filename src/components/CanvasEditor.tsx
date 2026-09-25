@@ -70,7 +70,8 @@ export default function CanvasEditor({
   onOpen: (id: string) => void;
   onReload: () => void;
 }) {
-  const { data } = useApp();
+  const { data, refresh } = useApp();
+  const savedTitle = useRef(canvas.title);
   const [canvasTheme, setCanvasTheme] = useState(() => readCanvasTheme(data.user));
   useEffect(
     () => subscribeAppearance(() => setCanvasTheme(readCanvasTheme(data.user))),
@@ -96,8 +97,17 @@ export default function CanvasEditor({
     () =>
       new CanvasSaveQueue(
         canvas,
-        (draft, revision) =>
-          patch<ProjectCanvas>(`${base}/${canvas.id}`, { ...draft, expectedRevision: revision }),
+        async (draft, revision) => {
+          const result = await patch<ProjectCanvas>(`${base}/${canvas.id}`, {
+            ...draft,
+            expectedRevision: revision,
+          });
+          if (result.title !== savedTitle.current) {
+            savedTitle.current = result.title;
+            void refresh();
+          }
+          return result;
+        },
         () => {
           if (mounted.current) render((n) => n + 1);
         },

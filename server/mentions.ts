@@ -19,6 +19,7 @@ export async function addMentionRelations(
   check: {
     item: (id: string) => Promise<unknown>;
     project: (id: string) => Promise<unknown>;
+    canvas: (id: string) => Promise<unknown>;
     recipientCanRead: (recipient: User) => Promise<boolean>;
   },
   activityId: string | null = null,
@@ -68,7 +69,9 @@ export async function addMentionRelations(
           kind: 'related',
         }),
       );
-    } else {
+    } else if (mention.kind === 'canvas') {
+      await check.canvas(mention.id);
+    } else if (mention.kind === 'project') {
       await check.project(mention.id);
       if (projects.some((r) => r.itemId === item.id && r.projectId === mention.id)) continue;
       projects.push(

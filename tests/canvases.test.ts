@@ -100,7 +100,10 @@ test('project canvases persist, isolate access, reject stale writes, export, and
     const listed = (await call('GET', base)).json().data;
     assert.equal(listed.length, 1);
     assert.equal(listed[0].scene, undefined);
-    assert.equal((await call('GET', '/bootstrap')).json().canvases, undefined);
+    const summaries = (await call('GET', '/bootstrap')).json().canvases;
+    assert.equal(summaries.length, 1);
+    assert.equal(summaries[0].id, listed[0].id);
+    assert.equal(summaries[0].scene, undefined);
     assert.deepEqual((await call('GET', '/export')).json().canvases[0].scene, scene);
     await call('POST', '/users', {
       name: 'Member',
