@@ -145,6 +145,7 @@ export default function ItemForm({
           required
         />
         <MentionTextarea
+          projectId={project || null}
           className="item-description-input"
           aria-label="Description"
           placeholder="Add a description, a thought, or some context…"
