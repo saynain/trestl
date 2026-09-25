@@ -13,7 +13,8 @@ still developing.
 - Capture private tasks, ideas, and follow-ups in your personal inbox.
 - Organize nested projects and work in lists, boards, and saved views.
 - Plan dates, dependencies, milestones, Gantt schedules, and project roadmaps.
-- Keep diagrams in project canvases with the embedded Excalidraw editor.
+- Draw together in project canvases with live edits, collaborator cursors, and the
+  embedded Excalidraw editor. See [canvas collaboration](docs/canvas-collaboration.md).
 - Collaborate through project sharing, assignments, and internal discussions.
 - Link GitHub/Gitea issues and Confluence documentation.
 - Use a standalone CLI, a scoped API, and an optional Raycast extension.
