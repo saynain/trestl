@@ -2,6 +2,7 @@ import { downloadFile } from '../lib/download';
 import AuthenticationSettings from './AuthenticationSettings';
 import WorkspacePeople from './WorkspacePeople';
 import WorkspaceGeneral from './WorkspaceGeneral';
+import ServerVersionSettings from './ServerVersionSettings';
 import { Select } from './Select';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
@@ -29,6 +30,7 @@ import GitSettings, { type GitConnection } from './GitSettings';
 import AppearanceSettings from './AppearanceSettings';
 
 type Tab =
+  | 'version'
   | 'authentication'
   | 'tokens'
   | 'profile'
@@ -81,7 +83,10 @@ export default function Settings({
   const workspaceTabs: { id: Tab; label: string }[] = [
     { id: 'general', label: 'General' },
     ...(data.user.role === 'admin'
-      ? [{ id: 'authentication' as const, label: 'Authentication' }]
+      ? [
+          { id: 'authentication' as const, label: 'Authentication' },
+          { id: 'version' as const, label: 'Server version' },
+        ]
       : []),
     ...(!personal ? [{ id: 'people' as const, label: 'People' }] : []),
     { id: 'integrations', label: 'Integrations' },
@@ -201,6 +206,7 @@ export default function Settings({
             </>
           )}
           {tab === 'authentication' && <AuthenticationSettings />}
+          {tab === 'version' && <ServerVersionSettings />}
           {tab === 'general' && <WorkspaceGeneral />}
           {tab === 'people' && <WorkspacePeople />}
           {tab === 'integrations' && <WorkspaceIntegrations />}

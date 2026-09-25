@@ -6,6 +6,7 @@ import {
 import { compareProjectUpdates } from '../shared/project-updates.ts';
 import { addMentionRelations } from './mentions.ts';
 import { authSettings, configuredProxy, registerAuthSettings } from './auth-settings.ts';
+import { registerServerVersion } from './version.ts';
 import { createInstallation, installation, migrateInstallation } from './installation.ts';
 import {
   authenticateProxy,
@@ -644,6 +645,7 @@ export async function createApp(
   app.post('/api/v1/auth/switch', async () => fail(410, 'This server has one installation.'));
   registerWorkspaceRoutes(app, ctx);
   registerAuthSettings(app, ctx, session);
+  registerServerVersion(app, ctx);
   registerCliApproval(app, ctx);
   registerCliDeviceEndpoints(
     app,
