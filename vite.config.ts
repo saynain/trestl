@@ -72,7 +72,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': `http://127.0.0.1:${process.env.PORT || 4317}`,
+      '/api': { target: `http://127.0.0.1:${process.env.PORT || 4317}`, ws: true },
       '/cli-auth': `http://127.0.0.1:${process.env.PORT || 4317}`,
     },
   },

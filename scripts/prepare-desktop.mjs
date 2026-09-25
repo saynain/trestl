@@ -95,6 +95,30 @@ await buildWeb({
   ],
   build: { outDir: resolve(resources, 'web'), emptyOutDir: true },
 });
+// Freeze the packaged server identity while the source tree is still available.
+const serverPackage = JSON.parse(await readFile(resolve('package.json'), 'utf8'));
+function sourceGit(...args) {
+  try {
+    return (
+      execFileSync('git', args, { cwd: root, timeout: 1000, stdio: ['ignore', 'pipe', 'ignore'] })
+        .toString()
+        .trim() || null
+    );
+  } catch {
+    return null;
+  }
+}
+const serverCommit = sourceGit('rev-parse', 'HEAD');
+const serverDirty = !!sourceGit('status', '--porcelain', '--untracked-files=no');
+const serverBuild = {
+  version: serverPackage.version,
+  commit: serverCommit,
+  buildId: serverCommit ? `${serverCommit.slice(0, 12)}${serverDirty ? '-dirty' : ''}` : null,
+  builtAt: new Date().toISOString(),
+  release:
+    !serverDirty &&
+    sourceGit('describe', '--tags', '--exact-match', 'HEAD') === `v${serverPackage.version}`,
+};
 const result = await build({
   entryPoints: ['desktop/server.ts'],
   outfile: resolve(resources, 'server.cjs'),
@@ -102,6 +126,11 @@ const result = await build({
   platform: 'node',
   target: 'node22',
   format: 'cjs',
+  define: {
+    __TRESTL_BUNDLED_BUILD__: JSON.stringify(serverBuild),
+    'import.meta.url': '__trestlBundleUrl',
+  },
+  banner: { js: "const __trestlBundleUrl = require('node:url').pathToFileURL(__filename).href;" },
   external: ['@electric-sql/pglite', 'pg-native'],
   metafile: true,
 });

@@ -66,6 +66,14 @@ export const docPages = [
     description: 'Move a project and its context between installations.',
   },
   {
+    slug: 'canvas-collaboration',
+    title: 'Live canvas collaboration',
+    group: 'Using Trestl',
+    icon: 'users',
+    file: 'docs/canvas-collaboration.md',
+    description: 'Draw together, understand concurrent edits, and configure live connections.',
+  },
+  {
     slug: 'integrations/github',
     title: 'GitHub & Gitea',
     group: 'Integrations',

@@ -5,8 +5,10 @@ import {
   mentionQuery,
   mentionTriggers,
   type Mention,
+  type MentionKind,
 } from '../../shared/mentions';
 import { useApp } from '../lib/context';
+import { workItemOptions } from '../lib/work-item-options';
 import './mentions.css';
 
 type Option = Mention & { label: string; detail: string };
@@ -16,10 +18,14 @@ export function MentionTextarea({
   onChange,
   onKeyDown,
   excludeItemId,
+  projectId,
+  kinds,
   ...props
 }: Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'value'> & {
   value: string;
   excludeItemId?: string;
+  projectId?: string | null;
+  kinds?: MentionKind[];
 }) {
   const { data } = useApp();
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -30,7 +36,8 @@ export function MentionTextarea({
   const [focused, setFocused] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [selected, setSelected] = useState(0);
-  const query = focused && !dismissed ? mentionQuery(value, caret) : null;
+  const detected = focused && !dismissed ? mentionQuery(value, caret) : null;
+  const query = detected && (!kinds || kinds.includes(detected.kind)) ? detected : null;
   const candidates: Option[] =
     query?.kind === 'user'
       ? data.users
@@ -38,11 +45,28 @@ export function MentionTextarea({
           .map((u) => ({ kind: 'user', id: u.id, label: u.name, detail: u.email }))
       : query?.kind === 'project'
         ? data.projects.map((p) => ({ kind: 'project', id: p.id, label: p.name, detail: p.key }))
-        : query?.kind === 'item'
-          ? data.items
-              .filter((i) => i.id !== excludeItemId)
-              .map((i) => ({ kind: 'item', id: i.id, label: i.identifier, detail: i.title }))
-          : [];
+        : query?.kind === 'milestone'
+          ? data.milestones.map((m) => ({
+              kind: 'milestone',
+              id: m.id,
+              label: m.title,
+              detail: data.projects.find((p) => p.id === m.projectId)?.name ?? '',
+            }))
+          : query?.kind === 'canvas'
+            ? (data.canvases ?? []).map((c) => ({
+                kind: 'canvas',
+                id: c.id,
+                label: c.title,
+                detail: data.projects.find((p) => p.id === c.projectId)?.name ?? '',
+              }))
+            : query?.kind === 'item'
+              ? workItemOptions(data.items, data.projects, {
+                  projectId,
+                  excludeItemId,
+                  query: query.query,
+                  limit: 8,
+                }).map((option) => ({ ...option, kind: 'item' }))
+              : [];
   const options = candidates
     .filter((o) =>
       `${o.label} ${o.detail}`.toLowerCase().includes(query?.query.toLowerCase() ?? ''),
@@ -148,7 +172,15 @@ export function MentionTextarea({
           <div className="mention-menu" ref={menuRef} style={menuPosition}>
             <div className="mention-menu-heading">
               {mentionTriggers[query.kind]}{' '}
-              {query.kind === 'user' ? 'People' : query.kind === 'item' ? 'Work items' : 'Projects'}
+              {query.kind === 'user'
+                ? 'People'
+                : query.kind === 'item'
+                  ? 'Work items'
+                  : query.kind === 'milestone'
+                    ? 'Milestones'
+                    : query.kind === 'canvas'
+                      ? 'Canvases'
+                      : 'Projects'}
             </div>
             <div id={listId} role="listbox" aria-label="Mention suggestions">
               {options.map((option, index) => (
@@ -178,7 +210,11 @@ export function MentionTextarea({
           </div>,
           document.body,
         )}
-      <div className="mention-help">@ people · / work items · $ projects</div>
+      <div className="mention-help">
+        {kinds?.length === 1 && kinds[0] === 'canvas'
+          ? '! canvases'
+          : '@ people · / work items · $ projects · ! canvases · % milestones'}
+      </div>
     </div>
   );
 }

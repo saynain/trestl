@@ -1,3 +1,4 @@
+import { remapMentionIds } from '../shared/mentions.ts';
 import type { FastifyInstance } from 'fastify';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
@@ -28,7 +29,7 @@ import {
 
 const transferWarnings = [
   'Only content accessible to the exporting account is included. References outside the exported project tree are omitted.',
-  'Projects are copied with new IDs and work item numbers. The source is unchanged; links in descriptions and canvases keep their original URLs.',
+  'Projects are copied with new IDs and work item numbers. The source is unchanged; internal references are updated where their targets are included; external links keep their original URLs.',
   'Integration credentials and memberships are excluded. Linked issues become independent work items with their original external URL; live synchronization must be configured separately.',
 ];
 const importWarnings = [
@@ -308,12 +309,21 @@ export function registerProjectTransfer(
         const projectIds = new Map(data.projects.map((p) => [p.id, id()]));
         const itemIds = new Map(data.items.map((i) => [i.id, id()]));
         const milestoneIds = new Map(data.milestones.map((m) => [m.id, id()]));
+        const canvasIds = new Map(data.canvases.map((c) => [c.id, id()]));
+        const remap = (markdown: string) =>
+          remapMentionIds(markdown, {
+            project: projectIds,
+            item: itemIds,
+            milestone: milestoneIds,
+            canvas: canvasIds,
+          });
         const collectionIds = new Map(data.canvasCollections.map((c) => [c.id, id()]));
         const workspaceId = workspaceOf(user);
         for (const p of data.projects)
           await s.put<Project>('projects', {
             ...p,
             ...options.get(p.id)!,
+            description: remap(p.description),
             id: projectIds.get(p.id)!,
             workspaceId,
             parentId: p.parentId ? projectIds.get(p.parentId)! : null,
@@ -336,6 +346,7 @@ export function registerProjectTransfer(
           const projectId = projectIds.get(item.projectId)!;
           await s.put<WorkItem>('items', {
             ...item,
+            description: remap(item.description),
             id: itemIds.get(item.id)!,
             workspaceId,
             projectId,
@@ -353,6 +364,7 @@ export function registerProjectTransfer(
         for (const a of data.activity)
           await s.put<Activity>('activity', {
             ...a,
+            body: remap(a.body),
             id: id(),
             itemId: itemIds.get(a.itemId)!,
             userId: user.id,
@@ -360,6 +372,7 @@ export function registerProjectTransfer(
         for (const update of data.projectUpdates)
           await s.put<ProjectUpdate>('projectUpdates', {
             ...update,
+            body: remap(update.body),
             id: id(),
             sortKey: update.sortKey ?? update.id,
             projectId: projectIds.get(update.projectId)!,
@@ -397,7 +410,7 @@ export function registerProjectTransfer(
         for (const c of data.canvases)
           await s.put<ProjectCanvas>('canvases', {
             ...c,
-            id: id(),
+            id: canvasIds.get(c.id)!,
             projectId: projectIds.get(c.projectId)!,
             workspaceId,
             collectionId: c.collectionId ? collectionIds.get(c.collectionId)! : null,

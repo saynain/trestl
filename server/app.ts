@@ -5,7 +5,9 @@ import {
 } from './cli-login.ts';
 import { compareProjectUpdates } from '../shared/project-updates.ts';
 import { addMentionRelations } from './mentions.ts';
+import { extractMentions } from '../shared/mentions.ts';
 import { authSettings, configuredProxy, registerAuthSettings } from './auth-settings.ts';
+import { registerServerVersion } from './version.ts';
 import { createInstallation, installation, migrateInstallation } from './installation.ts';
 import {
   authenticateProxy,
@@ -16,6 +18,8 @@ import {
 import { createsDependencyCycle, scheduleConflicts } from '../shared/dependencies.ts';
 import { registerProjectTransfer } from './project-transfer.ts';
 import { registerCanvases } from './canvases.ts';
+import { registerCanvasCollaboration } from './canvas-collaboration.ts';
+import websocket from '@fastify/websocket';
 import { roadmapUpdate } from './roadmap.ts';
 import Fastify, { type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
@@ -44,6 +48,7 @@ import type {
   User,
   Workspace,
   ProjectCanvas,
+  CanvasSummary,
   CanvasCollection,
   Project,
   ProjectUpdate,
@@ -266,6 +271,9 @@ export async function createApp(
   app.decorateRequest('sessionMethod', null);
   app.decorateRequest('tokenScope', null);
   await app.register(cookie);
+  await app.register(websocket, {
+    options: { maxPayload: 8 * 1024 * 1024, perMessageDeflate: false },
+  });
   if (options.desktopToken) registerDesktopGateway(app, options.desktopToken);
   await app.register(rateLimit, { max: 300, timeWindow: '1 minute' });
   app.addHook('onClose', async () => db.close());
@@ -362,6 +370,27 @@ export async function createApp(
       return fail(404, 'Project not found');
     return project;
   };
+  const checkedCanvas = async (s: Store, user: User, canvasId: string) => {
+    const canvas = await s.get<ProjectCanvas>('canvases', canvasId);
+    if (!canvas || !sameWorkspace(user, canvas) || !(await canProjectIn(s, user, canvas.projectId)))
+      return fail(404, 'Canvas not found');
+    return canvas;
+  };
+  const validateProjectCanvasMentions = async (
+    s: Store,
+    user: User,
+    body: string,
+    previous = '',
+  ) => {
+    const old = new Set(
+      extractMentions(previous)
+        .filter((m) => m.kind === 'canvas')
+        .map((m) => m.id),
+    );
+    for (const mention of extractMentions(body))
+      if (mention.kind === 'canvas' && !old.has(mention.id))
+        await checkedCanvas(s, user, mention.id);
+  };
   const saveMentions = (
     s: Store,
     u: User,
@@ -379,6 +408,13 @@ export async function createApp(
       {
         item: (targetId) => checkedItem(s, u, targetId),
         project: (projectId) => checkedProject(s, u, projectId),
+        canvas: (canvasId) => checkedCanvas(s, u, canvasId),
+        milestone: async (milestoneId) => {
+          const milestone = await s.get<Milestone>('milestones', milestoneId);
+          if (!milestone) return fail(404, 'Milestone not found');
+          await checkedProject(s, u, milestone.projectId);
+          return milestone;
+        },
         recipientCanRead: (recipient) => canItemIn(s, recipient, item.id),
       },
       activityId,
@@ -438,17 +474,16 @@ export async function createApp(
     request.authMode = configured?.mode ?? (proxyAuth ? 'proxy' : 'local');
     const authorization = request.headers.authorization;
     const bearer = authorization?.match(/^Bearer (.+)$/i)?.[1];
+    // A WebSocket upgrade uses GET but opens a bidirectional write channel.
+    const writes =
+      !['GET', 'HEAD', 'OPTIONS'].includes(request.method) ||
+      request.headers.upgrade?.toLowerCase() === 'websocket';
     if (authorization && !bearer) fail(401, 'A valid Bearer token is required');
     if (proxyAuth && request.headers['x-trestl-api-only'] === 'true' && !bearer)
       fail(401, 'This API route requires a personal API token');
-    if (
-      proxyAuth &&
-      !['GET', 'HEAD', 'OPTIONS'].includes(request.method) &&
-      !bearer &&
-      request.headers.origin !== proxyAuth.origin
-    )
+    if (proxyAuth && writes && !bearer && request.headers.origin !== proxyAuth.origin)
       fail(403, 'Request origin is not allowed');
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && !bearer) {
+    if (writes && !bearer) {
       const origin = request.headers.origin;
       if (origin) {
         const allowed =
@@ -549,8 +584,7 @@ export async function createApp(
     )
       return;
     requireUser(request);
-    if (request.tokenScope === 'read' && !['GET', 'HEAD', 'OPTIONS'].includes(request.method))
-      fail(403, 'This token is read-only');
+    if (request.tokenScope === 'read' && writes) fail(403, 'This token is read-only');
   });
   app.get('/health', async () => ({ status: 'ok' }));
   app.get('/ready', async (_request, reply) => {
@@ -644,6 +678,7 @@ export async function createApp(
   app.post('/api/v1/auth/switch', async () => fail(410, 'This server has one installation.'));
   registerWorkspaceRoutes(app, ctx);
   registerAuthSettings(app, ctx, session);
+  registerServerVersion(app, ctx);
   registerCliApproval(app, ctx);
   registerCliDeviceEndpoints(
     app,
@@ -720,6 +755,7 @@ export async function createApp(
       allUpdates,
       allProjectRelations,
       allNotifications,
+      allCanvases,
     ] = await Promise.all([
       store.list<Project>('projects'),
       store.list<WorkItem>('items'),
@@ -731,6 +767,11 @@ export async function createApp(
       store.list<ProjectUpdate>('projectUpdates'),
       store.list<ProjectRelation>('projectRelations'),
       store.list<MentionNotification>('notifications'),
+      db
+        .query<{ data: CanvasSummary }>(
+          "SELECT data - 'scene' AS data FROM entities WHERE collection='canvases'",
+        )
+        .then((result) => result.rows.map((row) => row.data)),
     ]);
     const projectsById = new Map(allProjects.map((project) => [project.id, project]));
     const itemsById = new Map(allItems.map((item) => [item.id, item]));
@@ -784,6 +825,9 @@ export async function createApp(
       workspaces: (await userWorkspaces(store, user.id)).filter((w) => w.id === workspaceOf(user)),
       users: users.filter((member) => sameWorkspace(user, member)),
       projects,
+      canvases: allCanvases.filter(
+        (canvas) => sameWorkspace(user, canvas) && projectVisible(canvas.projectId),
+      ),
       projectUpdates: allUpdates.filter((update) => projectVisible(update.projectId)),
       items,
       views: allViews.filter((view) => view.userId === user.id && sameWorkspace(user, view)),
@@ -937,6 +981,7 @@ export async function createApp(
       };
       await validateProject(s, u, p);
       await validateProjectMembers(s, p);
+      await validateProjectCanvasMentions(s, u, p.description);
       return s.put('projects', p);
     });
     return reply.code(201).send(result);
@@ -988,6 +1033,7 @@ export async function createApp(
         await validateProjectMembers(s, p);
       }
       await validateProject(s, u, p);
+      await validateProjectCanvasMentions(s, u, p.description, old.description);
       if (
         old.ownerId !== u.id &&
         input.parentId !== undefined &&
@@ -1600,7 +1646,7 @@ export async function createApp(
   });
   app.post<{ Params: { id: string } }>('/api/v1/items/:id/relations', async (request, reply) => {
     const input = z
-      .object({ targetId: z.string().uuid(), kind: z.enum(['blocks', 'related']) })
+      .object({ targetId: z.string().uuid(), kind: z.enum(['blocks', 'blocked_by', 'related']) })
       .strict()
       .parse(request.body);
     const result = await mutate(async (s) => {
@@ -1608,17 +1654,29 @@ export async function createApp(
         item = await checkedItem(s, u, request.params.id);
       await checkedItem(s, u, input.targetId);
       if (item.id === input.targetId) fail(400, 'Cannot relate an item to itself');
+      // Store dependencies in one direction, regardless of which endpoint adds the link.
+      const relation = {
+        itemId: input.kind === 'blocked_by' ? input.targetId : item.id,
+        targetId: input.kind === 'blocked_by' ? item.id : input.targetId,
+        kind: input.kind === 'blocked_by' ? 'blocks' : input.kind,
+      };
       const relations = await s.list<Relation>('relations');
       const existing = relations.find(
-        (r) => r.itemId === item.id && r.targetId === input.targetId && r.kind === input.kind,
+        (r) =>
+          r.itemId === relation.itemId &&
+          r.targetId === relation.targetId &&
+          r.kind === relation.kind,
       );
       if (existing) return existing;
-      if (input.kind === 'blocks' && createsDependencyCycle(relations, item.id, input.targetId))
+      if (
+        relation.kind === 'blocks' &&
+        createsDependencyCycle(relations, relation.itemId, relation.targetId)
+      )
         fail(
           409,
           'This dependency would create a cycle. Remove a blocking link in the chain first.',
         );
-      return s.put('relations', { id: id(), itemId: item.id, ...input });
+      return s.put('relations', { id: id(), ...relation });
     });
     return reply.code(201).send(result);
   });
@@ -1783,6 +1841,7 @@ export async function createApp(
   });
   registerProjectTransfer(app, ctx, mutate);
   registerCanvases(app, ctx, mutate);
+  registerCanvasCollaboration(app, ctx, mutate);
   if (options.integrations !== false) {
     await registerIntegrations(app, ctx);
     await registerConfluence(app, ctx);

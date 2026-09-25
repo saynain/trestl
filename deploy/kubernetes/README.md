@@ -73,7 +73,8 @@ kubectl -n trestl rollout status deployment/trestl
 
 The example does not expose the service outside the cluster. Attach your own
 HTTPS Ingress or Gateway API HTTPRoute to Service `trestl`, port 80. Preserve
-the public Host header. Internal deployments should use internal DNS and an
+the public Host header and forward WebSocket upgrades on `/api/` for
+[live canvas collaboration](../../docs/canvas-collaboration.md#deployment). Internal deployments should use internal DNS and an
 internal gateway/load balancer. Permit that controller to reach the app and
 allow required database, DNS, and integration traffic in your network policies.
 An SSO proxy does not create Trestl user sessions; the pilot can use native

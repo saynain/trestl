@@ -437,6 +437,41 @@
 .canvas-save-status.error {
   color: var(--danger);
 }
+.canvas-presence {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  color: var(--muted);
+}
+.canvas-presence.live {
+  color: var(--accent);
+}
+.canvas-presence.blocked {
+  color: var(--danger);
+}
+.canvas-peer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 25px;
+  height: 25px;
+  border: 2px solid;
+  border-radius: 50%;
+  color: var(--text);
+  background: var(--surface);
+  font-size: var(--text-sm);
+}
+@media (min-width: 701px) and (max-width: 1100px) {
+  .canvas-editor-header {
+    gap: 10px;
+  }
+  .canvas-editor-header > .button span,
+  .canvas-theme-switch button span {
+    display: none;
+  }
+}
 .canvas-theme-switch {
   display: flex;
   flex-shrink: 0;
@@ -513,9 +548,13 @@
   }
   .canvas-editor-header {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: 40px minmax(0, 1fr) auto auto auto;
     gap: 10px;
     padding: 10px 12px;
+  }
+  .canvas-title {
+    grid-column: 2 / 5;
+    grid-row: 1;
   }
   .canvas-editor-header .button span {
     display: none;
@@ -527,10 +566,31 @@
     display: none;
   }
   .canvas-theme-switch {
-    grid-column: 2;
+    grid-column: 3;
+    grid-row: 2;
     justify-self: end;
   }
+  .canvas-presence {
+    grid-column: 1 / 3;
+    grid-row: 2;
+    font-size: var(--text-sm);
+    gap: 4px;
+  }
+  .canvas-peer {
+    width: 20px;
+    height: 20px;
+  }
+  .canvas-editor-header [aria-label='Copy canvas link'] {
+    grid-column: 4;
+    grid-row: 2;
+  }
+  .canvas-editor-header [aria-label='Save a copy'] {
+    grid-column: 5;
+    grid-row: 2;
+  }
   .canvas-save-status {
+    grid-column: 5;
+    grid-row: 1;
     font-size: var(--text-sm);
   }
 }

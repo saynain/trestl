@@ -1,21 +1,25 @@
 # Mentions in work items
 
-Descriptions (including new items) and comments support searchable mentions:
+Work item descriptions (including new items) and comments support searchable mentions.
+Project descriptions also support canvas references using `!`:
 
 | Trigger | Reference | Search by |
 | --- | --- | --- |
 | `@` | Person | Name or email |
 | `/` | Work item | Identifier or title |
 | `$` | Project | Name or key |
+| `!` | Canvas | Title or project name |
+| `%` | Milestone | Title or project name |
 
 Type a trigger at the start of a line or after a space, then choose a suggestion.
 Use the arrow keys and Enter or Tab, or click a suggestion. Escape dismisses the
-menu. Only people in the current workspace and projects/items you can access are
-offered. Code blocks, inline code, and existing links do not offer suggestions.
+menu. Canvas suggestions include the project name to distinguish identical titles. Only people in the current workspace and projects/items you can access are
+offered; canvas suggestions follow their project’s access rules. Code blocks, inline code, and existing links do not offer suggestions.
 
 Selected mentions are stored as Markdown links with stable IDs. The editor shows
 the Markdown source; the description and comment render names
-and clickable item/project references. Renames and item moves retain the target.
+and clickable item/project/canvas references. Canvas links open the selected canvas
+and display its current title. They do not create work item relationships or grant access. Renames and item moves retain the target.
 Unavailable targets render a placeholder. Person mentions identify a person;
 they do not assign work or grant access. New mentions notify that person in the
 app when they can access the work item.
@@ -46,9 +50,22 @@ responses, with `id`, `itemId`, and `projectId` fields. Both endpoints must be
 visible to the current user. Remove one with
 `DELETE /api/v1/items/{id}/project-relations/{relationId}`.
 
-Mention IDs are local to an installation. Project transfer bundles do not
-currently remap these references or include the new project relationships;
-reselect mentions after importing a project into another installation.
+Mention IDs are local to an installation. Project imports remap references to
+included projects, items, milestones, and canvases in descriptions and discussion.
+References to targets outside the bundle keep their original IDs and may be
+unavailable on another installation. Project relationships are not imported.
+
+## Milestone references
+
+Type `%` in a work item description or comment to choose an accessible milestone.
+A milestone reference displays its current title and opens its project overview
+with the milestone details visible. References are stored as
+`[%Launch](#/mention/milestone/UUID)` and survive renaming.
+
+These are references only: saving, editing, or removing one does not change the
+work item's assigned milestone, create a relationship, or affect milestone progress.
+Use the work item's milestone field to assign it. Missing or inaccessible targets
+render an unavailable placeholder without exposing their saved title.
 
 
 ## In-app notifications

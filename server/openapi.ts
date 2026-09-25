@@ -675,11 +675,15 @@ operation(
   'post',
   'Link related or blocked work',
   ref('Relation'),
-  object({ targetId: uuid, kind: { type: 'string', enum: ['blocks', 'related'] } }, [
+  object({ targetId: uuid, kind: { type: 'string', enum: ['blocks', 'blocked_by', 'related'] } }, [
     'targetId',
     'kind',
   ]),
-  { created: true },
+  {
+    created: true,
+    description:
+      'blocked_by means the target blocks this item. It is stored and returned as a blocks relationship from the target to this item, sharing the same relationship ID as the equivalent blocks request. Self-links and dependency cycles are rejected.',
+  },
 );
 operation('/items/{id}/relations/{relationId}', 'delete', 'Delete a relationship', {}, undefined, {
   noContent: true,
@@ -898,6 +902,42 @@ schemas.GitConnection = object({
   updatedAt: string,
   configured: { type: 'boolean' },
 });
+
+operation(
+  '/admin/version',
+  'get',
+  'Read running server version and latest stable release (admin only)',
+  object({
+    running: object({
+      version: string,
+      commit: nullableString,
+      buildId: nullableString,
+      builtAt: nullableString,
+      release: { type: 'boolean' },
+    }),
+    latest: {
+      ...object({ version: string, url: string, publishedAt: nullableString }),
+      type: ['object', 'null'],
+    },
+    status: { type: 'string', enum: ['up-to-date', 'update-available', 'unreleased', 'unknown'] },
+    checkedAt: string,
+    message: nullableString,
+  }),
+  undefined,
+  {
+    browserOnly: true,
+    description:
+      'Checks the public saynain/trestl GitHub Releases API with no credentials. Results, including failures, are cached for 15 minutes. Manual refresh is bounded to one upstream check per minute.',
+    parameters: [
+      {
+        name: 'refresh',
+        in: 'query',
+        schema: { type: 'boolean' },
+        description: 'Request a fresh release check, subject to the one-minute minimum interval.',
+      },
+    ],
+  },
+);
 
 const authenticationFields = {
   mode: { type: 'string', enum: ['local', 'google', 'oidc', 'proxy'] },

@@ -17,6 +17,8 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    outputs:
+      signing_ready: ${{ steps.signing.outputs.ready }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -34,13 +36,49 @@ jobs:
         run: |
           git merge-base --is-ancestor HEAD origin/main
           node scripts/desktop-release.mjs verify "$RELEASE_TAG"
+      - name: Check desktop release signing readiness
+        id: signing
+        if: github.ref_type == 'tag'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          missing=()
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET AZURE_TENANT_ID AZURE_SIGNING_ENDPOINT AZURE_SIGNING_ACCOUNT AZURE_SIGNING_PROFILE TAURI_SIGNING_PRIVATE_KEY; do
+            if [[ -z "${!name}" ]]; then missing+=("$name"); fi
+          done
+          if (( ${#missing[@]} )); then
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            echo '::notice::Desktop publication is pending signing configuration. No desktop release artifacts will be published.'
+            {
+              echo '### Desktop publication pending'
+              echo 'The app version is aligned, but signed installers and the updater feed are not published.'
+              printf -- '- Missing signing setting: `%s`\n' "${missing[@]}"
+              echo 'Configure the existing signing credentials and rerun this workflow on the same immutable release tag.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          fi
 
   release-checks:
-    if: github.ref_type == 'tag'
+    needs: verify
+    if: github.ref_type == 'tag' && needs.verify.outputs.signing_ready == 'true'
     uses: ./.github/workflows/ci.yml
 
   desktop:
     needs: verify
+    if: github.ref_type != 'tag' || needs.verify.outputs.signing_ready == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -210,7 +248,7 @@ jobs:
           retention-days: 14
 
   publish:
-    if: github.ref_type == 'tag'
+    if: github.ref_type == 'tag' && needs.verify.outputs.signing_ready == 'true'
     needs: [verify, release-checks, desktop]
     runs-on: ubuntu-latest
     permissions:

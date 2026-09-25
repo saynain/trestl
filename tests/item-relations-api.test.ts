@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createApp } from '../server/app.ts';
 import { cookieOf, memberSession } from './installation-fixture.ts';
 import { openapi } from '../server/openapi.ts';
@@ -127,6 +130,156 @@ test('item relations expose both directions and display metadata without disclos
   }
 });
 
+test('blocked by creates one canonical dependency with inverse validation and persistent removal', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'trestl-blocked-by-'));
+  let app = await createApp({ dataDir, integrations: false });
+  try {
+    const setup = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/setup',
+      payload: {
+        name: 'Dependency owner',
+        email: 'inverse@example.test',
+        password: 'inverse-test-password',
+        seedDemo: false,
+      },
+    });
+    const cookie = cookieOf(setup);
+    const api = (
+      method: 'GET' | 'POST' | 'DELETE',
+      path: string,
+      payload?: object,
+      session = cookie,
+    ) =>
+      app.inject({
+        method,
+        url: `/api/v1${path}`,
+        headers: { cookie: session },
+        ...(payload ? { payload } : {}),
+      });
+    const makeItem = async (title: string, extra = {}) => {
+      const response = await api('POST', '/items', { title, ...extra });
+      assert.equal(response.statusCode, 201, response.body);
+      return response.json();
+    };
+    const a = await makeItem('Prepare');
+    const b = await makeItem('Build');
+    const c = await makeItem('Ship');
+    const create = await api('POST', `/items/${b.identifier}/relations`, {
+      targetId: a.id,
+      kind: 'blocked_by',
+    });
+    assert.equal(create.statusCode, 201, create.body);
+    const relation = create.json();
+    assert.deepEqual(relation, {
+      id: relation.id,
+      itemId: a.id,
+      targetId: b.id,
+      kind: 'blocks',
+    });
+    for (const [from, targetId, kind] of [
+      [a.id, b.id, 'blocks'],
+      [b.id, a.id, 'blocked_by'],
+    ]) {
+      const duplicate = await api('POST', `/items/${from}/relations`, { targetId, kind });
+      assert.equal(duplicate.statusCode, 201, duplicate.body);
+      assert.deepEqual(duplicate.json(), relation);
+    }
+    const second = await api('POST', `/items/${c.id}/relations`, {
+      targetId: b.id,
+      kind: 'blocked_by',
+    });
+    assert.equal(second.statusCode, 201, second.body);
+    assert.equal(
+      (
+        await api('POST', `/items/${a.id}/relations`, {
+          targetId: c.id,
+          kind: 'blocked_by',
+        })
+      ).statusCode,
+      409,
+      'Inverse requests must also reject transitive cycles',
+    );
+    assert.equal(
+      (
+        await api('POST', `/items/${a.id}/relations`, {
+          targetId: a.id,
+          kind: 'blocked_by',
+        })
+      ).statusCode,
+      400,
+    );
+    const secret = await makeItem('Secret blocker', { visibility: 'private' });
+    const member = cookieOf(
+      await memberSession(app, cookie, {
+        name: 'Member',
+        email: 'inverse-member@example.test',
+        password: 'inverse-member-password',
+      }),
+    );
+    assert.equal(
+      (
+        await api(
+          'POST',
+          `/items/${b.id}/relations`,
+          {
+            targetId: secret.id,
+            kind: 'blocked_by',
+          },
+          member,
+        )
+      ).statusCode,
+      404,
+    );
+    assert.equal(
+      (
+        await api(
+          'POST',
+          `/items/${secret.id}/relations`,
+          {
+            targetId: b.id,
+            kind: 'blocked_by',
+          },
+          member,
+        )
+      ).statusCode,
+      404,
+    );
+
+    await app.close();
+    app = await createApp({ dataDir, integrations: false });
+    const outgoing = (await api('GET', `/items/${a.id}/relations`)).json().data;
+    assert.deepEqual(outgoing, [
+      {
+        ...relation,
+        direction: 'outgoing',
+        relatedItem: { id: b.id, identifier: b.identifier, title: b.title },
+      },
+    ]);
+    const incoming = (await api('GET', `/items/${b.id}/relations`)).json().data;
+    assert.deepEqual(
+      incoming.find((r: { id: string }) => r.id === relation.id),
+      {
+        ...relation,
+        direction: 'incoming',
+        relatedItem: { id: a.id, identifier: a.identifier, title: a.title },
+      },
+    );
+    assert.equal((await api('GET', `/items/${b.id}`)).json().relations.length, 2);
+    assert.equal((await api('GET', '/bootstrap')).json().relations.length, 2);
+    assert.equal((await api('DELETE', `/items/${b.id}/relations/${relation.id}`)).statusCode, 204);
+    assert.deepEqual((await api('GET', `/items/${a.id}/relations`)).json(), { data: [] });
+    assert.equal(
+      (await api('DELETE', `/items/${b.id}/relations/${second.json().id}`)).statusCode,
+      204,
+    );
+    assert.deepEqual((await api('GET', `/items/${c.id}/relations`)).json(), { data: [] });
+  } finally {
+    await app.close();
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test('OpenAPI documents item mutation envelopes, relation reads and revision preconditions', () => {
   const paths = openapi.paths as Record<string, Record<string, any>>;
   const deletion = paths['/items/{id}'].delete;
@@ -150,6 +303,11 @@ test('OpenAPI documents item mutation envelopes, relation reads and revision pre
   assert.equal(
     paths['/items/{id}/relations'].post.responses['201'].content['application/json'].schema.$ref,
     '#/components/schemas/Relation',
+  );
+  assert.deepEqual(
+    paths['/items/{id}/relations'].post.requestBody.content['application/json'].schema.properties
+      .kind.enum,
+    ['blocks', 'blocked_by', 'related'],
   );
   for (const methods of Object.values(paths)) {
     for (const operation of Object.values(methods)) {

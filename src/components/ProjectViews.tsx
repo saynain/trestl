@@ -125,10 +125,18 @@ export function AllProjects() {
     </div>
   );
 }
-export function Overview({ project, items }: { project: Project; items: WorkItem[] }) {
+export function Overview({
+  project,
+  items,
+  milestoneId,
+}: {
+  project: Project;
+  items: WorkItem[];
+  milestoneId?: string;
+}) {
   const { data, refresh, toast, createProject, editProject, openItem } = useApp();
   const [milestoneOpen, setMilestoneOpen] = useState(false);
-  const [selectedMilestone, setSelectedMilestone] = useState<string | null>(null);
+  const [selectedMilestone, setSelectedMilestone] = useState<string | null>(milestoneId ?? null);
   const [milestoneTitle, setMilestoneTitle] = useState('');
   const [milestoneDue, setMilestoneDue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -164,7 +172,10 @@ export function Overview({ project, items }: { project: Project; items: WorkItem
       {selectedMilestone && milestones.find((m) => m.id === selectedMilestone) && (
         <Modal
           title={milestones.find((m) => m.id === selectedMilestone)!.title}
-          onClose={() => setSelectedMilestone(null)}
+          onClose={() => {
+            setSelectedMilestone(null);
+            if (milestoneId) navigate('project', project.id, 'overview');
+          }}
         >
           <MilestoneItems milestone={milestones.find((m) => m.id === selectedMilestone)!} />
         </Modal>
