@@ -22,12 +22,23 @@ export default defineConfig({
       enforce: 'pre',
       generateBundle() {
         for (const moduleId of this.getModuleIds()) {
-          if (moduleId.split('?')[0] === resolve(repo, 'src/lib/api.ts')) {
+          if (
+            ['src/lib/api.ts', 'src/lib/canvas-collaboration.ts'].some(
+              (file) => moduleId.split('?')[0] === resolve(repo, file),
+            )
+          ) {
             this.error('The website demo must never include the production API transport.');
           }
         }
       },
       resolveId(id, importer) {
+        if (
+          importer &&
+          id.startsWith('.') &&
+          resolve(dirname(importer), id).replace(/\.tsx?$/, '') ===
+            resolve(repo, 'src/lib/canvas-collaboration')
+        )
+          return resolve(here, 'canvas-collaboration.ts');
         if (
           importer &&
           id.startsWith('.') &&

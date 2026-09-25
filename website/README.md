@@ -52,7 +52,7 @@ Run `pnpm --dir website check:docs` after a build to verify all built internal l
 - `src/pages/api/search.json.ts`: static full-text search index.
 - `scripts/check-docs.mjs`: built documentation integrity checks.
 - `demo/main.tsx`: the real product entry point and styles.
-- `demo/vite.config.ts`: reuses the product build and substitutes its API transport and demo appearance preferences. A build guard rejects the production transport.
+- `demo/vite.config.ts`: reuses the product build and substitutes its API transport and demo appearance preferences. A build guard rejects the production HTTP and canvas WebSocket transports. `demo/canvas-collaboration.ts` keeps canvas saves in the frame and labels the editor **Local demo**.
 - `demo/themes.ts`: reuses the product palette library and editor while preserving website theme inheritance and manual overrides.
 - `demo/api.ts`: per-instance, in-memory adapter; unsupported requests fail closed without contacting a backend.
 - `demo/seed.ts`: sample projects, work items, issues, milestones, roadmap, and canvas.

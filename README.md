@@ -16,7 +16,8 @@ still developing.
 - Organize nested projects and work in lists, boards, and saved views.
 - Plan dates, dependencies, milestones, Gantt schedules, and project roadmaps.
 - Post project health updates and review active projects together in a weekly meeting.
-- Keep diagrams in project canvases with the embedded Excalidraw editor.
+- Draw together in project canvases with live edits, collaborator cursors, and the
+  embedded Excalidraw editor. See [canvas collaboration](docs/canvas-collaboration.md).
 - Collaborate through project sharing, assignments, and internal discussions.
 - Link GitHub/Gitea issues and Confluence documentation.
 - Use a standalone CLI, a scoped API, and an optional Raycast extension.

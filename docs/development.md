@@ -9,7 +9,7 @@ pnpm dev
 ```
 
 Open http://127.0.0.1:5173. Vite serves the frontend and proxies API requests
-to the Fastify server on port 4317. Both reload when source files change.
+and canvas WebSocket connections to the Fastify server on port 4317. Both reload when source files change.
 Create the first administrator through the setup screen. There are no default
 credentials. You can choose an empty workspace or disposable example data.
 

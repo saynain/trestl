@@ -43,13 +43,16 @@ export function registerDesktopGateway(app: FastifyInstance, token: string) {
       return reply.code(400).send({ message: 'Desktop installations use local accounts' });
   });
   app.addHook('onSend', async (_request, reply) => {
+    const address = app.server.address();
+    const socketOrigin =
+      address && typeof address !== 'string' ? ` ws://127.0.0.1:${address.port}` : '';
     reply.header('Referrer-Policy', 'no-referrer');
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('X-Frame-Options', 'DENY');
     reply.header('Cache-Control', 'no-store');
     reply.header(
       'Content-Security-Policy',
-      "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; frame-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+      `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self'${socketOrigin}; worker-src 'self' blob:; frame-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`,
     );
   });
 }

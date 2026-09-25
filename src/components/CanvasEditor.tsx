@@ -11,13 +11,15 @@ import {
   Sun,
   Trash2,
   Upload,
+  Users,
+  Link,
 } from 'lucide-react';
 import {
   Excalidraw,
+  CaptureUpdateAction,
   MainMenu,
   exportToBlob,
   exportToSvg,
-  serializeAsJSON,
 } from '@excalidraw/excalidraw';
 import type {
   AppState,
@@ -27,8 +29,8 @@ import type {
 } from '@excalidraw/excalidraw/types';
 import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types';
 import type { CanvasScene, Project, ProjectCanvas } from '../../shared/types';
-import { api, ApiError, patch, post } from '../lib/api';
-import { CanvasSaveQueue } from '../lib/canvas-save';
+import { api, post } from '../lib/api';
+import { CanvasCollaboration } from '../lib/canvas-collaboration';
 import { useApp } from '../lib/context';
 import {
   readCanvasTheme,
@@ -46,14 +48,14 @@ function sceneFrom(
   appState: Partial<AppState>,
   files: BinaryFiles,
 ): CanvasScene {
-  const data = JSON.parse(serializeAsJSON(elements, appState, files, 'local'));
   return {
-    elements: data.elements,
+    // Keep version metadata and deleted elements for collaboration/reconnection.
+    elements: JSON.parse(JSON.stringify(elements)),
     appState: {
       viewBackgroundColor: appState.viewBackgroundColor ?? '#ffffff',
       gridSize: appState.gridSize ?? null,
     },
-    files: data.files ?? {},
+    files: files as CanvasScene['files'],
   };
 }
 
@@ -83,6 +85,8 @@ export default function CanvasEditor({
   };
   const [, render] = useState(0);
   const [editor, setEditor] = useState<ExcalidrawImperativeAPI>();
+  const editorRef = useRef<ExcalidrawImperativeAPI | undefined>(undefined);
+  const applyingRemote = useRef(false);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(busy);
@@ -93,31 +97,55 @@ export default function CanvasEditor({
   const mounted = useRef(true);
   const allowNavigation = useRef(false);
   const base = `/projects/${project.id}/canvases`;
+  const applyScene = (scene: CanvasScene) => {
+    const currentEditor = editorRef.current;
+    if (!currentEditor) return;
+    applyingRemote.current = true;
+    try {
+      const knownFiles = currentEditor.getFiles();
+      const missingFiles = Object.values(scene.files).filter((file) => !knownFiles[file.id]);
+      if (missingFiles.length)
+        currentEditor.addFiles(structuredClone(missingFiles) as BinaryFiles[string][]);
+      currentEditor.updateScene({
+        // Excalidraw mutates its elements while dragging. Keep its objects apart
+        // from the acknowledged scene and the pending collaboration journal.
+        elements: structuredClone(scene.elements) as unknown as ExcalidrawElement[],
+        appState: {
+          viewBackgroundColor: scene.appState.viewBackgroundColor ?? '#ffffff',
+          gridSize: scene.appState.gridSize ?? 20,
+        },
+        captureUpdate: CaptureUpdateAction.NEVER,
+      });
+    } finally {
+      applyingRemote.current = false;
+    }
+  };
   const [queue] = useState(
     () =>
-      new CanvasSaveQueue(
+      new CanvasCollaboration(
         canvas,
-        async (draft, revision) => {
-          const result = await patch<ProjectCanvas>(`${base}/${canvas.id}`, {
-            ...draft,
-            expectedRevision: revision,
-          });
-          if (result.title !== savedTitle.current) {
-            savedTitle.current = result.title;
-            void refresh();
-          }
-          return result;
-        },
         () => {
           if (mounted.current) render((n) => n + 1);
         },
+        (draft) => applyScene(draft.scene),
       ),
   );
+  useEffect(() => {
+    if (queue.status === 'saved' && queue.draft.title !== savedTitle.current) {
+      savedTitle.current = queue.draft.title;
+      void refresh();
+    }
+  }, [queue.status, queue.draft.title, refresh]);
   const [initialData] = useState(
-    () => ({ ...canvas.scene, scrollToContent: true }) as unknown as ExcalidrawInitialDataState,
+    () =>
+      ({
+        ...structuredClone(canvas.scene),
+        scrollToContent: true,
+      }) as unknown as ExcalidrawInitialDataState,
   );
   useEffect(() => {
     mounted.current = true;
+    queue.start();
     // Keep keyboard focus and assistive technology within the full-page editor.
     const outside: { element: HTMLElement; inert: boolean }[] = [];
     let node: HTMLElement | null = root.current;
@@ -159,6 +187,26 @@ export default function CanvasEditor({
       window.removeEventListener('trestl:before-navigate', beforeNavigate);
     };
   }, [queue]);
+  useEffect(() => {
+    editorRef.current = editor;
+    if (editor) applyScene(queue.draft.scene);
+  }, [editor]);
+  useEffect(() => {
+    editor?.updateScene({
+      collaborators: new Map(
+        queue.peers.map((peer) => [
+          peer.id,
+          {
+            username: peer.name,
+            pointer: peer.pointer,
+            button: peer.button,
+            selectedElementIds: peer.selectedElementIds as AppState['selectedElementIds'],
+            color: { background: peer.color, stroke: peer.color },
+          },
+        ]),
+      ) as AppState['collaborators'],
+    });
+  }, [editor, queue.peers]);
   const filename = (queue.draft.title.trim() || 'Untitled canvas').replace(/[/\\:*?"<>|]/g, '-');
   const exportJson = () =>
     download(
@@ -176,7 +224,7 @@ export default function CanvasEditor({
       `${filename}.excalidraw`,
     );
   const error = queue.error instanceof Error ? queue.error.message : 'Unable to save this canvas.';
-  const conflict = queue.error instanceof ApiError && queue.error.status === 409;
+  const needsReload = queue.connection === 'blocked';
   async function switchCanvas(id?: string) {
     if (busyRef.current) return;
     busyRef.current = true;
@@ -272,6 +320,37 @@ export default function CanvasEditor({
             onChange={(e) => queue.update({ ...queue.draft, title: e.target.value })}
           />
         </div>
+        <div
+          className={`canvas-presence ${queue.connection}`}
+          role="status"
+          aria-label="Canvas collaboration"
+        >
+          <Users size={15} />
+          <span>
+            {!queue.isShared
+              ? 'Local demo'
+              : queue.connection === 'live'
+                ? queue.peers.length
+                  ? `${queue.peers.length + 1} editing`
+                  : 'Live'
+                : queue.connection === 'connecting'
+                  ? 'Connecting…'
+                  : queue.connection === 'blocked'
+                    ? 'Disconnected'
+                    : 'Reconnecting…'}
+          </span>
+          {queue.peers.slice(0, 3).map((peer) => (
+            <span
+              className="canvas-peer"
+              key={peer.id}
+              title={peer.name}
+              aria-label={peer.name}
+              style={{ borderColor: peer.color }}
+            >
+              {peer.name.trim().slice(0, 1).toUpperCase()}
+            </span>
+          ))}
+        </div>
         <span className={`canvas-save-status ${queue.status}`} role="status">
           {queue.status === 'saved' ? (
             <Check size={14} />
@@ -306,6 +385,24 @@ export default function CanvasEditor({
             <span>Dark</span>
           </button>
         </div>
+        {queue.isShared && (
+          <button
+            className="button"
+            aria-label="Copy canvas link"
+            title="Copy link for people with access to this project"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(window.location.href);
+                setNotice('Canvas link copied. People with project access can join you here.');
+              } catch {
+                setNotice('Copy the address from your browser to share this canvas.');
+              }
+            }}
+          >
+            <Link size={15} />
+            <span>Share</span>
+          </button>
+        )}
         <button
           className="button"
           disabled={busy || queue.status === 'saving'}
@@ -320,12 +417,12 @@ export default function CanvasEditor({
       {(notice || queue.status === 'error') && (
         <div className="canvas-notice" role="alert">
           <span>{queue.status === 'error' ? error : notice}</span>
-          {queue.status === 'error' && !conflict && (
+          {queue.status === 'error' && !needsReload && (
             <button className="button" onClick={() => void queue.flush()}>
               Retry save
             </button>
           )}
-          {conflict && (
+          {needsReload && (
             <button
               className="button"
               disabled={busy}
@@ -378,6 +475,8 @@ export default function CanvasEditor({
         <Excalidraw
           initialData={initialData}
           excalidrawAPI={setEditor}
+          isCollaborating={queue.isShared && queue.connection === 'live'}
+          onPointerUpdate={({ pointer, button }) => queue.updatePresence({ pointer, button })}
           name={queue.draft.title}
           autoFocus
           handleKeyboardGlobally={false}
@@ -387,6 +486,8 @@ export default function CanvasEditor({
             canvasActions: { loadScene: false, saveToActiveFile: false, export: false },
           }}
           onChange={(elements, appState, files) => {
+            if (applyingRemote.current) return;
+            queue.updatePresence({ selectedElementIds: appState.selectedElementIds });
             // An image can briefly exist before Excalidraw finishes processing its file.
             if (
               appState.isLoading ||
@@ -466,9 +567,8 @@ export default function CanvasEditor({
                 disabled={busy || queue.status === 'saving'}
                 onClick={async () => {
                   setBusy(true);
-
-                  queue.dispose();
                   try {
+                    if (!(await queue.flush())) return;
                     await api(`${base}/${canvas.id}`, {
                       method: 'DELETE',
                       body: JSON.stringify({ expectedRevision: queue.revision }),

@@ -6,7 +6,7 @@ import type { CanvasCollection, ProjectCanvas, User } from '../shared/types.ts';
 import { sameWorkspace, workspaceOf } from './workspaces.ts';
 
 export const canvasBodyLimit = 8 * 1024 * 1024;
-const element = z
+export const canvasElement = z
   .object({
     id: z.string().min(1).max(200),
     link: z
@@ -43,7 +43,7 @@ const element = z
     height: z.number().nonnegative(),
   })
   .passthrough();
-const file = z
+export const canvasFile = z
   .object({
     id: z.string().min(1).max(200),
     mimeType: z.enum(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml']),
@@ -62,7 +62,7 @@ const file = z
 export const canvasScene = z
   .object({
     elements: z
-      .array(element)
+      .array(canvasElement)
       .max(20000)
       .refine(
         (elements) => new Set(elements.map((e) => e.id)).size === elements.length,
@@ -75,7 +75,7 @@ export const canvasScene = z
       })
       .strict(),
     files: z
-      .record(z.string().max(200), file)
+      .record(z.string().max(200), canvasFile)
       .refine(
         (files) => Object.entries(files).every(([key, value]) => key === value.id),
         'Image IDs must match',

@@ -18,6 +18,8 @@ import {
 import { createsDependencyCycle, scheduleConflicts } from '../shared/dependencies.ts';
 import { registerProjectTransfer } from './project-transfer.ts';
 import { registerCanvases } from './canvases.ts';
+import { registerCanvasCollaboration } from './canvas-collaboration.ts';
+import websocket from '@fastify/websocket';
 import { roadmapUpdate } from './roadmap.ts';
 import Fastify, { type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
@@ -269,6 +271,9 @@ export async function createApp(
   app.decorateRequest('sessionMethod', null);
   app.decorateRequest('tokenScope', null);
   await app.register(cookie);
+  await app.register(websocket, {
+    options: { maxPayload: 8 * 1024 * 1024, perMessageDeflate: false },
+  });
   if (options.desktopToken) registerDesktopGateway(app, options.desktopToken);
   await app.register(rateLimit, { max: 300, timeWindow: '1 minute' });
   app.addHook('onClose', async () => db.close());
@@ -469,17 +474,16 @@ export async function createApp(
     request.authMode = configured?.mode ?? (proxyAuth ? 'proxy' : 'local');
     const authorization = request.headers.authorization;
     const bearer = authorization?.match(/^Bearer (.+)$/i)?.[1];
+    // A WebSocket upgrade uses GET but opens a bidirectional write channel.
+    const writes =
+      !['GET', 'HEAD', 'OPTIONS'].includes(request.method) ||
+      request.headers.upgrade?.toLowerCase() === 'websocket';
     if (authorization && !bearer) fail(401, 'A valid Bearer token is required');
     if (proxyAuth && request.headers['x-trestl-api-only'] === 'true' && !bearer)
       fail(401, 'This API route requires a personal API token');
-    if (
-      proxyAuth &&
-      !['GET', 'HEAD', 'OPTIONS'].includes(request.method) &&
-      !bearer &&
-      request.headers.origin !== proxyAuth.origin
-    )
+    if (proxyAuth && writes && !bearer && request.headers.origin !== proxyAuth.origin)
       fail(403, 'Request origin is not allowed');
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && !bearer) {
+    if (writes && !bearer) {
       const origin = request.headers.origin;
       if (origin) {
         const allowed =
@@ -580,8 +584,7 @@ export async function createApp(
     )
       return;
     requireUser(request);
-    if (request.tokenScope === 'read' && !['GET', 'HEAD', 'OPTIONS'].includes(request.method))
-      fail(403, 'This token is read-only');
+    if (request.tokenScope === 'read' && writes) fail(403, 'This token is read-only');
   });
   app.get('/health', async () => ({ status: 'ok' }));
   app.get('/ready', async (_request, reply) => {
@@ -1838,6 +1841,7 @@ export async function createApp(
   });
   registerProjectTransfer(app, ctx, mutate);
   registerCanvases(app, ctx, mutate);
+  registerCanvasCollaboration(app, ctx, mutate);
   if (options.integrations !== false) {
     await registerIntegrations(app, ctx);
     await registerConfluence(app, ctx);
