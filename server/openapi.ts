@@ -675,11 +675,15 @@ operation(
   'post',
   'Link related or blocked work',
   ref('Relation'),
-  object({ targetId: uuid, kind: { type: 'string', enum: ['blocks', 'related'] } }, [
+  object({ targetId: uuid, kind: { type: 'string', enum: ['blocks', 'blocked_by', 'related'] } }, [
     'targetId',
     'kind',
   ]),
-  { created: true },
+  {
+    created: true,
+    description:
+      'blocked_by means the target blocks this item. It is stored and returned as a blocks relationship from the target to this item, sharing the same relationship ID as the equivalent blocks request. Self-links and dependency cycles are rejected.',
+  },
 );
 operation('/items/{id}/relations/{relationId}', 'delete', 'Delete a relationship', {}, undefined, {
   noContent: true,

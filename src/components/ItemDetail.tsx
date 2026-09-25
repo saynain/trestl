@@ -740,6 +740,7 @@ export default function ItemDetail({
                       onChange={(e) => setRelationKind(e.target.value)}
                     >
                       <option value="blocks">Blocks</option>
+                      <option value="blocked_by">Blocked by</option>
                       <option value="related">Related to</option>
                     </Select>
                     <Select
