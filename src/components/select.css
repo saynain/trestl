@@ -16,7 +16,7 @@
   border-radius: 6px;
   background: var(--bg);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--text-ui);
   font-weight: 400;
   line-height: 1.4;
   text-align: left;
@@ -66,7 +66,7 @@
     0 8px 24px #0002,
     0 24px 60px #0002,
     0 0 0 1px #00000008;
-  font-size: 12px;
+  font-size: var(--text-ui);
   font-weight: 400;
   text-align: left;
 }
@@ -92,7 +92,7 @@
   flex-shrink: 0;
 }
 .picker-heading {
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 500;
 }
 .picker-heading kbd {
@@ -100,7 +100,7 @@
   border: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-sm);
   opacity: 0.65;
 }
 .picker-search input {
@@ -159,7 +159,7 @@
 }
 .picker-group {
   padding: 10px 9px 5px;
-  font-size: 10px;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--muted);
 }
@@ -184,7 +184,7 @@
 .item-property .picker-trigger {
   border-color: transparent;
   background: transparent;
-  font-size: 11px;
+  font-size: var(--text-sm);
   padding: 5px 4px;
   min-height: 30px;
 }
@@ -208,7 +208,7 @@
   min-height: 24px;
   border: 0;
   padding: 0 2px;
-  font-size: 11px;
+  font-size: var(--text-sm);
   background: transparent;
 }
 .group-select > .picker {

@@ -1,3 +1,4 @@
+import { remapMentionIds } from '../shared/mentions.ts';
 import type { FastifyInstance } from 'fastify';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
@@ -5,6 +6,7 @@ import type { AppContext } from './context.ts';
 import type { Database, Store } from './db.ts';
 import type {
   Project,
+  ProjectUpdate,
   WorkItem,
   Activity,
   ResourceLink,
@@ -27,7 +29,7 @@ import {
 
 const transferWarnings = [
   'Only content accessible to the exporting account is included. References outside the exported project tree are omitted.',
-  'Projects are copied with new IDs and work item numbers. The source is unchanged; links in descriptions and canvases keep their original URLs.',
+  'Projects are copied with new IDs and work item numbers. The source is unchanged; internal references are updated where their targets are included; external links keep their original URLs.',
   'Integration credentials and memberships are excluded. Linked issues become independent work items with their original external URL; live synchronization must be configured separately.',
 ];
 const importWarnings = [
@@ -91,6 +93,9 @@ export function registerProjectTransfer(
         )
           items.push(item);
       const itemIds = new Set(items.map((i) => i.id));
+      const milestones = (await s.list<Milestone>('milestones')).filter((m) =>
+        selected.has(m.projectId),
+      );
       const members = await workspaceMembers(s, workspaceOf(user));
       const names = new Map(members.map((m) => [m.id, m.name]));
       const name = (userId: string) => names.get(userId) ?? 'Former member';
@@ -103,16 +108,19 @@ export function registerProjectTransfer(
               ? a.body
                   .split(' · ')
                   .map((part) => {
-                    const match = /^(assigneeId|projectId|parentId): (.+)$/.exec(part);
+                    const match = /^(assigneeId|projectId|parentId|milestoneId): (.+)$/.exec(part);
                     if (!match || match[2] === 'cleared') return part;
                     const label =
                       match[1] === 'assigneeId'
                         ? name(match[2])
                         : match[1] === 'projectId'
                           ? (projects.find((p) => p.id === match[2])?.name ?? 'another project')
-                          : (items.find((i) => i.id === match[2])?.identifier ??
-                            'another work item');
-                    return `Changed ${match[1] === 'assigneeId' ? 'assignee' : match[1] === 'projectId' ? 'project' : 'parent item'} to ${label}`;
+                          : match[1] === 'milestoneId'
+                            ? (milestones.find((m) => m.id === match[2])?.title ??
+                              'another milestone')
+                            : (items.find((i) => i.id === match[2])?.identifier ??
+                              'another work item');
+                    return `Changed ${match[1] === 'assigneeId' ? 'assignee' : match[1] === 'projectId' ? 'project' : match[1] === 'milestoneId' ? 'milestone' : 'parent item'} to ${label}`;
                   })
                   .join(' · ')
               : a.body,
@@ -121,10 +129,17 @@ export function registerProjectTransfer(
       const canvases = (await s.list<ProjectCanvas>('canvases')).filter(
         (c) => selected.has(c.projectId) && sameWorkspace(user, c),
       );
+      const projectUpdates = (await s.list<ProjectUpdate>('projectUpdates'))
+        .filter((update) => selected.has(update.projectId))
+        .map((update) => ({
+          ...update,
+          importedFrom: update.importedFrom ?? { authorName: name(update.authorId) },
+        }));
       const peopleIds = new Set([
         ...projects.map((p) => p.ownerId),
         ...items.flatMap((i) => [i.creatorId, ...(i.assigneeId ? [i.assigneeId] : [])]),
         ...activity.map((a) => a.userId),
+        ...projectUpdates.map((update) => update.authorId),
         ...canvases.flatMap((c) => [c.createdBy, c.updatedBy]),
       ]);
       const result = parse({
@@ -144,6 +159,7 @@ export function registerProjectTransfer(
           },
         })),
         activity,
+        projectUpdates,
         relations: (await s.list<Relation>('relations')).filter(
           (r) => itemIds.has(r.itemId) && itemIds.has(r.targetId),
         ),
@@ -153,9 +169,7 @@ export function registerProjectTransfer(
             (!l.projectId || selected.has(l.projectId)) &&
             (!l.itemId || itemIds.has(l.itemId)),
         ),
-        milestones: (await s.list<Milestone>('milestones')).filter((m) =>
-          selected.has(m.projectId),
-        ),
+        milestones,
         canvases,
         canvasCollections: (await s.list<CanvasCollection>('canvasCollections')).filter(
           (c) => selected.has(c.projectId) && sameWorkspace(user, c),
@@ -217,6 +231,7 @@ export function registerProjectTransfer(
           'projects',
           'items',
           'activity',
+          'projectUpdates',
           'links',
           'relations',
           'milestones',
@@ -293,12 +308,22 @@ export function registerProjectTransfer(
         }
         const projectIds = new Map(data.projects.map((p) => [p.id, id()]));
         const itemIds = new Map(data.items.map((i) => [i.id, id()]));
+        const milestoneIds = new Map(data.milestones.map((m) => [m.id, id()]));
+        const canvasIds = new Map(data.canvases.map((c) => [c.id, id()]));
+        const remap = (markdown: string) =>
+          remapMentionIds(markdown, {
+            project: projectIds,
+            item: itemIds,
+            milestone: milestoneIds,
+            canvas: canvasIds,
+          });
         const collectionIds = new Map(data.canvasCollections.map((c) => [c.id, id()]));
         const workspaceId = workspaceOf(user);
         for (const p of data.projects)
           await s.put<Project>('projects', {
             ...p,
             ...options.get(p.id)!,
+            description: remap(p.description),
             id: projectIds.get(p.id)!,
             workspaceId,
             parentId: p.parentId ? projectIds.get(p.parentId)! : null,
@@ -321,11 +346,13 @@ export function registerProjectTransfer(
           const projectId = projectIds.get(item.projectId)!;
           await s.put<WorkItem>('items', {
             ...item,
+            description: remap(item.description),
             id: itemIds.get(item.id)!,
             workspaceId,
             projectId,
             identifier: await nextItemIdentifier(tx, projectId, workspaceId),
             parentId: item.parentId ? itemIds.get(item.parentId)! : null,
+            milestoneId: item.milestoneId ? milestoneIds.get(item.milestoneId)! : null,
             creatorId: user.id,
             assigneeId: item.assigneeId ? (body.options.assignees[item.assigneeId] ?? null) : null,
             importedFrom: item.importedFrom ?? {
@@ -337,9 +364,19 @@ export function registerProjectTransfer(
         for (const a of data.activity)
           await s.put<Activity>('activity', {
             ...a,
+            body: remap(a.body),
             id: id(),
             itemId: itemIds.get(a.itemId)!,
             userId: user.id,
+          });
+        for (const update of data.projectUpdates)
+          await s.put<ProjectUpdate>('projectUpdates', {
+            ...update,
+            body: remap(update.body),
+            id: id(),
+            sortKey: update.sortKey ?? update.id,
+            projectId: projectIds.get(update.projectId)!,
+            authorId: user.id,
           });
         for (const r of data.relations)
           await s.put<Relation>('relations', {
@@ -358,7 +395,7 @@ export function registerProjectTransfer(
         for (const m of data.milestones)
           await s.put<Milestone>('milestones', {
             ...m,
-            id: id(),
+            id: milestoneIds.get(m.id)!,
             projectId: projectIds.get(m.projectId)!,
             revision: 1,
           });
@@ -373,7 +410,7 @@ export function registerProjectTransfer(
         for (const c of data.canvases)
           await s.put<ProjectCanvas>('canvases', {
             ...c,
-            id: id(),
+            id: canvasIds.get(c.id)!,
             projectId: projectIds.get(c.projectId)!,
             workspaceId,
             collectionId: c.collectionId ? collectionIds.get(c.collectionId)! : null,

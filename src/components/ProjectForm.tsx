@@ -1,3 +1,4 @@
+import { MentionTextarea } from './MentionTextarea';
 import { Select } from './Select';
 import { useState, type FormEvent } from 'react';
 import { Lock, FolderTree } from 'lucide-react';
@@ -134,7 +135,9 @@ export default function ProjectForm({
         </div>
         <label className="field">
           Description
-          <textarea
+          <MentionTextarea
+            kinds={['canvas']}
+            projectId={project?.id ?? parentId}
             className="input"
             rows={5}
             aria-describedby="project-description-hint"
@@ -257,77 +260,75 @@ export default function ProjectForm({
             </Select>
           </label>
         </div>
-        {visibility === 'private' && (
-          <fieldset className="project-access">
-            <legend>People with access</legend>
-            <div className="project-access-person">
-              <Avatar user={owner} />
-              <span className="project-access-name">{owner?.name ?? 'Project owner'}</span>
-              <span className="muted">Owner · always included</span>
-            </div>
-            {canManageAccess && members.length > 0 && (
-              <input
-                className="input"
-                type="search"
-                aria-label="Search workspace members"
-                placeholder="Search workspace members…"
-                value={memberSearch}
-                onChange={(event) => setMemberSearch(event.target.value)}
-              />
-            )}
-            <div className="project-access-members">
-              {(canManageAccess
-                ? matchingMembers
-                : members.filter((user) => memberIds.includes(user.id))
-              ).map((user) => (
-                <label key={user.id} className="project-access-person">
-                  <input
-                    type="checkbox"
-                    aria-label={`Give ${user.name} access`}
-                    checked={memberIds.includes(user.id)}
-                    disabled={!canManageAccess}
-                    onChange={(event) =>
-                      setMemberIds((current) =>
-                        event.target.checked
-                          ? [...current, user.id]
-                          : current.filter((id) => id !== user.id),
-                      )
-                    }
-                  />
-                  <Avatar user={user} />
-                  <span className="project-access-name">
-                    {user.name}
-                    <small>{user.email}</small>
-                  </span>
-                </label>
-              ))}
-              {canManageAccess && matchingMembers.length === 0 && (
-                <p className="muted">
-                  {members.length
-                    ? 'No members match your search.'
-                    : 'No other workspace members yet.'}
-                </p>
-              )}
-            </div>
-            <p className="privacy-hint" aria-live="polite">
-              <Lock size={13} />
-              {canManageAccess
-                ? memberIds.length
-                  ? 'Only you and the selected people can access this project.'
-                  : 'Only you can access this project.'
-                : 'Only the owner can change who has access.'}
-            </p>
-            {parent && (
-              <p className="privacy-hint">
-                People also need access to the parent project. Private items remain private to their
-                creators.
+        <fieldset className="project-access">
+          <legend>Project members</legend>
+          <div className="project-access-person">
+            <Avatar user={owner} />
+            <span className="project-access-name">{owner?.name ?? 'Project owner'}</span>
+            <span className="muted">Owner · always included</span>
+          </div>
+          {canManageAccess && members.length > 0 && (
+            <input
+              className="input"
+              type="search"
+              aria-label="Search workspace members"
+              placeholder="Search workspace members…"
+              value={memberSearch}
+              onChange={(event) => setMemberSearch(event.target.value)}
+            />
+          )}
+          <div className="project-access-members">
+            {(canManageAccess
+              ? matchingMembers
+              : members.filter((user) => memberIds.includes(user.id))
+            ).map((user) => (
+              <label key={user.id} className="project-access-person">
+                <input
+                  type="checkbox"
+                  aria-label={`Include ${user.name} as a project member`}
+                  checked={memberIds.includes(user.id)}
+                  disabled={!canManageAccess}
+                  onChange={(event) =>
+                    setMemberIds((current) =>
+                      event.target.checked
+                        ? [...current, user.id]
+                        : current.filter((id) => id !== user.id),
+                    )
+                  }
+                />
+                <Avatar user={user} />
+                <span className="project-access-name">
+                  {user.name}
+                  <small>{user.email}</small>
+                </span>
+              </label>
+            ))}
+            {canManageAccess && matchingMembers.length === 0 && (
+              <p className="muted">
+                {members.length
+                  ? 'No members match your search.'
+                  : 'No other workspace members yet.'}
               </p>
             )}
-          </fieldset>
-        )}
-        {!canManageAccess && visibility === 'workspace' && (
-          <p className="privacy-hint">Only the owner can change who has access.</p>
-        )}
+          </div>
+          <p className="privacy-hint" aria-live="polite">
+            {visibility === 'private' && <Lock size={13} />}
+            {visibility === 'private'
+              ? 'Only the owner and selected members can access this project.'
+              : 'Everyone in the workspace can access this project. Members identify the project team.'}
+          </p>
+          {!canManageAccess && (
+            <p className="privacy-hint">
+              Only the owner can change visibility and project members.
+            </p>
+          )}
+          {parent && (
+            <p className="privacy-hint">
+              People also need access to the parent project. Private items remain private to their
+              creators.
+            </p>
+          )}
+        </fieldset>
         {error && (
           <div className="form-error" role="alert">
             {error}

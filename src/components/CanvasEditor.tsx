@@ -1,3 +1,5 @@
+import { registerUpdateGuard } from '../lib/desktop-updates';
+import { downloadFile as download } from '../lib/download';
 import { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
@@ -18,7 +20,6 @@ import {
   MainMenu,
   exportToBlob,
   exportToSvg,
-  loadFromBlob,
 } from '@excalidraw/excalidraw';
 import type {
   AppState,
@@ -31,19 +32,17 @@ import type { CanvasScene, Project, ProjectCanvas } from '../../shared/types';
 import { api, post } from '../lib/api';
 import { CanvasCollaboration } from '../lib/canvas-collaboration';
 import { useApp } from '../lib/context';
-import { readCanvasTheme, saveCanvasTheme, type CanvasTheme } from '../lib/preferences';
+import {
+  readCanvasTheme,
+  saveCanvasTheme,
+  subscribeAppearance,
+  type CanvasTheme,
+} from '../lib/preferences';
 import { Modal } from './ui';
+import { importCanvas, readCanvasImport } from '../lib/canvas-import';
 import CanvasSwitcher from './CanvasSwitcher';
 import '@excalidraw/excalidraw/index.css';
 
-function download(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob),
-    anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = name;
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
-}
 function sceneFrom(
   elements: readonly ExcalidrawElement[],
   appState: Partial<AppState>,
@@ -73,8 +72,13 @@ export default function CanvasEditor({
   onOpen: (id: string) => void;
   onReload: () => void;
 }) {
-  const { data } = useApp();
+  const { data, refresh } = useApp();
+  const savedTitle = useRef(canvas.title);
   const [canvasTheme, setCanvasTheme] = useState(() => readCanvasTheme(data.user));
+  useEffect(
+    () => subscribeAppearance(() => setCanvasTheme(readCanvasTheme(data.user))),
+    [data.user],
+  );
   const changeCanvasTheme = (theme: CanvasTheme) => {
     setCanvasTheme(theme);
     saveCanvasTheme(data.user, theme);
@@ -126,6 +130,12 @@ export default function CanvasEditor({
         (draft) => applyScene(draft.scene),
       ),
   );
+  useEffect(() => {
+    if (queue.status === 'saved' && queue.draft.title !== savedTitle.current) {
+      savedTitle.current = queue.draft.title;
+      void refresh();
+    }
+  }, [queue.status, queue.draft.title, refresh]);
   const [initialData] = useState(
     () =>
       ({
@@ -163,6 +173,7 @@ export default function CanvasEditor({
         setNotice('Your canvas has unsaved changes. Save them or download a copy before leaving.');
       }
     };
+    const removeUpdateGuard = registerUpdateGuard(() => queue.flush());
     window.addEventListener('beforeunload', beforeUnload);
     window.addEventListener('trestl:before-navigate', beforeNavigate);
     return () => {
@@ -170,6 +181,7 @@ export default function CanvasEditor({
       outside.forEach(({ element, inert }) => {
         element.inert = inert;
       });
+      removeUpdateGuard();
       queue.dispose();
       window.removeEventListener('beforeunload', beforeUnload);
       window.removeEventListener('trestl:before-navigate', beforeNavigate);
@@ -269,7 +281,7 @@ export default function CanvasEditor({
         format === 'png'
           ? await exportToBlob({ ...options, mimeType: 'image/png', maxWidthOrHeight: 4096 })
           : new Blob([(await exportToSvg(options)).outerHTML], { type: 'image/svg+xml' });
-      download(blob, `${filename}.${format}`);
+      await download(blob, `${filename}.${format}`);
     } catch (e) {
       setNotice((e as Error).message);
     } finally {
@@ -278,7 +290,12 @@ export default function CanvasEditor({
   }
   return (
     <section ref={root} className="canvas-editor" aria-label="Canvas editor">
-      <header className="canvas-editor-header">
+      <header
+        className="canvas-editor-header"
+        data-tauri-drag-region={
+          import.meta.env.VITE_TRESTL_DESKTOP_PLATFORM === 'darwin' ? 'deep' : undefined
+        }
+      >
         <button
           className="button"
           aria-label="Canvases"
@@ -310,15 +327,17 @@ export default function CanvasEditor({
         >
           <Users size={15} />
           <span>
-            {queue.connection === 'live'
-              ? queue.peers.length
-                ? `${queue.peers.length + 1} editing`
-                : 'Live'
-              : queue.connection === 'connecting'
-                ? 'Connecting…'
-                : queue.connection === 'blocked'
-                  ? 'Disconnected'
-                  : 'Reconnecting…'}
+            {!queue.isShared
+              ? 'Local demo'
+              : queue.connection === 'live'
+                ? queue.peers.length
+                  ? `${queue.peers.length + 1} editing`
+                  : 'Live'
+                : queue.connection === 'connecting'
+                  ? 'Connecting…'
+                  : queue.connection === 'blocked'
+                    ? 'Disconnected'
+                    : 'Reconnecting…'}
           </span>
           {queue.peers.slice(0, 3).map((peer) => (
             <span
@@ -366,22 +385,24 @@ export default function CanvasEditor({
             <span>Dark</span>
           </button>
         </div>
-        <button
-          className="button"
-          aria-label="Copy canvas link"
-          title="Copy link for people with access to this project"
-          onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(window.location.href);
-              setNotice('Canvas link copied. People with project access can join you here.');
-            } catch {
-              setNotice('Copy the address from your browser to share this canvas.');
-            }
-          }}
-        >
-          <Link size={15} />
-          <span>Share</span>
-        </button>
+        {queue.isShared && (
+          <button
+            className="button"
+            aria-label="Copy canvas link"
+            title="Copy link for people with access to this project"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(window.location.href);
+                setNotice('Canvas link copied. People with project access can join you here.');
+              } catch {
+                setNotice('Copy the address from your browser to share this canvas.');
+              }
+            }}
+          >
+            <Link size={15} />
+            <span>Share</span>
+          </button>
+        )}
         <button
           className="button"
           disabled={busy || queue.status === 'saving'}
@@ -419,7 +440,10 @@ export default function CanvasEditor({
               Reload latest
             </button>
           )}
-          <button className="button" onClick={exportJson}>
+          <button
+            className="button"
+            onClick={() => void exportJson().catch((e) => setNotice(e.message))}
+          >
             Download my copy
           </button>
           {queue.status === 'error' && (
@@ -451,7 +475,7 @@ export default function CanvasEditor({
         <Excalidraw
           initialData={initialData}
           excalidrawAPI={setEditor}
-          isCollaborating={queue.connection === 'live'}
+          isCollaborating={queue.isShared && queue.connection === 'live'}
           onPointerUpdate={({ pointer, button }) => queue.updatePresence({ pointer, button })}
           name={queue.draft.title}
           autoFocus
@@ -482,7 +506,10 @@ export default function CanvasEditor({
             <MainMenu.Item icon={<Upload size={16} />} onSelect={() => input.current?.click()}>
               Import .excalidraw
             </MainMenu.Item>
-            <MainMenu.Item icon={<Download size={16} />} onSelect={exportJson}>
+            <MainMenu.Item
+              icon={<Download size={16} />}
+              onSelect={() => void exportJson().catch((e) => setNotice(e.message))}
+            >
               Download .excalidraw
             </MainMenu.Item>
             <MainMenu.Item onSelect={() => void exportImage('png')}>Export PNG</MainMenu.Item>
@@ -509,21 +536,10 @@ export default function CanvasEditor({
           setBusy(true);
           setNotice('');
           try {
-            if (file.size > 8 * 1024 * 1024) throw new Error('Choose a canvas smaller than 8 MB.');
-            const raw = JSON.parse(await file.text());
-            if (raw.type !== 'excalidraw' || !Array.isArray(raw.elements))
-              throw new Error('Choose a valid .excalidraw file.');
-            const data = await loadFromBlob(file, null, null);
-            if (data.elements.some((e) => ['embeddable', 'iframe'].includes(e.type)))
-              throw new Error(
-                'Embedded web pages are not supported. Remove them before importing.',
-              );
-            // Import creates a new canvas, preserving the current drawing.
+            const document = await readCanvasImport(file);
+            // Preserve pending changes before opening the imported canvas.
             if (!(await queue.flush())) return;
-            const result = await post<ProjectCanvas>(base, {
-              title: file.name.replace(/\.excalidraw$/i, '').slice(0, 240) || 'Imported canvas',
-              scene: sceneFrom(data.elements, data.appState, data.files ?? {}),
-            });
+            const result = await importCanvas(base, file, document, canvas.collectionId);
             allowNavigation.current = true;
             onOpen(result.id);
           } catch (e) {

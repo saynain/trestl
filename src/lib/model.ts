@@ -81,8 +81,10 @@ export interface Route {
   id?: string;
   tab: string;
   itemId?: string;
+  activityId?: string;
 }
 export function readRoute(): Route {
+  if (window.location.pathname === '/cli-login') return { page: 'cli-login', tab: 'list' };
   const [path, search] = window.location.hash.replace(/^#\/?/, '').split('?');
   const [page, id] = path.split('/');
   const query = new URLSearchParams(search || '');
@@ -90,6 +92,7 @@ export function readRoute(): Route {
     page: page || 'home',
     id,
     tab: query.get('tab') || 'list',
+    activityId: query.get('activity') || undefined,
     itemId: page === 'item' ? id : query.get('item') || undefined,
   };
 }
@@ -133,7 +136,9 @@ export function filterWorkItems(
   userId: string,
   filters: Record<string, string>,
   showDone = false,
+  hierarchyItems: WorkItem[] = items,
 ) {
+  const parents = new Set(hierarchyItems.map((item) => item.parentId).filter(Boolean));
   const search = (filters.search || '').trim().toLowerCase();
   return items.filter(
     (item) =>
@@ -143,6 +148,14 @@ export function filterWorkItems(
       (!filters.assigneeId ||
         item.assigneeId === (filters.assigneeId === 'me' ? userId : filters.assigneeId)) &&
       (!filters.type || item.type === filters.type) &&
+      (!filters.milestoneId ||
+        (filters.milestoneId === 'null'
+          ? !item.milestoneId
+          : item.milestoneId === filters.milestoneId)) &&
+      (filters.hierarchy !== 'top-level' || !item.parentId) &&
+      (filters.hierarchy !== 'subtasks' || !!item.parentId) &&
+      (filters.hierarchy !== 'has-subtasks' || parents.has(item.id)) &&
+      (!filters.parentId || item.parentId === filters.parentId) &&
       (!filters.tag ||
         item.labels.some((tag) => tag.toLowerCase() === filters.tag.toLowerCase())) &&
       (filters.untagged !== 'true' || item.labels.length === 0) &&

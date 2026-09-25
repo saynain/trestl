@@ -1,14 +1,19 @@
 @import url('./components/item.css');
 :root {
+  /* Keep interface sizes stable across viewport sizes. */
+  --text-sm: 12px;
+  --text-ui: 13px;
+  --text-md: 14px;
+  --text-body: 16px;
   font-family:
-    Inter,
+    'Inter Variable',
     -apple-system,
     BlinkMacSystemFont,
     'Segoe UI',
     sans-serif;
   color: #242824;
   background: #f6f4ef;
-  font-size: 13px;
+  font-size: var(--text-ui);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -38,7 +43,6 @@
   --accent: #ee9877;
   --accent-hover: #f3b59e;
   --accent-soft: #3b2b25;
-  --brand: #ee9877;
   --danger: #ec8a80;
   --shadow: 0 12px 40px #0005;
   background: var(--bg);
@@ -170,7 +174,9 @@ button {
 }
 kbd {
   font-family: inherit;
-  font-size: 10px;
+  font-size: var(--text-sm);
+  flex-shrink: 0;
+  white-space: nowrap;
   font-weight: 400;
   border: 1px solid var(--border);
   border-radius: 3px;
@@ -219,7 +225,7 @@ kbd {
   gap: 7px;
   font-weight: 450;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--text-ui);
   line-height: 1.4;
 }
 .button:hover {
@@ -273,7 +279,7 @@ kbd {
   align-items: center;
   gap: 6px;
   color: var(--accent);
-  font-size: 12px;
+  font-size: var(--text-ui);
   padding: 5px 0;
 }
 .text-button:hover {
@@ -283,7 +289,7 @@ kbd {
   display: flex;
   flex-direction: column;
   gap: 7px;
-  font-size: 12px;
+  font-size: var(--text-ui);
   font-weight: 500;
   line-height: 1.5;
 }
@@ -296,7 +302,7 @@ kbd {
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
-  font-size: 13px;
+  font-size: var(--text-ui);
   line-height: 1.45;
 }
 .input::placeholder,
@@ -313,7 +319,7 @@ textarea::placeholder {
   gap: 9px;
   cursor: pointer;
   line-height: 1.5;
-  font-size: 12px;
+  font-size: var(--text-ui);
   color: var(--muted);
 }
 .check-field input {
@@ -322,7 +328,7 @@ textarea::placeholder {
 }
 .check-field small {
   display: block;
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 400;
   color: var(--muted);
   margin-top: 4px;
@@ -334,7 +340,7 @@ textarea::placeholder {
   border: 1px solid #f4d5d0;
   border-radius: 6px;
   padding: 10px 12px;
-  font-size: 12px;
+  font-size: var(--text-ui);
   line-height: 1.6;
 }
 .form-actions {
@@ -353,7 +359,7 @@ textarea::placeholder {
   line-height: 1.7;
 }
 .logo {
-  width: 32px;
+  width: 40px;
   height: 32px;
   flex-shrink: 0;
   color: var(--brand);
@@ -361,12 +367,13 @@ textarea::placeholder {
   align-items: center;
   justify-content: center;
 }
-.logo svg {
+.logo img {
+  display: block;
   width: 100%;
   height: 100%;
 }
 .logo.small {
-  width: 24px;
+  width: 30px;
   height: 24px;
 }
 .brand-lockup {
@@ -470,6 +477,15 @@ textarea::placeholder {
   padding: 5px 10px 0;
   margin-bottom: 22px;
 }
+.brand-home {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
 .sidebar-search {
   margin: 15px 3px 18px;
   border: 1px solid var(--border);
@@ -481,12 +497,12 @@ textarea::placeholder {
   height: 34px;
   padding: 0 9px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-ui);
 }
 .sidebar-search kbd {
   margin-left: auto;
   border: 0;
-  font-size: 11px;
+  font-size: var(--text-sm);
   background: none;
   padding: 0;
 }
@@ -509,7 +525,7 @@ textarea::placeholder {
   padding: 0 12px;
   margin: 2px 0;
   color: #5a626b;
-  font-size: 12px;
+  font-size: var(--text-ui);
   position: relative;
 }
 .nav-item > span:not(.nav-count) {
@@ -541,7 +557,7 @@ textarea::placeholder {
 }
 .nav-count {
   margin-left: auto;
-  font-size: 10px;
+  font-size: var(--text-sm);
   color: var(--muted);
   background: var(--bg);
   border-radius: 4px;
@@ -556,7 +572,7 @@ textarea::placeholder {
   align-items: center;
   justify-content: space-between;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-sm);
   font-weight: 500;
   letter-spacing: 0.4px;
   margin: 12px 11px 8px;
@@ -583,7 +599,7 @@ textarea::placeholder {
   min-width: 0;
   text-align: left;
   padding: 0;
-  font-size: 12px;
+  font-size: var(--text-ui);
   height: 100%;
 }
 .project-nav-main span {
@@ -604,7 +620,7 @@ textarea::placeholder {
   color: var(--muted);
 }
 .sidebar-help {
-  font-size: 11px;
+  font-size: var(--text-ui);
   color: var(--muted);
   padding: 6px 12px;
   line-height: 1.65;
@@ -643,12 +659,12 @@ textarea::placeholder {
 .sidebar-account-info span {
   display: block;
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: var(--text-ui);
 }
 .sidebar-account-info span {
   margin-top: 5px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .sidebar-user {
   width: 100%;
@@ -672,7 +688,7 @@ textarea::placeholder {
   min-width: 0;
 }
 .sidebar-user strong {
-  font-size: 12px;
+  font-size: var(--text-ui);
   font-weight: 500;
   display: block;
   overflow: hidden;
@@ -683,7 +699,7 @@ textarea::placeholder {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 10px;
+  font-size: var(--text-sm);
   color: var(--muted);
   margin-top: 3px;
 }
@@ -733,12 +749,12 @@ textarea::placeholder {
   align-items: center;
   gap: 10px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--text-ui);
   min-width: 0;
 }
 .breadcrumbs button {
   padding: 3px 0;
-  font-size: 11px;
+  font-size: var(--text-ui);
   color: var(--muted);
   max-width: 170px;
   overflow: hidden;
@@ -762,6 +778,12 @@ textarea::placeholder {
   align-items: center;
   gap: 24px;
 }
+.topbar-create-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
 .member-stack {
   display: flex;
   padding-left: 5px;
@@ -773,14 +795,14 @@ textarea::placeholder {
 .new-item-button {
   height: 32px;
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: var(--text-ui);
 }
 .new-item-button kbd {
   background: #ffffff14;
   color: #ffffffae;
   border-color: #ffffff20;
   margin-left: 7px;
-  font-size: 10px;
+  font-size: var(--text-sm);
   min-width: 15px;
   height: 17px;
 }
@@ -821,7 +843,7 @@ textarea::placeholder {
   color: var(--muted);
 }
 .page-title-block > p {
-  font-size: 12px;
+  font-size: var(--text-ui);
   line-height: 1.7;
   color: var(--muted);
   margin-top: 7px;
@@ -832,7 +854,7 @@ textarea::placeholder {
   align-items: center;
   gap: 10px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-sm);
   margin-top: 11px;
   flex-wrap: wrap;
 }
@@ -872,7 +894,7 @@ textarea::placeholder {
 .page-tabs > button {
   flex-shrink: 0;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--text-ui);
   color: var(--muted);
   padding: 0 1px;
   border-bottom: 2px solid transparent;
@@ -920,7 +942,7 @@ textarea::placeholder {
   cursor: default;
 }
 .popover h4 {
-  font-size: 12px;
+  font-size: var(--text-ui);
   margin-bottom: 16px;
   font-weight: 550;
 }
@@ -936,11 +958,11 @@ textarea::placeholder {
   margin-bottom: 0;
 }
 .filter-popover .field {
-  font-size: 11px;
+  font-size: var(--text-ui);
   gap: 5px;
 }
 .filter-popover .select {
-  font-size: 12px;
+  font-size: var(--text-ui);
   min-height: 32px;
   padding: 6px 8px;
 }
@@ -964,7 +986,7 @@ textarea::placeholder {
   gap: 9px;
   width: 100%;
   padding: 9px;
-  font-size: 12px;
+  font-size: var(--text-ui);
   border-radius: 4px;
   text-align: left;
 }
@@ -1004,7 +1026,7 @@ textarea::placeholder {
   background: none;
   padding: 4px 0;
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--text-ui);
   box-shadow: none !important;
   outline: none;
 }
@@ -1025,7 +1047,7 @@ textarea::placeholder {
   flex: 1;
 }
 .work-toolbar .button {
-  font-size: 11px;
+  font-size: var(--text-ui);
   min-height: 30px;
   padding: 5px 9px;
 }
@@ -1034,7 +1056,7 @@ textarea::placeholder {
   align-items: center;
   gap: 4px;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: var(--text-ui);
   height: 30px;
   padding: 4px 8px;
   border: 1px solid var(--border);
@@ -1049,7 +1071,7 @@ textarea::placeholder {
   background: none;
   padding: 0 2px;
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--text-ui);
   outline: none;
   box-shadow: none;
 }
@@ -1065,7 +1087,7 @@ textarea::placeholder {
 .filter-number {
   height: 16px;
   min-width: 16px;
-  font-size: 10px;
+  font-size: var(--text-sm);
   background: var(--accent);
   color: white;
   border-radius: 4px;
@@ -1089,7 +1111,7 @@ textarea::placeholder {
   align-items: center;
   padding-right: 16px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-sm);
   border-bottom: 1px solid var(--border);
 }
 .group-name {
@@ -1111,10 +1133,10 @@ textarea::placeholder {
 }
 .group-name strong {
   font-weight: 550;
-  font-size: 11px;
+  font-size: var(--text-ui);
 }
 .group-name small {
-  font-size: 10px;
+  font-size: var(--text-sm);
   color: var(--muted);
   font-weight: 400;
 }
@@ -1127,7 +1149,7 @@ textarea::placeholder {
   padding: 0 16px 0 14px;
   border-bottom: 1px solid var(--border);
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--text-md);
   transition: background 0.1s;
 }
 .work-row:hover,
@@ -1140,7 +1162,7 @@ textarea::placeholder {
 }
 .item-identifier {
   color: #858d96;
-  font-size: 10px;
+  font-size: var(--text-sm);
   letter-spacing: 0.2px;
   font-variant-numeric: tabular-nums;
 }
@@ -1182,7 +1204,7 @@ textarea::placeholder {
   min-width: 0;
   max-width: 100%;
   width: fit-content;
-  font-size: 10px;
+  font-size: var(--text-sm);
   line-height: 1.5;
   color: var(--muted);
   border-radius: 3px;
@@ -1216,7 +1238,7 @@ textarea::placeholder {
   align-items: center;
   padding: 2px 6px;
   border-radius: 4px;
-  font-size: 9px;
+  font-size: var(--text-sm);
   background: #f0edf9;
   color: #8b74ad;
   white-space: nowrap;
@@ -1267,7 +1289,7 @@ textarea::placeholder {
   width: 22px;
 }
 .priority-name {
-  font-size: 10px;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 .assignee-cell {
@@ -1277,7 +1299,7 @@ textarea::placeholder {
   display: flex;
   gap: 5px;
   align-items: center;
-  font-size: 10px;
+  font-size: var(--text-sm);
   color: var(--muted);
   white-space: nowrap;
 }
@@ -1297,7 +1319,7 @@ textarea::placeholder {
   align-items: center;
   gap: 9px;
   color: #87968c;
-  font-size: 10px;
+  font-size: var(--text-ui);
   padding: 0 16px;
   width: 100%;
   text-align: left;
@@ -1313,7 +1335,7 @@ textarea::placeholder {
   justify-content: space-between;
   padding: 16px 10px 24px;
   color: #a1a8b0;
-  font-size: 10px;
+  font-size: var(--text-sm);
   gap: 12px;
 }
 .work-footer > span {
@@ -1322,7 +1344,7 @@ textarea::placeholder {
   gap: 5px;
 }
 .work-footer kbd {
-  font-size: 9px;
+  font-size: var(--text-sm);
   min-width: 14px;
   height: 15px;
   padding: 0 2px;
@@ -1361,11 +1383,11 @@ textarea::placeholder {
   height: 47px;
 }
 .board-column > header > strong {
-  font-size: 11px;
+  font-size: var(--text-ui);
   font-weight: 550;
 }
 .board-column > header > span:not(.status-icon) {
-  font-size: 10px;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 .board-column > header > .icon-button {
@@ -1395,11 +1417,11 @@ textarea::placeholder {
   justify-content: space-between;
   align-items: center;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-sm);
   margin-bottom: 10px;
 }
 .board-card h3 {
-  font-size: 12px;
+  font-size: var(--text-md);
   font-weight: 500;
   line-height: 1.6;
   min-height: 30px;
@@ -1421,13 +1443,13 @@ textarea::placeholder {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 10px;
+  font-size: var(--text-sm);
 }
 .board-card-footer > .avatar {
   margin-left: auto;
 }
 .board-add {
-  font-size: 11px;
+  font-size: var(--text-ui);
   color: var(--muted);
   display: flex;
   align-items: center;
@@ -1466,7 +1488,7 @@ textarea::placeholder {
   font-weight: 550;
 }
 .empty-state p {
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--muted);
   max-width: 400px;
   line-height: 1.7;
@@ -1508,7 +1530,7 @@ textarea::placeholder {
   min-height: 55px;
 }
 .modal-header h2 {
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 550;
   letter-spacing: -0.2px;
 }
@@ -1556,11 +1578,11 @@ textarea::placeholder {
   outline: none;
   background: none;
   color: var(--text);
-  font-size: 14px;
+  font-size: var(--text-md);
   box-shadow: none;
 }
 .command-search > kbd {
-  font-size: 10px;
+  font-size: var(--text-sm);
   padding: 2px 5px;
   height: 20px;
 }
@@ -1572,7 +1594,7 @@ textarea::placeholder {
 .command-section-label {
   text-transform: uppercase;
   letter-spacing: 0.6px;
-  font-size: 9px;
+  font-size: var(--text-sm);
   color: var(--muted);
   padding: 15px 12px 8px;
 }
@@ -1585,7 +1607,7 @@ textarea::placeholder {
   border-radius: 5px;
   text-align: left;
   color: #65706d;
-  font-size: 12px;
+  font-size: var(--text-ui);
 }
 .command-option > span:not(.status-icon) {
   color: var(--text);
@@ -1596,7 +1618,7 @@ textarea::placeholder {
 .command-option small {
   margin-left: auto;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-sm);
   white-space: nowrap;
 }
 .command-option.selected {
@@ -1615,7 +1637,7 @@ textarea::placeholder {
   align-items: center;
   gap: 12px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: var(--text-sm);
   background: var(--surface);
 }
 .command-footer > span {
@@ -1640,7 +1662,7 @@ textarea::placeholder {
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: var(--shadow);
-  font-size: 12px;
+  font-size: var(--text-ui);
   max-width: calc(100vw - 30px);
   animation: fade-in 0.2s;
 }
@@ -1660,21 +1682,22 @@ textarea::placeholder {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: var(--text-ui);
   color: var(--muted);
   padding: 15px 0;
 }
 .projects-table-head,
 .project-table-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 125px 150px 110px 50px;
+  grid-template-columns: minmax(0, 1fr) 125px 150px 110px 50px;
   align-items: center;
   gap: 20px;
   padding: 13px 15px;
   text-align: left;
 }
 .projects-table-head {
-  font-size: 10px;
+  padding-right: 63px;
+  font-size: var(--text-sm);
   color: var(--muted);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
@@ -1684,17 +1707,25 @@ textarea::placeholder {
   border-radius: 7px;
   overflow: hidden;
 }
+.project-table-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 48px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+.project-table-edit {
+  justify-self: center;
+}
 .project-table-row {
   width: 100%;
-  border-bottom: 1px solid var(--border);
   padding-top: 19px;
   padding-bottom: 19px;
-  font-size: 11px;
+  font-size: var(--text-ui);
 }
-.project-table-row:last-child {
+.project-table-entry:last-child {
   border-bottom: 0;
 }
-.project-table-row:hover {
+.project-table-entry:hover {
   background: var(--surface);
 }
 .project-table-name {
@@ -1707,7 +1738,7 @@ textarea::placeholder {
   min-width: 0;
 }
 .project-table-name strong {
-  font-size: 12px;
+  font-size: var(--text-ui);
   font-weight: 550;
   display: block;
   white-space: nowrap;
@@ -1716,7 +1747,7 @@ textarea::placeholder {
 }
 .project-table-name small {
   display: block;
-  font-size: 10px;
+  font-size: var(--text-sm);
   color: var(--muted);
   margin-top: 5px;
 }
@@ -1730,7 +1761,7 @@ textarea::placeholder {
   flex-shrink: 0;
 }
 .lifecycle-badge {
-  font-size: 10px;
+  font-size: var(--text-sm);
   white-space: nowrap;
   color: var(--muted);
 }
@@ -1759,7 +1790,7 @@ textarea::placeholder {
   border-radius: 5px;
 }
 .project-progress > small {
-  font-size: 10px;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 .overview-content {
@@ -1783,7 +1814,7 @@ textarea::placeholder {
   gap: 14px;
 }
 .section-heading h2 {
-  font-size: 13px;
+  font-size: var(--text-md);
   font-weight: 550;
   letter-spacing: -0.2px;
   display: flex;
@@ -1793,12 +1824,12 @@ textarea::placeholder {
 .section-heading p {
   line-height: 1.7;
   margin-top: 8px;
-  font-size: 12px;
+  font-size: var(--text-ui);
 }
 .item-markdown.project-description {
-  line-height: 1.85;
+  line-height: 1.65;
   color: #737c86;
-  font-size: 12px;
+  font-size: var(--text-body);
 }
 .project-description > :first-child {
   margin-top: 0;
@@ -1812,7 +1843,7 @@ textarea::placeholder {
   flex-wrap: wrap;
   gap: 17px;
   margin-top: 24px;
-  font-size: 10px;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 .project-facts > span {
@@ -1837,7 +1868,7 @@ textarea::placeholder {
   line-height: 1.2;
 }
 .work-summary span {
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 .status-distribution {
@@ -1858,7 +1889,7 @@ textarea::placeholder {
   display: flex;
   gap: 6px;
   align-items: center;
-  font-size: 10px;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 .distribution-legend i {
@@ -1871,7 +1902,7 @@ textarea::placeholder {
   margin-left: 2px;
 }
 .count-badge {
-  font-size: 10px;
+  font-size: var(--text-sm);
   color: var(--muted);
   font-weight: 400;
 }
@@ -1894,12 +1925,12 @@ textarea::placeholder {
   flex: 1;
 }
 .subproject-row strong {
-  font-size: 12px;
+  font-size: var(--text-ui);
   font-weight: 500;
   display: block;
 }
 .subproject-row small {
-  font-size: 10px;
+  font-size: var(--text-sm);
   color: var(--muted);
   display: block;
   margin-top: 5px;
@@ -1916,11 +1947,11 @@ textarea::placeholder {
   color: var(--muted);
 }
 .inline-empty p {
-  font-size: 12px;
+  font-size: var(--text-ui);
   line-height: 1.7;
 }
 .inline-empty > .button {
-  font-size: 11px;
+  font-size: var(--text-ui);
 }
 .milestone-row {
   display: flex;
@@ -1928,17 +1959,17 @@ textarea::placeholder {
   gap: 7px;
   min-height: 44px;
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: var(--text-ui);
 }
 .milestone-row > span {
   flex: 1;
 }
 .milestone-row small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-sm);
 }
 .overview-empty {
-  font-size: 12px;
+  font-size: var(--text-ui);
   line-height: 1.6;
 }
 .overview-aside {
@@ -1946,7 +1977,7 @@ textarea::placeholder {
   padding-left: 27px;
 }
 .overview-aside > h3 {
-  font-size: 11px;
+  font-size: var(--text-sm);
   color: var(--muted);
   font-weight: 500;
   margin: 5px 0 12px;
@@ -1962,19 +1993,19 @@ textarea::placeholder {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 9px;
+  font-size: var(--text-sm);
   color: var(--muted);
   margin-bottom: 8px;
 }
 .upcoming-item small {
-  font-size: 9px;
+  font-size: var(--text-sm);
 }
 .upcoming-item time {
   margin-left: auto;
-  font-size: 9px;
+  font-size: var(--text-sm);
 }
 .upcoming-item strong {
-  font-size: 11px;
+  font-size: var(--text-ui);
   line-height: 1.7;
   font-weight: 450;
   display: block;
@@ -1983,7 +2014,7 @@ textarea::placeholder {
   color: var(--accent);
 }
 .overview-aside > p {
-  font-size: 11px;
+  font-size: var(--text-sm);
   line-height: 1.8;
 }
 .overview-aside-note {
@@ -1998,7 +2029,7 @@ textarea::placeholder {
   margin-top: 2px;
 }
 .overview-aside-note p {
-  font-size: 11px;
+  font-size: var(--text-sm);
   line-height: 1.8;
 }
 .resources-content {
@@ -2011,7 +2042,7 @@ textarea::placeholder {
   align-items: flex-start;
 }
 .resources-content .section-heading h2 {
-  font-size: 14px;
+  font-size: var(--text-md);
 }
 .resources-content .section-heading p {
   max-width: 560px;
@@ -2057,7 +2088,7 @@ textarea::placeholder {
 }
 .resource-row strong {
   display: block;
-  font-size: 12px;
+  font-size: var(--text-ui);
   font-weight: 500;
   margin-bottom: 6px;
   overflow: hidden;
@@ -2065,7 +2096,7 @@ textarea::placeholder {
 }
 .resource-row small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-sm);
 }
 .resource-row a:hover strong {
   color: var(--accent);
@@ -2085,17 +2116,17 @@ textarea::placeholder {
   flex: 1;
 }
 .resource-sync-note strong {
-  font-size: 12px;
+  font-size: var(--text-ui);
   font-weight: 500;
   color: var(--text);
 }
 .resource-sync-note p {
-  font-size: 11px;
+  font-size: var(--text-sm);
   line-height: 1.7;
   margin-top: 6px;
 }
 .resource-sync-note > .button {
-  font-size: 11px;
+  font-size: var(--text-ui);
 }
 .auth-page {
   min-height: 100vh;
@@ -2139,7 +2170,7 @@ textarea::placeholder {
 }
 .auth-card > p {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-ui);
   line-height: 1.85;
   margin-bottom: 30px;
 }
@@ -2152,13 +2183,13 @@ textarea::placeholder {
   height: 41px;
 }
 .auth-card .field {
-  font-size: 12px;
+  font-size: var(--text-ui);
 }
 .auth-card .check-field {
   align-items: flex-start;
   margin-top: 2px;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--text-ui);
 }
 .auth-card .check-field input {
   margin-top: 3px;
@@ -2167,14 +2198,14 @@ textarea::placeholder {
   height: 41px;
   justify-content: space-between;
   margin-top: 5px;
-  font-size: 13px;
+  font-size: var(--text-ui);
 }
 .auth-note {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: var(--text-sm);
   color: var(--muted);
   margin-top: 24px;
 }
@@ -2183,7 +2214,7 @@ textarea::placeholder {
 }
 .auth-footer {
   color: #a1aaa5;
-  font-size: 11px;
+  font-size: var(--text-sm);
   margin-top: auto;
   padding-top: 20px;
 }
@@ -2203,7 +2234,7 @@ textarea::placeholder {
   font-weight: 550;
 }
 .loading-screen p {
-  font-size: 13px;
+  font-size: var(--text-ui);
 }
 .nav-scrim {
   display: none;
@@ -2254,52 +2285,52 @@ textarea::placeholder {
     font-size: 27px;
   }
   .page-title-block > p {
-    font-size: 13px;
+    font-size: var(--text-ui);
   }
   .page-meta {
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
   .page-tabs {
     height: 45px;
   }
   .page-tabs > button {
-    font-size: 13px;
+    font-size: var(--text-ui);
   }
   .nav-item,
   .project-nav-main {
-    font-size: 13px;
+    font-size: var(--text-ui);
   }
   .work-row {
     min-height: 46px;
-    font-size: 12px;
+    font-size: var(--text-md);
     grid-template-columns: 30px 85px minmax(100px, 1fr) 110px 95px 110px;
   }
   .group-header {
     grid-template-columns: minmax(100px, 1fr) 110px 95px 110px;
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
   .item-identifier {
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
   .label-tag {
-    font-size: 10px;
+    font-size: var(--text-sm);
   }
   .group-name strong {
-    font-size: 12px;
+    font-size: var(--text-ui);
   }
   .group-header {
     height: 39px;
   }
   .add-item-row {
     height: 34px;
-    font-size: 11px;
+    font-size: var(--text-ui);
   }
   .topbar {
     height: 64px;
   }
   .breadcrumbs,
   .breadcrumbs button {
-    font-size: 12px;
+    font-size: var(--text-ui);
   }
   .work-toolbar {
     height: 59px;
@@ -2308,13 +2339,13 @@ textarea::placeholder {
   .group-select,
   .group-select select,
   .list-search input {
-    font-size: 12px;
+    font-size: var(--text-ui);
   }
   .due-cell {
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
   .sidebar-search {
-    font-size: 12px;
+    font-size: var(--text-ui);
     height: 36px;
   }
   .nav-item {
@@ -2342,7 +2373,7 @@ textarea::placeholder {
   .group-col-priority,
   .group-col-assignee,
   .group-col-due {
-    font-size: 9px;
+    font-size: var(--text-sm);
   }
   .topbar-actions {
     gap: 12px;
@@ -2356,7 +2387,7 @@ textarea::placeholder {
   }
   .project-table-row,
   .projects-table-head {
-    grid-template-columns: minmax(150px, 1fr) 100px 100px 80px 25px;
+    grid-template-columns: minmax(0, 1fr) 100px 100px 80px 25px;
     gap: 12px;
   }
   .progress-track {
@@ -2365,6 +2396,10 @@ textarea::placeholder {
   .project-table-row {
     padding-left: 12px;
     padding-right: 12px;
+  }
+  .projects-table-head {
+    padding-left: 12px;
+    padding-right: 60px;
   }
   .project-facts {
     gap: 12px;
@@ -2429,7 +2464,7 @@ textarea::placeholder {
   }
   .project-table-row,
   .projects-table-head {
-    grid-template-columns: minmax(130px, 1fr) 100px 80px 24px;
+    grid-template-columns: minmax(0, 1fr) 100px 80px 24px;
   }
   .project-table-row > :nth-child(3),
   .projects-table-head > :nth-child(3) {
@@ -2501,7 +2536,7 @@ textarea::placeholder {
     max-width: 100px;
   }
   .breadcrumbs > span {
-    font-size: 11px;
+    font-size: var(--text-ui);
   }
   .member-stack {
     display: none;
@@ -2510,12 +2545,16 @@ textarea::placeholder {
     gap: 5px;
   }
   .new-item-button {
-    font-size: 11px;
+    font-size: var(--text-ui);
     padding: 6px 9px;
     min-height: 30px;
   }
-  .new-item-button kbd {
+  .new-item-button kbd,
+  .import-project-noun {
     display: none;
+  }
+  .topbar-create-actions {
+    gap: 5px;
   }
   .page-heading {
     padding: 25px 20px 22px;
@@ -2526,7 +2565,7 @@ textarea::placeholder {
     letter-spacing: -0.55px;
   }
   .page-title-block > p {
-    font-size: 11px;
+    font-size: var(--text-ui);
     line-height: 1.8;
     max-width: 100%;
   }
@@ -2541,7 +2580,7 @@ textarea::placeholder {
     height: 24px;
   }
   .page-meta {
-    font-size: 9px;
+    font-size: var(--text-sm);
     gap: 6px;
     margin-top: 10px;
   }
@@ -2557,7 +2596,7 @@ textarea::placeholder {
     height: 40px;
   }
   .page-tabs > button {
-    font-size: 11px;
+    font-size: var(--text-ui);
   }
   .work-view {
     padding: 0 12px;
@@ -2574,17 +2613,17 @@ textarea::placeholder {
     padding: 0 5px;
   }
   .list-search input {
-    font-size: 10px;
+    font-size: var(--text-ui);
   }
   .list-search kbd {
     display: none;
   }
   .work-toolbar .button {
-    font-size: 10px;
+    font-size: var(--text-ui);
     padding: 5px 8px;
   }
   .group-select {
-    font-size: 10px;
+    font-size: var(--text-ui);
     padding: 4px 5px;
     gap: 0;
     display: none;
@@ -2603,10 +2642,10 @@ textarea::placeholder {
     grid-template-columns: 25px 57px minmax(80px, 1fr) 28px;
     min-height: 48px;
     padding: 0 10px;
-    font-size: 11px;
+    font-size: var(--text-md);
   }
   .item-identifier {
-    font-size: 9px;
+    font-size: var(--text-sm);
   }
   .item-name {
     padding-right: 7px;
@@ -2648,7 +2687,7 @@ textarea::placeholder {
     padding: 0 10px;
   }
   .group-name strong {
-    font-size: 11px;
+    font-size: var(--text-ui);
   }
   .group-name > svg {
     width: 11px;
@@ -2659,12 +2698,12 @@ textarea::placeholder {
   .add-item-row {
     height: 34px;
     padding: 0 12px;
-    font-size: 10px;
+    font-size: var(--text-ui);
   }
   .work-footer {
     padding: 14px 3px;
     align-items: flex-start;
-    font-size: 9px;
+    font-size: var(--text-sm);
   }
   .work-footer > span:last-child {
     display: none;
@@ -2696,14 +2735,14 @@ textarea::placeholder {
     gap: 8px;
   }
   .command-search input {
-    font-size: 12px;
+    font-size: var(--text-sm);
   }
   .command-results {
     max-height: 55vh;
   }
   .command-footer {
     padding: 10px 12px;
-    font-size: 9px;
+    font-size: var(--text-sm);
     gap: 8px;
   }
   .command-footer > svg,
@@ -2712,26 +2751,29 @@ textarea::placeholder {
   }
   .command-option {
     padding: 10px;
-    font-size: 11px;
+    font-size: var(--text-ui);
   }
   .command-option small {
-    font-size: 9px;
+    font-size: var(--text-sm);
   }
   .toast {
     left: 50%;
     bottom: 15px;
     width: max-content;
     max-width: calc(100% - 25px);
-    font-size: 11px;
+    font-size: var(--text-ui);
   }
   .projects-content {
     padding: 0 16px 30px;
   }
   .project-table-row,
   .projects-table-head {
-    grid-template-columns: minmax(130px, 1fr) 85px;
+    grid-template-columns: minmax(0, 1fr) 85px;
     gap: 10px;
     padding: 14px 11px;
+  }
+  .projects-table-head {
+    padding-right: 59px;
   }
   .project-table-row > :nth-child(4),
   .project-table-row > :nth-child(5),
@@ -2747,19 +2789,19 @@ textarea::placeholder {
     height: 33px;
   }
   .project-table-name strong {
-    font-size: 11px;
+    font-size: var(--text-ui);
   }
   .project-table-name small {
-    font-size: 9px;
+    font-size: var(--text-sm);
   }
   .lifecycle-badge {
-    font-size: 9px;
+    font-size: var(--text-sm);
   }
   .section-title {
-    font-size: 10px;
+    font-size: var(--text-ui);
   }
   .section-title .check-field {
-    font-size: 10px;
+    font-size: var(--text-ui);
   }
   .overview-content {
     padding: 24px 20px;
@@ -2770,10 +2812,10 @@ textarea::placeholder {
     margin-bottom: 25px;
   }
   .section-heading h2 {
-    font-size: 12px;
+    font-size: var(--text-md);
   }
   .section-heading .text-button {
-    font-size: 10px;
+    font-size: var(--text-ui);
   }
   .work-summary {
     gap: 45px;
@@ -2782,7 +2824,7 @@ textarea::placeholder {
     font-size: 26px;
   }
   .work-summary span {
-    font-size: 10px;
+    font-size: var(--text-sm);
   }
   .distribution-legend {
     gap: 10px;
@@ -2806,10 +2848,10 @@ textarea::placeholder {
     width: 18px;
   }
   .resource-row strong {
-    font-size: 11px;
+    font-size: var(--text-ui);
   }
   .resource-row small {
-    font-size: 9px;
+    font-size: var(--text-sm);
   }
   .resource-row small > span {
     display: none;
@@ -2825,7 +2867,7 @@ textarea::placeholder {
     margin-left: 30px;
   }
   .resources-content .section-heading p {
-    font-size: 11px;
+    font-size: var(--text-ui);
   }
   .auth-page {
     padding: 30px 24px;
@@ -2837,17 +2879,17 @@ textarea::placeholder {
     font-size: 26px;
   }
   .auth-footer {
-    font-size: 10px;
+    font-size: var(--text-sm);
   }
   .empty-state {
     min-height: 290px;
     padding: 30px 20px;
   }
   .empty-state h3 {
-    font-size: 14px;
+    font-size: var(--text-md);
   }
   .empty-state p {
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -2872,7 +2914,7 @@ textarea::placeholder {
     flex-wrap: wrap;
   }
   .resource-actions .button {
-    font-size: 11px;
+    font-size: var(--text-ui);
   }
 }
 .board-dragging,
@@ -2950,7 +2992,7 @@ textarea::placeholder {
   align-items: center;
   gap: 8px;
   padding: 8px 9px 10px;
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--muted);
 }
@@ -2975,7 +3017,7 @@ textarea::placeholder {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--text-ui);
 }
 .profile-option-text > span,
 .profile-option-text small {
@@ -2986,7 +3028,7 @@ textarea::placeholder {
   line-height: 1.5;
 }
 .profile-option-text > span {
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .profile-check {
   color: var(--accent);
@@ -2997,7 +3039,7 @@ textarea::placeholder {
   flex-direction: column;
   gap: 7px;
   padding: 12px 9px;
-  font-size: 11px;
+  font-size: var(--text-ui);
   color: var(--muted);
   border-bottom: 1px solid var(--border);
 }
@@ -3009,10 +3051,10 @@ textarea::placeholder {
   flex: 1;
   min-width: 0;
   width: 0;
-  font-size: 12px;
+  font-size: var(--text-ui);
 }
 .profile-label-field small {
-  font-size: 10px;
+  font-size: var(--text-sm);
 }
 .profile-option-text strong > span {
   overflow: hidden;
@@ -3034,19 +3076,19 @@ textarea::placeholder {
   padding: 12px 10px;
   text-align: left;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--text-ui);
 }
 .profile-add:hover {
   background: var(--bg);
 }
 .profile-hint {
   padding: 5px 9px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--muted);
   line-height: 1.5;
 }
 .profile-mode {
   text-align: left;
   color: var(--accent);
-  font-size: 12px;
+  font-size: var(--text-ui);
 }

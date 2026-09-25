@@ -1,3 +1,4 @@
+import { MilestoneList } from './MilestoneItems';
 import { Select } from './Select';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
@@ -19,7 +20,7 @@ import {
 import type { Project, Roadmap, RoadmapFeature, RoadmapHorizon } from '../../shared/types';
 import { patch, ApiError } from '../lib/api';
 import { useApp } from '../lib/context';
-import { navigate, shortDate, today } from '../lib/model';
+import { descendants, navigate, shortDate, today } from '../lib/model';
 import { Brand, Modal } from './ui';
 import './roadmap.css';
 
@@ -61,7 +62,9 @@ export default function RoadmapView({
   project: Project;
   presenting: boolean;
 }) {
-  const { refresh, toast } = useApp();
+  const { data, refresh, toast } = useApp();
+  const projectIds = descendants(data.projects, project.id);
+  const milestones = data.milestones.filter((m) => projectIds.has(m.projectId));
   const roadmap = project.roadmap ?? emptyRoadmap;
   const [selected, setSelected] = useState<string | null>(null);
   const [editor, setEditor] = useState<{
@@ -122,7 +125,12 @@ export default function RoadmapView({
       className={`roadmap ${presenting ? 'is-presenting' : ''}`}
       aria-label={`${project.name} roadmap`}
     >
-      <div className="roadmap-brandbar">
+      <div
+        className="roadmap-brandbar"
+        data-tauri-drag-region={
+          import.meta.env.VITE_TRESTL_DESKTOP_PLATFORM === 'darwin' ? 'deep' : undefined
+        }
+      >
         <div className="roadmap-brand">
           <Brand small />
         </div>
@@ -179,6 +187,12 @@ export default function RoadmapView({
           {roadmap.reviewNote && <p>Since last review: {roadmap.reviewNote}</p>}
         </div>
       </header>
+      {milestones.length > 0 && (
+        <section className="roadmap-milestones" aria-label="Milestones">
+          <h3>Milestones</h3>
+          <MilestoneList milestones={milestones} />
+        </section>
+      )}
       <div className="roadmap-columns">
         {horizons.slice(0, 3).map((horizon) => {
           const features = roadmap.features.filter((f) => f.horizon === horizon.id);

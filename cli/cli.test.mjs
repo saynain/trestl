@@ -19,6 +19,7 @@ after(() => rmSync(testRoot, { recursive: true, force: true }));
 
 const cwd = fileURLToPath(new URL('..', import.meta.url));
 const fixture = `
+const relation = {id:'relation-id',itemId:'item-id',targetId:'dependent-id',kind:'blocks'};
 const item = {id:'item-id',identifier:'K8S-1',title:'Cluster upgrade',description:'Upgrade plan',status:'todo',priority:'high',projectId:'project-id',dueDate:null,revision:3};
 globalThis.fetch = async (input, options) => {
   const url = new URL(input); const path=url.pathname;
@@ -30,7 +31,12 @@ globalThis.fetch = async (input, options) => {
     if(body.targetId!=='dependent-id' || body.kind!=='blocks')throw new Error('Incorrect dependency direction');
     return Response.json({id:'relation-id',itemId:'item-id',...body},{status:201});
   }
-  if(path.endsWith('/items/K8S-2') && options.method==='GET')return Response.json({item:{...item,id:'dependent-id',identifier:'K8S-2'},activity:[],links:[],relations:[]});
+  if(path.endsWith('/items/item-id/relations/relation-id') && options.method==='DELETE')return new Response(null,{status:204});
+  if(path.endsWith('/items/K8S-1') && options.method==='DELETE') {
+    if(JSON.parse(options.body).expectedRevision!==3)return Response.json({message:'Work item changed'},{status:409});
+    return new Response(null,{status:204});
+  }
+  if((path.endsWith('/items/K8S-2') || path.endsWith('/items/dependent-id')) && options.method==='GET')return Response.json({item:{...item,id:'dependent-id',identifier:'K8S-2'},activity:[],links:[],relations:[]});
   if(path.endsWith('/projects/K8S') && options.method==='PATCH')return Response.json({id:'project-id',...JSON.parse(options.body)});
   if(path.endsWith('/milestones/milestone-id') && options.method==='PATCH') {
     const body=JSON.parse(options.body);
@@ -41,9 +47,24 @@ globalThis.fetch = async (input, options) => {
   if(path.endsWith('/milestones') && options.method==='POST') {
     const body = JSON.parse(options.body);
     if(body.projectId!=='project-id')throw new Error('Milestone project key not resolved');
+    if(process.env.TEST_KEY && options.headers['Idempotency-Key']!==process.env.TEST_KEY)throw new Error('Missing retry key');
     return Response.json({id:'milestone-id',...body},{status:201});
   }
-  if(path.endsWith('/milestones'))return Response.json({data:[{id:'milestone-id',projectId:'project-id',title:'Launch',dueDate:'2026-10-01',completed:false},{id:'other',projectId:'other-project',title:'Other',completed:false}]});
+  if(path.endsWith('/milestones'))return Response.json({data:[{id:'milestone-id',projectId:'project-id',title:'Launch',dueDate:'2026-10-01',completed:false,revision:2,progress:{done:2,total:5}},{id:'other',projectId:'other-project',title:process.env.TEST_CROSS_PROJECT_TITLE?'Launch':'Other',completed:false},...(process.env.TEST_DUPLICATE_MILESTONE?[{id:'duplicate',projectId:'project-id',title:'Launch'}]:[])]});
+  if(path.includes('/projects/project-id/canvases')) {
+    const canvas={id:'canvas-id',title:'Architecture',revision:2,updatedAt:'2026-09-13T00:00:00Z'};
+    if(path.endsWith('/show')) return Response.json({...canvas,url:'/#/project/project-id?tab=canvases%2Fcanvas-id'});
+    if(options.method==='DELETE') {
+      if(JSON.parse(options.body).expectedRevision!==2)return Response.json({message:'Canvas changed'},{status:409});
+      return new Response(null,{status:204});
+    }
+    if(options.method==='POST') {
+      const body=JSON.parse(options.body);
+      if(path.endsWith('/import') && body.document?.type!=='excalidraw')throw new Error('Missing native document');
+      return Response.json({...canvas,...body},{status:201});
+    }
+    return Response.json({data:[canvas]});
+  }
   if(path.endsWith('/projects'))return Response.json({data:[{id:'project-id',key:'K8S',name:'Kubernetes'}]});
   if(path.endsWith('/projects/K8S'))return Response.json({id:'project-id',key:'K8S',name:'Kubernetes'});
   if(path.endsWith('/items') && options.method==='GET') {
@@ -58,12 +79,12 @@ globalThis.fetch = async (input, options) => {
     if(process.env.TEST_KEY && options.headers['Idempotency-Key']!==process.env.TEST_KEY)throw new Error('Missing retry key');
     return Response.json({...item,...body},{status:201});
   }
-  if(path.endsWith('/items/K8S-1') && options.method==='GET')return Response.json({item,activity:[],links:[],relations:[]});
+  if(path.endsWith('/items/K8S-1') && options.method==='GET')return Response.json({item,activity:[],links:[],relations:process.env.TEST_NO_RELATION?[]:[relation,{...relation,id:'reverse',itemId:'dependent-id',targetId:'item-id'}]});
   if(path.endsWith('/items/K8S-1') && options.method==='PATCH') {
     const body=JSON.parse(options.body);
     if(body.projectId!==undefined && process.env.TEST_NO_MOVE)throw new Error('Implicit project move');
     if(body.expectedRevision!==3)return Response.json({message:'Work item changed'},{status:409});
-    return Response.json({...item,...body,revision:4});
+    return Response.json(process.env.TEST_PATCH_ENVELOPE?{item:{...item,...body,revision:4}}:{...item,...body,revision:4});
   }
   if(path.endsWith('/items/K8S-1/comments')) {
     if(process.env.TEST_KEY && options.headers['Idempotency-Key']!==process.env.TEST_KEY)throw new Error('Missing retry key');
@@ -237,7 +258,7 @@ test('login rejects insecure remote URLs, unsafe profiles and missing piped toke
     assert.equal(login(directory, args).status, 1);
   }
   assert.equal(login(directory, [], { input: '' }).status, 1);
-  assert.equal(authRun(directory, ['login']).status, 1);
+  assert.equal(authRun(directory, ['login', '--token']).status, 1);
   assert.equal(existsSync(join(directory, 'default.json')), false);
 });
 
@@ -547,4 +568,167 @@ test('milestone updates require the observed revision and propagate conflicts', 
   assert.equal(ok.status, 0, ok.stderr);
   assert.equal(JSON.parse(ok.stdout).dueDate, '2026-10-15');
   assert.equal(JSON.parse(ok.stdout).revision, 3);
+});
+
+test('canvas commands resolve project keys, import native files, show links, and require revision-safe deletes', () => {
+  const file = join(testRoot, 'architecture.excalidraw');
+  writeFileSync(
+    file,
+    JSON.stringify({ type: 'excalidraw', elements: [], appState: {}, files: {} }),
+  );
+  const runCanvas = (args) => run(['canvases', ...args, '--project', 'K8S', '--json']);
+  let r = runCanvas(['list']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout)[0].id, 'canvas-id');
+  r = runCanvas(['create', 'New canvas', '--collection', 'collection-id']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).title, 'New canvas');
+  assert.equal(JSON.parse(r.stdout).collectionId, 'collection-id');
+  r = runCanvas(['import', file]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).title, 'architecture');
+  assert.equal(JSON.parse(r.stdout).document.type, 'excalidraw');
+  r = runCanvas(['import', file, '--title', 'Renamed']);
+  assert.equal(JSON.parse(r.stdout).title, 'Renamed');
+  r = runCanvas(['show', 'canvas-id']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(
+    JSON.parse(r.stdout).url,
+    'http://localhost:3001/#/project/project-id?tab=canvases%2Fcanvas-id',
+  );
+  r = run(['canvases', 'show', 'canvas-id', '--project', 'K8S']);
+  assert.equal(
+    r.stdout.trim(),
+    'http://localhost:3001/#/project/project-id?tab=canvases%2Fcanvas-id',
+  );
+  assert.equal(runCanvas(['delete', 'canvas-id']).status, 2);
+  assert.equal(runCanvas(['delete', 'canvas-id', '--expected-revision', '1']).status, 5);
+  r = runCanvas(['delete', 'canvas-id', '--expected-revision', '2']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).deleted, true);
+  writeFileSync(file, 'invalid JSON');
+  assert.equal(runCanvas(['import', file]).status, 2);
+  assert.equal(runCanvas(['import', file + '.missing']).status, 2);
+  assert.equal(run(['canvases', 'list', '--no-config']).status, 2);
+  assert.equal(runCanvas(['show', 'canvas-id', '--title', 'Ignored']).status, 2);
+  assert.equal(runCanvas(['unknown']).status, 2);
+});
+
+test('canvas commands respect repository project defaults', () => {
+  const directory = join(testRoot, 'canvas-repo');
+  mkdirSync(directory);
+  writeFileSync(join(directory, '.trestl.json'), JSON.stringify({ project: 'K8S' }));
+  const r = run(['canvases', 'list', '--json'], 'test-token', { cwd: directory });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout)[0].id, 'canvas-id');
+});
+
+test('per-command help lists only applicable flags without authenticating', () => {
+  const update = run(['update', '--help'], '');
+  assert.equal(update.status, 0, update.stderr);
+  for (const flag of [
+    'title',
+    'description',
+    'labels',
+    'expected-revision',
+    'parent',
+    'no-parent',
+    'milestone',
+  ])
+    assert.match(update.stdout, new RegExp('--' + flag));
+  assert.match(update.stdout, /Usage: trestl update <id-or-identifier>/);
+  assert.doesNotMatch(update.stdout, /--idempotency-key|--completed|Commands:/);
+  const create = run(['create', '--help', '--json'], '');
+  assert.match(JSON.parse(create.stdout).help, /--idempotency-key/);
+  assert.doesNotMatch(JSON.parse(create.stdout).help, /--expected-revision/);
+  assert.equal(run(['unknown', '--help'], '').status, 2);
+});
+
+test('parent references resolve on create and update and can be cleared', () => {
+  for (const reference of ['K8S-2', 'dependent-id']) {
+    for (const args of [
+      ['create', 'Child', '--project', 'K8S'],
+      ['update', 'K8S-1'],
+    ]) {
+      const r = run([...args, '--parent', reference, '--json']);
+      assert.equal(r.status, 0, r.stderr);
+      assert.equal(JSON.parse(r.stdout).parentId, 'dependent-id');
+    }
+  }
+  const cleared = run(['update', 'K8S-1', '--no-parent', '--json']);
+  assert.equal(cleared.status, 0, cleared.stderr);
+  assert.equal(JSON.parse(cleared.stdout).parentId, null);
+  assert.equal(run(['update', 'K8S-1', '--parent', 'K8S-2', '--no-parent']).status, 2);
+  assert.equal(run(['update', 'K8S-1', '--parent', 'missing']).status, 4);
+});
+
+test('relation removal resolves endpoints and removes only the outgoing dependency', () => {
+  const r = run(['relation-remove', 'K8S-1', 'K8S-2', '--json']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(r.stdout), { deleted: true, id: 'relation-id' });
+  assert.equal(
+    run(['relation-remove', 'K8S-1', 'K8S-2'], 'test-token', { env: { TEST_NO_RELATION: '1' } })
+      .status,
+    4,
+  );
+  assert.equal(run(['relation-remove', 'K8S-2', 'K8S-1']).status, 4);
+});
+
+test('item deletion requires the observed revision and propagates conflicts', () => {
+  assert.equal(run(['delete', 'K8S-1'], '').status, 2);
+  assert.equal(run(['delete', 'K8S-1', '--expected-revision', '2']).status, 5);
+  const r = run(['delete', 'K8S-1', '--expected-revision', '3', '--json']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(r.stdout), { deleted: true, id: 'K8S-1' });
+});
+
+test('milestone assignment resolves IDs and project-scoped titles and can be cleared', () => {
+  for (const reference of ['milestone-id', 'Launch']) {
+    for (const args of [
+      ['create', 'Milestone task', '--project', 'K8S'],
+      ['update', 'K8S-1'],
+    ]) {
+      const r = run([...args, '--milestone', reference, '--json'], 'test-token', {
+        env: { TEST_CROSS_PROJECT_TITLE: '1' },
+      });
+      assert.equal(r.status, 0, r.stderr);
+      assert.equal(JSON.parse(r.stdout).milestoneId, 'milestone-id');
+    }
+  }
+  const cleared = run(['update', 'K8S-1', '--no-milestone', '--json']);
+  assert.equal(cleared.status, 0, cleared.stderr);
+  assert.equal(JSON.parse(cleared.stdout).milestoneId, null);
+  assert.equal(run(['update', 'K8S-1', '--milestone', 'Launch', '--no-milestone']).status, 2);
+  assert.equal(run(['update', 'K8S-1', '--milestone', 'other']).status, 2);
+  assert.equal(run(['update', 'K8S-1', '--milestone', 'Missing']).status, 4);
+  assert.equal(
+    run(['update', 'K8S-1', '--milestone', 'Launch'], 'test-token', {
+      env: { TEST_DUPLICATE_MILESTONE: '1' },
+    }).status,
+    2,
+  );
+  assert.equal(run(['create', 'No project', '--no-config', '--milestone', 'Launch']).status, 2);
+  assert.equal(run(['update', 'K8S-1', '--project', 'none', '--milestone', 'Launch']).status, 2);
+});
+
+test('milestones show progress and revision and creation sends a retry key', () => {
+  const listing = run(['milestones']);
+  assert.equal(listing.status, 0, listing.stderr);
+  assert.match(listing.stdout, /2 \/ 5/);
+  assert.match(listing.stdout, /Revision/);
+  const created = run(
+    ['milestone-create', 'Launch', '--project', 'K8S', '--idempotency-key', 'launch-1'],
+    'test-token',
+    { env: { TEST_KEY: 'launch-1' } },
+  );
+  assert.equal(created.status, 0, created.stderr);
+});
+
+test('update preserves CLI item output with the v0.4 API response envelope', () => {
+  const r = run(['update', 'K8S-1', '--status', 'done', '--json'], 'test-token', {
+    env: { TEST_PATCH_ENVELOPE: '1' },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).revision, 4);
+  assert.equal(JSON.parse(r.stdout).status, 'done');
 });

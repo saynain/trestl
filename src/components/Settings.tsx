@@ -1,6 +1,8 @@
+import { downloadFile } from '../lib/download';
 import AuthenticationSettings from './AuthenticationSettings';
 import WorkspacePeople from './WorkspacePeople';
 import WorkspaceGeneral from './WorkspaceGeneral';
+import ServerVersionSettings from './ServerVersionSettings';
 import { Select } from './Select';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
@@ -14,10 +16,8 @@ import {
   Link2,
   Loader2,
   LogOut,
-  Moon,
   Plus,
   RefreshCw,
-  Sun,
   Trash2,
   X,
 } from 'lucide-react';
@@ -27,10 +27,10 @@ import { Avatar } from './ui';
 import { navigate } from '../lib/model';
 import './settings.css';
 import GitSettings, { type GitConnection } from './GitSettings';
-import { readTheme, saveTheme } from '../lib/preferences';
-import { formatShortcut, shortcuts } from '../lib/shortcuts';
+import AppearanceSettings from './AppearanceSettings';
 
 type Tab =
+  | 'version'
   | 'authentication'
   | 'tokens'
   | 'profile'
@@ -74,7 +74,6 @@ export default function Settings({
 }) {
   const { data, toast, uiPreferences, updateUiPreferences } = useApp();
   const [signingOut, setSigningOut] = useState(false);
-  const [theme, setTheme] = useState(() => readTheme(data.user));
   const personal = data.workspace?.kind === 'personal';
   const accountTabs: { id: Tab; label: string }[] = [
     { id: 'profile', label: 'Profile' },
@@ -84,7 +83,10 @@ export default function Settings({
   const workspaceTabs: { id: Tab; label: string }[] = [
     { id: 'general', label: 'General' },
     ...(data.user.role === 'admin'
-      ? [{ id: 'authentication' as const, label: 'Authentication' }]
+      ? [
+          { id: 'authentication' as const, label: 'Authentication' },
+          { id: 'version' as const, label: 'Server version' },
+        ]
       : []),
     ...(!personal ? [{ id: 'people' as const, label: 'People' }] : []),
     { id: 'integrations', label: 'Integrations' },
@@ -116,11 +118,6 @@ export default function Settings({
       setSigningOut(false);
     }
   }
-  const setAppearance = (next: string) => {
-    setTheme(next);
-    saveTheme(data.user, next);
-    document.documentElement.dataset.theme = next;
-  };
   return (
     <div className="settings-page">
       <header className="settings-heading">
@@ -167,40 +164,15 @@ export default function Settings({
           )}
           {tab === 'appearance' && (
             <>
-              <section className="settings-section">
-                <h2>Appearance</h2>
-                <p>Choose a comfortable space for focused work.</p>
-                <div className="settings-appearance">
-                  {[
-                    { id: 'light', label: 'Light', Icon: Sun },
-                    { id: 'dark', label: 'Dark', Icon: Moon },
-                  ].map(({ id, label, Icon }) => (
-                    <button
-                      key={id}
-                      type="button"
-                      aria-pressed={theme === id}
-                      onClick={() => setAppearance(id)}
-                      className={`settings-theme ${theme === id ? 'selected' : ''}`}
-                    >
-                      <span className={`settings-theme-preview ${id}`}>
-                        <i />
-                        <i />
-                        <i />
-                      </span>
-                      <span>
-                        <Icon size={15} />
-                        {label}
-                        {theme === id && <Check size={15} />}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </section>
+              <AppearanceSettings key={data.user.id} />
               <section className="settings-section">
                 <h2>Work item view</h2>
                 <p>
-                  Choose how work items open. This preference is saved for your profile in this
-                  browser.
+                  Choose how work items open. This preference is saved for your profile{' '}
+                  {import.meta.env.VITE_TRESTL_DESKTOP === 'true'
+                    ? 'on this computer'
+                    : 'in this browser'}
+                  .
                 </p>
                 <div className="settings-item-layout" role="group" aria-label="Work item view">
                   {[
@@ -231,24 +203,10 @@ export default function Settings({
                 </div>
                 <p className="settings-helper">On small screens, work items use the full screen.</p>
               </section>
-              <section className="settings-section">
-                <h2>Zen mode</h2>
-                <p>
-                  Hide the sidebar for more room to focus. Toggle it with{' '}
-                  {formatShortcut(shortcuts.sidebar.keys[0])} or the sidebar button.
-                </p>
-                <label className="settings-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={uiPreferences.zenMode}
-                    onChange={(event) => updateUiPreferences({ zenMode: event.target.checked })}
-                  />
-                  Hide sidebar on desktop
-                </label>
-              </section>
             </>
           )}
           {tab === 'authentication' && <AuthenticationSettings />}
+          {tab === 'version' && <ServerVersionSettings />}
           {tab === 'general' && <WorkspaceGeneral />}
           {tab === 'people' && <WorkspacePeople />}
           {tab === 'integrations' && <WorkspaceIntegrations />}
@@ -626,16 +584,11 @@ function ApiSettings({ mode = 'both' }: { mode?: 'tokens' | 'export' | 'both' })
     setError('');
     try {
       const exported = await api<unknown>('/export');
-      const url = URL.createObjectURL(
+      const saved = await downloadFile(
         new Blob([JSON.stringify(exported, null, 2)], { type: 'application/json' }),
+        `trestl-export-${new Date().toISOString().slice(0, 10)}.json`,
       );
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `trestl-export-${new Date().toISOString().slice(0, 10)}.json`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 3000);
+      if (!saved) return;
       toast('Export downloaded');
     } catch (e) {
       setError(errorMessage(e));

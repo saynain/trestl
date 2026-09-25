@@ -10,7 +10,7 @@ export interface Database {
   close(): Promise<void>;
 }
 export async function openDatabase(
-  options: { databaseUrl?: string; dataDir?: string } = {},
+  options: { databaseUrl?: string; dataDir?: string; initialize?: boolean } = {},
 ): Promise<Database> {
   let db: Database;
   if (options.databaseUrl) {
@@ -73,6 +73,7 @@ export async function openDatabase(
       close: () => engine.close(),
     };
   }
+  if (options.initialize === false) return db;
   await db.query(
     `CREATE TABLE IF NOT EXISTS entities (collection TEXT NOT NULL, id TEXT NOT NULL, data JSONB NOT NULL, PRIMARY KEY(collection,id))`,
   );

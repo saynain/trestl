@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,13 +17,16 @@ const environment = {
   TRESTL_PROFILE: '',
   TRESTL_CONFIG_DIR: join(temporary, 'credentials'),
 };
-const run = (executable, args, { cwd = outside, input, expected = 0 } = {}) =>
+const run = (executable, args, { cwd = outside, input, expected = 0, onStderr } = {}) =>
   new Promise((resolve, reject) => {
     const child = spawn(executable, args, { cwd, env: environment, stdio: 'pipe' });
     let stdout = '',
       stderr = '';
     child.stdout.on('data', (chunk) => (stdout += chunk));
-    child.stderr.on('data', (chunk) => (stderr += chunk));
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+      onStderr?.(stderr);
+    });
     child.on('error', reject);
     child.on('close', (code) => {
       try {
@@ -73,9 +76,13 @@ try {
       : join(prefix, 'lib', 'node_modules', '@trestl', 'cli', 'dist', 'index.js');
   const cli = (args, options) => run(process.execPath, [installed, ...args], options);
   assert.match((await cli(['--help'])).stdout, /Usage: trestl/);
-  assert.equal(JSON.parse((await cli(['--version', '--json'])).stdout).version, '0.1.0');
+  const { version } = JSON.parse(
+    await readFile(new URL('../package.json', import.meta.url), 'utf8'),
+  );
+  assert.equal(JSON.parse((await cli(['--version', '--json'])).stdout).version, version);
   app = await createApp({ dataDir: ':memory:', integrations: false });
   const url = await app.listen({ host: '127.0.0.1', port: 0 });
+  process.env.APP_ORIGIN = url;
   const setup = await app.inject({
     method: 'POST',
     url: '/api/v1/auth/setup',
@@ -104,6 +111,31 @@ try {
   await cli(['login', '--profile', 'test', '--url', url, '--token-stdin', '--json'], {
     input: token,
   });
+  let approval;
+  const browser = await cli(
+    ['login', '--profile', 'browser', '--url', url, '--no-browser', '--scope', 'read', '--json'],
+    {
+      onStderr: (text) => {
+        const code = text.match(/Confirm code ([A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4})/);
+        if (code && !approval)
+          approval = app.inject({
+            method: 'POST',
+            url: '/api/v1/auth/cli/approve',
+            headers: { cookie },
+            payload: { code: code[1] },
+          });
+      },
+    },
+  );
+  assert.equal((await approval).statusCode, 200);
+  assert.equal(browser.stdout.includes('ep_'), false);
+  assert.equal(
+    JSON.parse((await cli(['auth', 'status', '--profile', 'browser', '--json'])).stdout)
+      .authenticated,
+    true,
+  );
+  await cli(['create', 'Denied', '--profile', 'browser'], { expected: 3 });
+  await cli(['logout', '--profile', 'browser']);
   await cli(['init', '--profile', 'test', '--project', 'PKG']);
   const discovery = JSON.parse((await cli(['profiles', 'list', '--json'])).stdout);
   assert.deepEqual(discovery, {
@@ -141,10 +173,43 @@ try {
     JSON.parse((await cli(noteArgs)).stdout).id,
     JSON.parse((await cli(noteArgs)).stdout).id,
   );
+  const drawingPath = join(outside, 'package-diagram.excalidraw');
+  const document = {
+    type: 'excalidraw',
+    version: 2,
+    elements: [{ id: 'box', type: 'rectangle', x: 10, y: 20, width: 100, height: 80 }],
+    appState: { viewBackgroundColor: '#ffffff', theme: 'dark' },
+    files: {},
+  };
+  await writeFile(drawingPath, JSON.stringify(document));
+  assert.deepEqual(JSON.parse((await cli(['canvases', 'list', '--json'])).stdout), []);
+  const imported = JSON.parse((await cli(['canvases', 'import', drawingPath, '--json'])).stdout);
+  assert.equal(imported.title, 'package-diagram');
+  assert.deepEqual(imported.scene.elements, document.elements);
+  assert.equal(imported.scene.appState.theme, undefined);
+  assert.equal(JSON.parse((await cli(['canvases', 'list', '--json'])).stdout).length, 1);
+  const shown = JSON.parse((await cli(['canvases', 'show', imported.id, '--json'])).stdout);
+  assert.equal(shown.revision, 1);
+  assert.equal(new URL(shown.url).origin, url);
+  assert.equal(
+    new URLSearchParams(new URL(shown.url).hash.split('?')[1]).get('tab'),
+    `canvases/${imported.id}`,
+  );
+  await cli(['canvases', 'delete', imported.id, '--expected-revision', '0'], { expected: 5 });
+  await cli(['canvases', 'delete', imported.id, '--expected-revision', String(shown.revision)]);
+  await cli(['canvases', 'show', imported.id], { expected: 4 });
+  const blank = JSON.parse((await cli(['canvases', 'create', 'Blank diagram', '--json'])).stdout);
+  assert.equal(blank.scene.elements.length, 0);
+  await writeFile(
+    drawingPath,
+    JSON.stringify({ ...document, elements: [{ ...document.elements[0], type: 'iframe' }] }),
+  );
+  await cli(['canvases', 'import', drawingPath], { expected: 2 });
+  assert.equal(JSON.parse((await cli(['canvases', 'list', '--json'])).stdout).length, 1);
   await cli(['logout']);
   await cli(['list', '--json'], { expected: 3 });
   console.log(
-    'Standalone package passed: offline installation, unrelated working directory, saved login, repository defaults, real API reads, guarded updates, retry-safe creates/comments and logout.',
+    'Standalone package passed: offline installation, unrelated working directory, saved login, repository defaults, real API reads, guarded updates, retry-safe creates/comments, canvas import/list/create/show/delete and logout.',
   );
 } finally {
   if (app) await app.close();

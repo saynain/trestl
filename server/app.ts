@@ -1,4 +1,13 @@
+import {
+  initializeCliLogin,
+  registerCliDeviceEndpoints,
+  registerCliApproval,
+} from './cli-login.ts';
+import { compareProjectUpdates } from '../shared/project-updates.ts';
+import { addMentionRelations } from './mentions.ts';
+import { extractMentions } from '../shared/mentions.ts';
 import { authSettings, configuredProxy, registerAuthSettings } from './auth-settings.ts';
+import { registerServerVersion } from './version.ts';
 import { createInstallation, installation, migrateInstallation } from './installation.ts';
 import {
   authenticateProxy,
@@ -14,6 +23,7 @@ import websocket from '@fastify/websocket';
 import { roadmapUpdate } from './roadmap.ts';
 import Fastify, { type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
+import { registerDesktopGateway } from './desktop-gateway.ts';
 import rateLimit from '@fastify/rate-limit';
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
 import { z } from 'zod';
@@ -38,14 +48,18 @@ import type {
   User,
   Workspace,
   ProjectCanvas,
+  CanvasSummary,
   CanvasCollection,
   Project,
+  ProjectUpdate,
   WorkItem,
   Activity,
   ResourceLink,
   SavedView,
   Milestone,
   Relation,
+  ProjectRelation,
+  MentionNotification,
 } from '../shared/types.ts';
 
 const id = randomUUID;
@@ -124,6 +138,7 @@ const itemInput = z
     title,
     description: description.optional(),
     projectId: reference.optional(),
+    milestoneId: reference.optional(),
     parentId: reference.optional(),
     type: z.enum(['task', 'bug', 'idea', 'followup']).optional(),
     status: z.enum(['backlog', 'todo', 'in_progress', 'in_review', 'done', 'canceled']).optional(),
@@ -206,6 +221,7 @@ export async function createApp(
     integrations?: boolean;
     githubFetch?: typeof fetch;
     proxyAuth?: ProxyAuthConfig | null;
+    desktopToken?: string;
   } = {},
 ) {
   const environmentProxy =
@@ -242,6 +258,7 @@ export async function createApp(
     databaseUrl: options.databaseUrl ?? process.env.DATABASE_URL,
     dataDir: options.dataDir ?? process.env.DATA_DIR,
   });
+  await initializeCliLogin(db);
   const store = makeStore(db);
   await store.put('system', { id: 'mutation-lock' });
   await migrateWorkspaces(db);
@@ -257,6 +274,7 @@ export async function createApp(
   await app.register(websocket, {
     options: { maxPayload: 8 * 1024 * 1024, perMessageDeflate: false },
   });
+  if (options.desktopToken) registerDesktopGateway(app, options.desktopToken);
   await app.register(rateLimit, { max: 300, timeWindow: '1 minute' });
   app.addHook('onClose', async () => db.close());
   app.setErrorHandler((error, request, reply) => {
@@ -352,6 +370,55 @@ export async function createApp(
       return fail(404, 'Project not found');
     return project;
   };
+  const checkedCanvas = async (s: Store, user: User, canvasId: string) => {
+    const canvas = await s.get<ProjectCanvas>('canvases', canvasId);
+    if (!canvas || !sameWorkspace(user, canvas) || !(await canProjectIn(s, user, canvas.projectId)))
+      return fail(404, 'Canvas not found');
+    return canvas;
+  };
+  const validateProjectCanvasMentions = async (
+    s: Store,
+    user: User,
+    body: string,
+    previous = '',
+  ) => {
+    const old = new Set(
+      extractMentions(previous)
+        .filter((m) => m.kind === 'canvas')
+        .map((m) => m.id),
+    );
+    for (const mention of extractMentions(body))
+      if (mention.kind === 'canvas' && !old.has(mention.id))
+        await checkedCanvas(s, user, mention.id);
+  };
+  const saveMentions = (
+    s: Store,
+    u: User,
+    item: WorkItem,
+    body: string,
+    previous = '',
+    activityId: string | null = null,
+  ) =>
+    addMentionRelations(
+      s,
+      u,
+      item,
+      body,
+      previous,
+      {
+        item: (targetId) => checkedItem(s, u, targetId),
+        project: (projectId) => checkedProject(s, u, projectId),
+        canvas: (canvasId) => checkedCanvas(s, u, canvasId),
+        milestone: async (milestoneId) => {
+          const milestone = await s.get<Milestone>('milestones', milestoneId);
+          if (!milestone) return fail(404, 'Milestone not found');
+          await checkedProject(s, u, milestone.projectId);
+          return milestone;
+        },
+        recipientCanRead: (recipient) => canItemIn(s, recipient, item.id),
+      },
+      activityId,
+    );
   const profileCookie = (userId: string) => `trestl_profile_${userId}`;
   const cookieOptions = {
     path: '/',
@@ -611,6 +678,13 @@ export async function createApp(
   app.post('/api/v1/auth/switch', async () => fail(410, 'This server has one installation.'));
   registerWorkspaceRoutes(app, ctx);
   registerAuthSettings(app, ctx, session);
+  registerServerVersion(app, ctx);
+  registerCliApproval(app, ctx);
+  registerCliDeviceEndpoints(
+    app,
+    db,
+    () => process.env.APP_ORIGIN || `http://localhost:${process.env.PORT ?? 4317}`,
+  );
 
   app.post('/api/v1/auth/logout', async (request, reply) => {
     if (request.cookies.trestl_session)
@@ -670,16 +744,35 @@ export async function createApp(
   const visibleData = async (user: User) => {
     // Fetch each collection once. Bootstrap may contain years of platform work;
     // walking parent chains through SQL would turn a single read into N+1 queries.
-    const [allProjects, allItems, users, allViews, allLinks, allMilestones, allRelations] =
-      await Promise.all([
-        store.list<Project>('projects'),
-        store.list<WorkItem>('items'),
-        workspaceMembers(store, workspaceOf(user)),
-        store.list<SavedView>('views'),
-        store.list<ResourceLink>('links'),
-        store.list<Milestone>('milestones'),
-        store.list<Relation>('relations'),
-      ]);
+    const [
+      allProjects,
+      allItems,
+      users,
+      allViews,
+      allLinks,
+      allMilestones,
+      allRelations,
+      allUpdates,
+      allProjectRelations,
+      allNotifications,
+      allCanvases,
+    ] = await Promise.all([
+      store.list<Project>('projects'),
+      store.list<WorkItem>('items'),
+      workspaceMembers(store, workspaceOf(user)),
+      store.list<SavedView>('views'),
+      store.list<ResourceLink>('links'),
+      store.list<Milestone>('milestones'),
+      store.list<Relation>('relations'),
+      store.list<ProjectUpdate>('projectUpdates'),
+      store.list<ProjectRelation>('projectRelations'),
+      store.list<MentionNotification>('notifications'),
+      db
+        .query<{ data: CanvasSummary }>(
+          "SELECT data - 'scene' AS data FROM entities WHERE collection='canvases'",
+        )
+        .then((result) => result.rows.map((row) => row.data)),
+    ]);
     const projectsById = new Map(allProjects.map((project) => [project.id, project]));
     const itemsById = new Map(allItems.map((item) => [item.id, item]));
     const projectAccess = new Map<string, boolean>(),
@@ -715,6 +808,13 @@ export async function createApp(
     };
     const projects = allProjects.filter((project) => projectVisible(project.id));
     const items = allItems.filter((item) => itemVisible(item.id));
+    const milestoneItems = new Map<string, WorkItem[]>();
+    for (const item of items) {
+      if (!item.milestoneId) continue;
+      const linked = milestoneItems.get(item.milestoneId) ?? [];
+      linked.push(item);
+      milestoneItems.set(item.milestoneId, linked);
+    }
     return {
       user,
       authMode:
@@ -725,6 +825,10 @@ export async function createApp(
       workspaces: (await userWorkspaces(store, user.id)).filter((w) => w.id === workspaceOf(user)),
       users: users.filter((member) => sameWorkspace(user, member)),
       projects,
+      canvases: allCanvases.filter(
+        (canvas) => sameWorkspace(user, canvas) && projectVisible(canvas.projectId),
+      ),
+      projectUpdates: allUpdates.filter((update) => projectVisible(update.projectId)),
       items,
       views: allViews.filter((view) => view.userId === user.id && sameWorkspace(user, view)),
       links: allLinks.filter(
@@ -736,10 +840,68 @@ export async function createApp(
       relations: allRelations.filter(
         (relation) => itemVisible(relation.itemId) && itemVisible(relation.targetId),
       ),
-      milestones: allMilestones.filter((milestone) => projectVisible(milestone.projectId)),
+      projectRelations: allProjectRelations.filter(
+        (r) => itemVisible(r.itemId) && projectVisible(r.projectId),
+      ),
+      notifications: allNotifications
+        .filter((n) => n.recipientId === user.id && sameWorkspace(n, user) && itemVisible(n.itemId))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)),
+      milestones: allMilestones
+        .filter((milestone) => projectVisible(milestone.projectId))
+        .map((milestone) => {
+          const linked = (milestoneItems.get(milestone.id) ?? []).filter(
+            (item) => item.projectId === milestone.projectId,
+          );
+          return {
+            ...milestone,
+            itemIds: linked.map((item) => item.id),
+            progress: {
+              total: linked.length,
+              done: linked.filter((item) => item.status === 'done').length,
+            },
+          };
+        }),
     };
   };
   app.get('/api/v1/bootstrap', async (request) => visibleData(requireUser(request)));
+  app.get('/api/v1/notifications', async (request) => ({
+    data: (await visibleData(requireUser(request))).notifications,
+  }));
+  app.patch<{ Params: { id: string } }>('/api/v1/notifications/:id', async (request) => {
+    const input = z.object({ read: z.boolean() }).strict().parse(request.body);
+    const u = requireUser(request);
+    return mutate(async (s) => {
+      const notification = await s.get<MentionNotification>('notifications', request.params.id);
+      if (
+        !notification ||
+        notification.recipientId !== u.id ||
+        !sameWorkspace(notification, u) ||
+        !(await canItemIn(s, u, notification.itemId))
+      )
+        fail(404, 'Notification not found');
+      return s.put('notifications', {
+        ...notification,
+        readAt: input.read ? (notification.readAt ?? now()) : null,
+      });
+    });
+  });
+  app.post('/api/v1/notifications/read-all', async (request, reply) => {
+    z.object({}).strict().parse(request.body);
+    const u = requireUser(request);
+    await mutate(async (s) => {
+      const stamp = now();
+      for (const notification of await s.list<MentionNotification>('notifications')) {
+        if (
+          notification.recipientId === u.id &&
+          sameWorkspace(notification, u) &&
+          !notification.readAt &&
+          (await canItemIn(s, u, notification.itemId))
+        )
+          await s.put('notifications', { ...notification, readAt: stamp });
+      }
+    });
+    return reply.code(204).send();
+  });
   app.get('/api/v1/projects', async (request) => ({
     data: (await visibleData(requireUser(request))).projects,
   }));
@@ -819,6 +981,7 @@ export async function createApp(
       };
       await validateProject(s, u, p);
       await validateProjectMembers(s, p);
+      await validateProjectCanvasMentions(s, u, p.description);
       return s.put('projects', p);
     });
     return reply.code(201).send(result);
@@ -826,6 +989,34 @@ export async function createApp(
   app.get<{ Params: { id: string } }>('/api/v1/projects/:id', async (request) =>
     checkedProject(store, requireUser(request), request.params.id),
   );
+  app.get<{ Params: { id: string } }>('/api/v1/projects/:id/updates', async (request) => {
+    const project = await checkedProject(store, requireUser(request), request.params.id);
+    const updates = (await store.list<ProjectUpdate>('projectUpdates'))
+      .filter((update) => update.projectId === project.id)
+      .sort(compareProjectUpdates);
+    return { data: updates };
+  });
+  app.post<{ Params: { id: string } }>('/api/v1/projects/:id/updates', async (request, reply) => {
+    const user = requireUser(request);
+    const input = z
+      .object({
+        health: z.enum(['on_track', 'at_risk', 'off_track']),
+        body: z.string().trim().min(1).max(20000),
+      })
+      .parse(request.body);
+    const update = await mutate(async (s) => {
+      const project = await checkedProject(s, user, request.params.id);
+      return s.put<ProjectUpdate>('projectUpdates', {
+        id: id(),
+        projectId: project.id,
+        authorId: user.id,
+        health: input.health,
+        body: input.body,
+        createdAt: now(),
+      });
+    });
+    return reply.code(201).send(update);
+  });
   app.patch<{ Params: { id: string } }>('/api/v1/projects/:id', async (request) => {
     const u = requireUser(request),
       input = projectInput.partial().parse(request.body);
@@ -842,6 +1033,7 @@ export async function createApp(
         await validateProjectMembers(s, p);
       }
       await validateProject(s, u, p);
+      await validateProjectCanvasMentions(s, u, p.description, old.description);
       if (
         old.ownerId !== u.id &&
         input.parentId !== undefined &&
@@ -886,18 +1078,29 @@ export async function createApp(
         if (canvas.projectId === p.id) await s.remove('canvases', canvas.id);
       for (const collection of await s.list<CanvasCollection>('canvasCollections'))
         if (collection.projectId === p.id) await s.remove('canvasCollections', collection.id);
+      for (const update of await s.list<ProjectUpdate>('projectUpdates'))
+        if (update.projectId === p.id) await s.remove('projectUpdates', update.id);
+      for (const r of await s.list<ProjectRelation>('projectRelations'))
+        if (r.projectId === p.id) await s.remove('projectRelations', r.id);
       await s.remove('projects', p.id);
     });
     return reply.code(204).send();
   });
-  const validateItem = async (s: Store, u: User, item: WorkItem) => {
+  const validateItem = async (s: Store, u: User, item: WorkItem, previous?: WorkItem) => {
     if (item.startDate && item.dueDate && item.startDate > item.dueDate)
       fail(400, 'Start date must be on or before the due date');
     if (item.projectId) await checkedProject(s, u, item.projectId);
+    if (item.milestoneId) {
+      const milestone = await s.get<Milestone>('milestones', item.milestoneId);
+      if (!milestone || milestone.projectId !== item.projectId)
+        fail(400, 'Choose a milestone in this work item’s project');
+    }
     if (item.assigneeId) {
       const assignee = await workspaceUser(s, item.assigneeId, workspaceOf(u));
       if (!assignee || !sameWorkspace(u, assignee))
         fail(400, 'Assignee does not exist in this workspace');
+      if (assignee.disabledAt && item.assigneeId !== previous?.assigneeId)
+        fail(400, 'This account is disabled. Choose an active assignee.');
     }
     if (item.parentId) {
       await checkedItem(s, u, item.parentId);
@@ -922,6 +1125,7 @@ export async function createApp(
         type: z.enum(['task', 'bug', 'idea', 'followup']).optional(),
         assigneeId: z.string().optional(),
         parentId: z.string().optional(),
+        milestoneId: z.string().optional(),
         visibility: visibility.optional(),
         cursor: z
           .string()
@@ -942,11 +1146,12 @@ export async function createApp(
       'assigneeId',
       'type',
       'parentId',
+      'milestoneId',
       'visibility',
     ] as const) {
       if (query[key])
         items = items.filter((i) =>
-          query[key] === 'null' ? i[key] === null : i[key] === query[key],
+          query[key] === 'null' ? i[key] == null : i[key] === query[key],
         );
     }
     if (query.q) {
@@ -1015,6 +1220,7 @@ export async function createApp(
         identifier: await nextItemIdentifier(tx, input.projectId ?? null, workspaceOf(u)),
         description: '',
         projectId: null,
+        milestoneId: null,
         parentId: null,
         type: 'task',
         status: 'todo',
@@ -1036,6 +1242,7 @@ export async function createApp(
       };
       await validateItem(s, u, item);
       const result = await s.put('items', item);
+      await saveMentions(s, u, item, item.description);
       if (retry) await s.put('idempotency', { ...retry, itemId: item.id, result });
       return result;
     });
@@ -1052,13 +1259,15 @@ export async function createApp(
         (await ctx.canItem(u, r.targetId))
       )
         relations.push(r);
+    const visible = await visibleData(u);
     return {
       item,
       activity: (await store.list<Activity>('activity'))
         .filter((a) => a.itemId === item.id)
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
       relations,
-      links: (await visibleData(u)).links.filter((l) => l.itemId === item.id),
+      projectRelations: visible.projectRelations.filter((r) => r.itemId === item.id),
+      links: visible.links.filter((l) => l.itemId === item.id),
     };
   });
   app.patch<{ Params: { id: string } }>('/api/v1/items/:id', async (request) => {
@@ -1084,8 +1293,10 @@ export async function createApp(
       if (input.visibility && input.visibility !== old.visibility && old.creatorId !== u.id)
         fail(403, 'Only the creator can change item visibility');
       const item: WorkItem = { ...old, ...input, updatedAt: now() };
+      if (item.projectId !== old.projectId && input.milestoneId === undefined)
+        item.milestoneId = null;
       item.completedAt = item.status === 'done' ? (old.completedAt ?? now()) : null;
-      await validateItem(s, u, item);
+      await validateItem(s, u, item, old);
       if (item.startDate !== old.startDate || item.dueDate !== old.dueDate) {
         const conflicts = scheduleConflicts(
           item,
@@ -1113,6 +1324,8 @@ export async function createApp(
       if (item.projectId !== old.projectId)
         item.identifier = await nextItemIdentifier(tx, item.projectId, workspaceOf(item));
       const saved = await s.put('items', item, expectedRevision);
+      if (input.description !== undefined)
+        await saveMentions(s, u, item, item.description, old.description);
       const changes = Object.entries(input)
         .filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(old[k as keyof WorkItem]))
         .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : (v ?? 'cleared')}`);
@@ -1153,6 +1366,12 @@ export async function createApp(
           const { source: _source, externalUrl: _externalUrl, ...nativeItem } = item;
           const next = {
             ...nativeItem,
+            // Keep historical ownership, but do not assign new recurring work to disabled accounts.
+            assigneeId:
+              item.assigneeId &&
+              !(await workspaceUser(s, item.assigneeId, workspaceOf(u)))?.disabledAt
+                ? item.assigneeId
+                : null,
             id: id(),
             identifier: await nextItemIdentifier(tx, item.projectId, workspaceOf(item)),
             status: 'todo' as const,
@@ -1204,12 +1423,17 @@ export async function createApp(
               : {}),
           });
       }
-      return saved;
+      return { item: saved };
     });
   });
   app.delete<{ Params: { id: string } }>('/api/v1/items/:id', async (request, reply) => {
+    const { expectedRevision } = z
+      .object({ expectedRevision: z.number().int().min(0).max(2147483646).optional() })
+      .parse(request.body ?? {});
     await mutate(async (s) => {
       const item = await checkedItem(s, requireUser(request), request.params.id);
+      if (expectedRevision !== undefined && expectedRevision !== (item.revision ?? 0))
+        fail(409, 'Work item changed. Read it again before deleting.');
       if ((await s.list<WorkItem>('items')).some((x) => x.parentId === item.id))
         fail(409, 'Move or delete subtasks first');
       for (const a of await s.list<Activity>('activity'))
@@ -1218,6 +1442,10 @@ export async function createApp(
         if (l.itemId === item.id) await s.remove('links', l.id);
       for (const r of await s.list<Relation>('relations'))
         if (r.itemId === item.id || r.targetId === item.id) await s.remove('relations', r.id);
+      for (const r of await s.list<ProjectRelation>('projectRelations'))
+        if (r.itemId === item.id) await s.remove('projectRelations', r.id);
+      for (const n of await s.list<MentionNotification>('notifications'))
+        if (n.itemId === item.id) await s.remove('notifications', n.id);
       await s.remove('items', item.id);
     });
     return reply.code(204).send();
@@ -1241,6 +1469,7 @@ export async function createApp(
         body: input.body,
         createdAt: now(),
       });
+      await saveMentions(s, u, item, input.body, '', result.id);
       if (retry) await s.put('idempotency', { ...retry, itemId: item.id, result });
       return result;
     });
@@ -1317,17 +1546,45 @@ export async function createApp(
   app.get('/api/v1/milestones', async (request) => ({
     data: (await visibleData(requireUser(request))).milestones,
   }));
+  app.get<{ Params: { id: string } }>('/api/v1/milestones/:id', async (request) => {
+    const milestone = (await visibleData(requireUser(request))).milestones.find(
+      (m) => m.id === request.params.id,
+    );
+    if (!milestone) fail(404, 'Milestone not found');
+    return milestone;
+  });
   app.post('/api/v1/milestones', async (request, reply) => {
     const input = milestoneInput.parse(request.body);
+    const user = requireUser(request);
+    const retry = retryContext(request, user, 'create-milestone', input);
     const result = await mutate(async (s) => {
-      await checkedProject(s, requireUser(request), input.projectId);
-      return s.put('milestones', {
+      await checkedProject(s, user, input.projectId);
+      if (retry) {
+        const previous = await s.get<{ id: string; fingerprint: string; result: Milestone }>(
+          'idempotency',
+          retry.id,
+        );
+        if (previous) {
+          if (previous.fingerprint !== retry.fingerprint)
+            fail(
+              409,
+              'Idempotency key was already used with different input. Use a new key for a new operation.',
+            );
+          const current = await s.get<Milestone>('milestones', previous.result.id);
+          if (!current) fail(404, 'Milestone not found');
+          await checkedProject(s, user, current.projectId);
+          return previous.result;
+        }
+      }
+      const result = await s.put('milestones', {
         id: id(),
         revision: 1,
         dueDate: null,
         completed: false,
         ...input,
       });
+      if (retry) await s.put('idempotency', { ...retry, result });
+      return result;
     });
     return reply.code(201).send(result);
   });
@@ -1344,6 +1601,11 @@ export async function createApp(
         fail(409, 'Milestone changed. Read it again before updating.');
       const next = { ...m, ...input, revision: (m.revision ?? 0) + 1 };
       await checkedProject(s, requireUser(request), next.projectId);
+      if (
+        next.projectId !== m.projectId &&
+        (await s.list<WorkItem>('items')).some((item) => item.milestoneId === m.id)
+      )
+        fail(409, 'Unlink work items before moving this milestone to another project');
       return s.put('milestones', next);
     });
   });
@@ -1352,13 +1614,39 @@ export async function createApp(
       const m = await s.get<Milestone>('milestones', request.params.id);
       if (!m) fail(404, 'Milestone not found');
       await checkedProject(s, requireUser(request), m.projectId);
+      for (const item of await s.list<WorkItem>('items'))
+        if (item.milestoneId === m.id)
+          await s.put('items', { ...item, milestoneId: null, updatedAt: now() });
       await s.remove('milestones', m.id);
     });
     return reply.code(204).send();
   });
+  app.get<{ Params: { id: string } }>('/api/v1/items/:id/relations', async (request) => {
+    const u = requireUser(request),
+      item = await checkedItem(store, u, request.params.id);
+    const data = [];
+    for (const relation of await store.list<Relation>('relations')) {
+      if (relation.itemId !== item.id && relation.targetId !== item.id) continue;
+      const outgoing = relation.itemId === item.id;
+      const relatedId = outgoing ? relation.targetId : relation.itemId;
+      if (!(await ctx.canItem(u, relatedId))) continue;
+      const relatedItem = await store.get<WorkItem>('items', relatedId);
+      if (!relatedItem) continue;
+      data.push({
+        ...relation,
+        direction: outgoing ? 'outgoing' : 'incoming',
+        relatedItem: {
+          id: relatedItem.id,
+          identifier: relatedItem.identifier,
+          title: relatedItem.title,
+        },
+      });
+    }
+    return { data };
+  });
   app.post<{ Params: { id: string } }>('/api/v1/items/:id/relations', async (request, reply) => {
     const input = z
-      .object({ targetId: z.string().uuid(), kind: z.enum(['blocks', 'related']) })
+      .object({ targetId: z.string().uuid(), kind: z.enum(['blocks', 'blocked_by', 'related']) })
       .strict()
       .parse(request.body);
     const result = await mutate(async (s) => {
@@ -1366,17 +1654,29 @@ export async function createApp(
         item = await checkedItem(s, u, request.params.id);
       await checkedItem(s, u, input.targetId);
       if (item.id === input.targetId) fail(400, 'Cannot relate an item to itself');
+      // Store dependencies in one direction, regardless of which endpoint adds the link.
+      const relation = {
+        itemId: input.kind === 'blocked_by' ? input.targetId : item.id,
+        targetId: input.kind === 'blocked_by' ? item.id : input.targetId,
+        kind: input.kind === 'blocked_by' ? 'blocks' : input.kind,
+      };
       const relations = await s.list<Relation>('relations');
       const existing = relations.find(
-        (r) => r.itemId === item.id && r.targetId === input.targetId && r.kind === input.kind,
+        (r) =>
+          r.itemId === relation.itemId &&
+          r.targetId === relation.targetId &&
+          r.kind === relation.kind,
       );
       if (existing) return existing;
-      if (input.kind === 'blocks' && createsDependencyCycle(relations, item.id, input.targetId))
+      if (
+        relation.kind === 'blocks' &&
+        createsDependencyCycle(relations, relation.itemId, relation.targetId)
+      )
         fail(
           409,
           'This dependency would create a cycle. Remove a blocking link in the chain first.',
         );
-      return s.put('relations', { id: id(), itemId: item.id, ...input });
+      return s.put('relations', { id: id(), ...relation });
     });
     return reply.code(201).send(result);
   });
@@ -1390,6 +1690,23 @@ export async function createApp(
         await checkedItem(s, requireUser(request), r.itemId);
         await checkedItem(s, requireUser(request), r.targetId);
         await s.remove('relations', r.id);
+      });
+      return reply.code(204).send();
+    },
+  );
+  app.delete<{ Params: { id: string; relationId: string } }>(
+    '/api/v1/items/:id/project-relations/:relationId',
+    async (request, reply) => {
+      await mutate(async (s) => {
+        const u = requireUser(request);
+        const item = await checkedItem(s, u, request.params.id);
+        const relation = await s.get<ProjectRelation>(
+          'projectRelations',
+          request.params.relationId,
+        );
+        if (!relation || relation.itemId !== item.id) fail(404, 'Relationship not found');
+        await checkedProject(s, u, relation.projectId);
+        await s.remove('projectRelations', relation.id);
       });
       return reply.code(204).send();
     },

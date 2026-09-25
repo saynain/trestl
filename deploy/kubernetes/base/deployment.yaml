@@ -28,7 +28,7 @@ spec:
       containers:
         - name: trestl
           # Replace with the image built and pushed to your registry.
-          image: trestl:0.1.0
+          image: trestl:0.2.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

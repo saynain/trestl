@@ -1,0 +1,132 @@
+.board-hint {
+  margin: 0 9px 10px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+.board-column > header > .icon-button.board-column-handle {
+  margin-left: -4px;
+  flex-shrink: 0;
+  cursor: grab;
+  touch-action: none;
+}
+.board-column > header > strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.board-column.column-dragging {
+  opacity: 0.45;
+}
+.board-drop-before {
+  box-shadow: 0 -3px 0 var(--accent) !important;
+}
+.board-compact .board-card {
+  padding: 9px 10px;
+}
+.board-compact .board-card h3 {
+  min-height: 0;
+  line-height: 1.4;
+}
+.board-compact .board-card-meta {
+  margin-bottom: 5px;
+}
+.board-compact .board-labels {
+  margin: 6px 0;
+}
+.board-compact .board-card-footer {
+  margin-top: 6px;
+}
+.board-settings-body {
+  padding: 20px 24px;
+}
+.board-settings-body > p {
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  margin: 0 0 14px;
+}
+.board-settings-body h3 {
+  font-size: var(--text-ui);
+  margin: 20px 0 8px;
+}
+.board-settings-columns {
+  display: grid;
+  gap: 8px;
+}
+.board-settings-column {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.board-settings-column > label {
+  flex: 1;
+  min-width: 0;
+}
+.board-settings-column > label > span {
+  display: block;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+.board-settings-column .input {
+  width: 100%;
+}
+.board-settings-column > .icon-button {
+  flex-shrink: 0;
+}
+.board-settings .check-field {
+  margin-top: 12px;
+}
+.board-settings .modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+@media (max-width: 600px) {
+  .board-settings-body {
+    padding: 16px;
+  }
+  .board-hint {
+    font-size: var(--text-sm);
+  }
+  .board-settings-column {
+    gap: 5px;
+  }
+  .board-view .work-toolbar {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 600px) {
+  .board-view .work-toolbar {
+    height: auto;
+    min-height: 80px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  .board-view .work-toolbar > .list-search {
+    flex: 1 0 calc(100% - 90px);
+  }
+  .board-view .work-toolbar > .toolbar-spacer {
+    display: none;
+  }
+  .board-view .work-toolbar > .save-view-button {
+    margin-left: auto;
+  }
+  .board-settings .modal-footer {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    padding: 12px 16px;
+  }
+  .board-settings .modal-footer > .toolbar-spacer {
+    display: none;
+  }
+  .board-settings .modal-footer > button:first-child {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+  .board-settings .modal-footer > button:nth-last-child(2) {
+    justify-self: end;
+  }
+}

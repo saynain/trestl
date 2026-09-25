@@ -7,7 +7,7 @@
   gap: 10px;
   padding: 20px 24px 12px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .shortcut-help-search {
   display: flex;
@@ -43,7 +43,7 @@
 }
 .shortcut-help-sections h3 {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 550;
   margin: 8px 0 10px;
 }
@@ -53,7 +53,7 @@
   align-items: center;
   gap: 12px;
   min-height: 30px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .shortcut-keys,
 .shortcut-keys > span {
@@ -63,7 +63,7 @@
   white-space: nowrap;
 }
 .shortcut-keys kbd {
-  font-size: 10px;
+  font-size: var(--text-sm);
   min-width: 23px;
   text-align: center;
   padding: 3px 6px;
@@ -75,13 +75,13 @@
 }
 .shortcut-keys small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-sm);
 }
 .shortcut-help-note {
   padding: 15px 24px;
   border-top: 1px solid var(--border);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--text-sm);
   line-height: 1.6;
 }
 .shortcut-empty {
@@ -103,11 +103,11 @@
   background: var(--bg);
   color: var(--text);
   box-shadow: var(--shadow);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .shortcut-sequence small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-sm);
 }
 .sidebar-shortcuts > kbd {
   margin-left: auto;
@@ -115,7 +115,7 @@
 .picker-shortcut {
   margin-left: auto;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-sm);
   font-family: inherit;
 }
 @media (max-width: 620px) {

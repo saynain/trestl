@@ -23,8 +23,8 @@ example's Namespace resource into a second application.
 1. Build the image from a selected Trestl revision and push it to your registry:
 
    ```sh
-   docker build -t registry.example.com/trestl:v0.1.0 .
-   docker push registry.example.com/trestl:v0.1.0
+   docker build -t registry.example.com/trestl:v0.2.0 .
+   docker push registry.example.com/trestl:v0.2.0
    ```
 
    Build for your cluster's CPU architecture, for example with
@@ -73,7 +73,8 @@ kubectl -n trestl rollout status deployment/trestl
 
 The example does not expose the service outside the cluster. Attach your own
 HTTPS Ingress or Gateway API HTTPRoute to Service `trestl`, port 80. Preserve
-the public Host header. Internal deployments should use internal DNS and an
+the public Host header and forward WebSocket upgrades on `/api/` for
+[live canvas collaboration](../../docs/canvas-collaboration.md#deployment). Internal deployments should use internal DNS and an
 internal gateway/load balancer. Permit that controller to reach the app and
 allow required database, DNS, and integration traffic in your network policies.
 An SSO proxy does not create Trestl user sessions; the pilot can use native

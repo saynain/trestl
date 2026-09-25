@@ -78,10 +78,14 @@ export function ItemForm({
             Object.entries(body).filter(([key, value]) => value !== item[key as keyof Item]),
           )
         : body;
-      const saved = await api<Item>(item ? `items/${encodeURIComponent(item.id)}` : 'items', {
-        method: item ? 'PATCH' : 'POST',
-        body: payload,
-      });
+      const result = await api<Item | { item: Item }>(
+        item ? `items/${encodeURIComponent(item.id)}` : 'items',
+        {
+          method: item ? 'PATCH' : 'POST',
+          body: payload,
+        },
+      );
+      const saved = 'item' in result ? result.item : result;
       await showToast({
         style: Toast.Style.Success,
         title: `${saved.identifier} ${item ? 'updated' : 'created'}`,

@@ -61,7 +61,9 @@ export default function Auth({
           <a
             className="button primary auth-submit"
             href={
-              proxy || mode === 'proxy' ? '/oauth2/start?rd=%2F' : '/api/v1/auth/provider/start'
+              proxy || mode === 'proxy'
+                ? `/oauth2/start?rd=${encodeURIComponent(window.location.pathname + window.location.search)}`
+                : `/api/v1/auth/provider/start${window.location.pathname === '/cli-login' ? `?cli_code=${encodeURIComponent(new URLSearchParams(window.location.search).get('code') ?? '')}` : ''}`
             }
           >
             {mode === 'google' ? 'Continue with Google' : 'Continue to sign in'}{' '}
@@ -173,7 +175,11 @@ export default function Auth({
         </form>
         <div className="auth-note">
           <Check size={14} />
-          {setup ? 'Self-hosted. Your data stays yours.' : 'Built for the way you work.'}
+          {setup
+            ? import.meta.env.VITE_TRESTL_DESKTOP === 'true'
+              ? 'On your computer. Your data stays yours.'
+              : 'Self-hosted. Your data stays yours.'
+            : 'Built for the way you work.'}
         </div>
       </main>
       <div className="auth-footer">A steady place for work.</div>

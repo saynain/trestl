@@ -1,0 +1,54 @@
+.milestone-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.milestone-progress progress {
+  width: 64px;
+  height: 6px;
+  accent-color: var(--accent);
+}
+.milestone-items {
+  padding: 12px;
+  font-size: var(--text-ui);
+}
+.milestone-items ul {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+}
+.milestone-items li button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 0;
+}
+.milestone-items li button:hover {
+  color: var(--accent);
+}
+.milestone-linked-list details {
+  border-bottom: 1px solid var(--border);
+}
+.milestone-linked-list summary {
+  cursor: pointer;
+  padding: 12px 0;
+  font-size: var(--text-ui);
+}
+.milestone-linked-list summary > * {
+  margin-right: 14px;
+}
+.milestone-title-button {
+  flex: 1;
+  text-align: left;
+}
+.roadmap-milestones {
+  margin: 0 0 24px;
+}
+.roadmap-milestones h3 {
+  font-size: var(--text-ui);
+}

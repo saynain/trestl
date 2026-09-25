@@ -18,6 +18,7 @@ type Flight = { id: number; changes: CanvasChanges };
 
 /** One acknowledged write at a time, plus an independent journal of newer edits. */
 export class CanvasCollaboration {
+  readonly isShared = true;
   draft: CanvasDraft;
   revision: number;
   status: SaveStatus = 'saved';

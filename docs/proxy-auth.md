@@ -63,9 +63,19 @@ Back up the database before upgrading. See [installation migration](installation
 
 The setup administrator retains local recovery login. Other users authenticate through the configured provider. Switching back to local authentication does not create passwords for externally provisioned accounts.
 
+## Gateway validation for CLI access
+
+When authentication must happen before any request reaches the application, run a separate service from the **same Trestl image** with command `node --import tsx server/token-gateway.ts`. Set `PORT=4318`, `APP_ORIGIN` and `DATABASE_URL` pointing to the same PostgreSQL database as the app. Start the app first so its database migrations have completed. The gateway does not initialize the schema and has no UI or application-data routes; it needs neither `APP_SECRET` nor the Google client secret. `/health` is liveness and `/ready` checks database/schema readiness.
+
+The example routes only `/cli-auth/device` and `/cli-auth/token` publicly to this service. It routes API requests carrying Bearer credentials through ForwardAuth at the gateway's **internal** `/verify` endpoint. Header presence only selects the validator: an unknown, revoked or disabled-user token receives 401 before reaching the app. The app then independently checks the token, scope and project permissions. No Google access token is accepted as a Trestl token.
+
+Keep `/verify`, the gateway port, the app port and PostgreSQL private. Permit ingress only from the intended Traefik instances and DB access only from the app and gateway pods. Use the existing database TLS configuration. A DB/gateway failure denies access. Browser routes continue through oauth2-proxy unchanged. Public pairing requests are rate-limited, expire after ten minutes, are capped at 1,000 pending requests, and require browser approval plus the initiating CLI's secret proof for a one-time redemption. Pairing tokens do not automatically expire after redemption.
+
+Standalone installations use the same pairing endpoints in the app; no separate gateway is needed when ingress authentication is not required. The isolated gateway requires PostgreSQL; it must not share an embedded PGlite directory with the app.
+
 ## CLI, Raycast, and offboarding
 
-Create a token in **Account settings → API tokens**, then configure your client once with this server URL and the token. Tokens act as your account in the installation; read-only tokens cannot write, and private project permissions still apply. Google access tokens are not Trestl personal API tokens.
+For the CLI, run `trestl login --url https://projects.example.com` and approve its code in your signed-in browser. For Raycast or automation, create a token in **Account settings → API tokens** and configure the client with the server URL and token. Tokens act as your account in the installation; read-only tokens cannot write, and private project permissions still apply. Google access tokens are not Trestl personal API tokens.
 
 Google account/group removal does not automatically revoke Trestl tokens. Disable the account in **Administration → People** when offboarding. This immediately denies Trestl access and deletes its personal tokens and Trestl sessions. Re-enabling does not resurrect old tokens. The installation owner cannot disable themselves. Google/group session refresh is separate and follows oauth2-proxy's refresh behavior.
 

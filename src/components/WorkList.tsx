@@ -1,7 +1,20 @@
+import { ParentPicker, HierarchyMenu } from './ParentPicker';
+import { childProgress, parentBoardItems } from '../lib/hierarchy';
+import { assigneeOptions } from '../lib/assignees';
 import { useShortcuts, activateItemControl } from '../lib/keyboard';
 import { itemActions, formatShortcut, type ItemAction } from '../lib/shortcuts';
 import { Select } from './Select';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { BoardSettings } from './BoardSettings';
+import {
+  boardMoveUpdates,
+  moveColumn,
+  readBoardPreferences,
+  saveBoardPreferences,
+  type BoardPreferences,
+} from '../lib/board';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { buildWorkTree, flattenWorkTree } from '../lib/work-tree';
+import './work-tree.css';
 import {
   Search,
   SlidersHorizontal,
@@ -15,6 +28,7 @@ import {
   X,
   Layers,
   Tag,
+  GripVertical,
 } from 'lucide-react';
 import type { Priority, Status, WorkItem } from '../../shared/types';
 import { useApp } from '../lib/context';
@@ -63,7 +77,18 @@ export default function WorkList({
   const [priorityFilter, setPriorityFilter] = useState(initialFilters.priority || '');
   const [assigneeFilter, setAssigneeFilter] = useState(initialFilters.assigneeId || '');
   const [typeFilter, setTypeFilter] = useState(initialFilters.type || '');
+  const [milestoneFilter, setMilestoneFilter] = useState(initialFilters.milestoneId || '');
   const [sourceFilter, setSourceFilter] = useState(initialFilters.source || '');
+  const [hierarchyFilter, setHierarchyFilter] = useState(
+    initialFilters.hierarchy || (initialFilters.parentId ? 'subtasks' : ''),
+  );
+  const [parentFilter, setParentFilter] = useState(initialFilters.parentId || '');
+  const [indentSubtasks, setIndentSubtasks] = useState(initialFilters.indentSubtasks !== 'false');
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState(new Set<string>());
+  const [parentTargets, setParentTargets] = useState<WorkItem[] | null>(null);
+  const progress = useMemo(() => childProgress(data.items), [data.items]);
+  const hierarchyParentId = hierarchyFilter === 'subtasks' ? parentFilter : '';
   const [tagFilter, setTagFilter] = useState(
     initialFilters.untagged === 'true'
       ? 'untagged'
@@ -87,13 +112,40 @@ export default function WorkList({
   const [groupBy, setGroupBy] = useState(
     initialFilters.groupBy || (initialFilters.due || initialFilters.followUp ? 'none' : 'status'),
   );
-  const [showDone, setShowDone] = useState(initialFilters.showDone === 'true');
+  const route = readRoute();
+  const boardKey = `trestl.board.v1.${data.user.id}.${data.user.workspaceId || 'default'}.${route.page}.${route.id || projectId || ''}`;
+  const [boardPreferences, setBoardPreferences] = useState(() =>
+    readBoardPreferences(boardKey, initialFilters.board, initialFilters.showDone === 'true'),
+  );
+  const [listShowDone, setListShowDone] = useState(initialFilters.showDone === 'true');
+  const showDone = board ? boardPreferences.showDone : listShowDone;
+  const [boardSettingsOpen, setBoardSettingsOpen] = useState(false);
+  const [columnDragging, setColumnDragging] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ status: Status; beforeId: string | null } | null>(
+    null,
+  );
+  function customizeBoard(value: BoardPreferences) {
+    setBoardPreferences(value);
+    saveBoardPreferences(boardKey, value);
+  }
+  function setShowDone(value: boolean) {
+    if (board) customizeBoard({ ...boardPreferences, showDone: value });
+    else setListShowDone(value);
+  }
   const [collapsed, setCollapsed] = useState(new Set<string>());
+  const [expandedItems, setExpandedItems] = useState(new Set<string>());
+  const appliedTreeFilter = useRef<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
   const [viewName, setViewName] = useState('');
   const [dragging, setDragging] = useState<string | null>(null);
-  const pointerDrag = useRef<{ id: string; x: number; y: number; moved: boolean } | null>(null);
+  const pointerDrag = useRef<{
+    id: string;
+    kind: 'card' | 'column';
+    x: number;
+    y: number;
+    moved: boolean;
+  } | null>(null);
   const suppressClick = useRef(false);
   const searchInput = useRef<HTMLInputElement>(null);
   const filterPanel = useRef<HTMLDivElement>(null);
@@ -110,8 +162,10 @@ export default function WorkList({
     Number(!!priorityFilter) +
     Number(!!assigneeFilter) +
     Number(!!typeFilter) +
+    Number(!!milestoneFilter) +
     Number(!!sourceFilter) +
-    Number(!!tagFilter);
+    Number(!!tagFilter) +
+    Number(!!hierarchyFilter);
   const visible = useMemo(
     () =>
       sortWorkItems(
@@ -124,22 +178,31 @@ export default function WorkList({
             assigneeId: assigneeFilter,
             type: typeFilter,
             source: sourceFilter,
+            milestoneId: milestoneFilter,
+            hierarchy: hierarchyFilter,
+            parentId: hierarchyParentId,
             tag,
             untagged,
             search,
           },
           showDone,
+          data.items,
         ),
-        initialFilters,
+        board ? {} : initialFilters,
       ),
     [
       items,
+      board,
       showDone,
       statusFilter,
       priorityFilter,
       assigneeFilter,
       typeFilter,
       sourceFilter,
+      milestoneFilter,
+      hierarchyFilter,
+      hierarchyParentId,
+      data.items,
       tag,
       untagged,
       search,
@@ -148,8 +211,51 @@ export default function WorkList({
       initialFilters.followUp,
     ],
   );
-  const groupOptions =
-    board || groupBy === 'status'
+  const treeFiltered = filterCount > 0 || !!search.trim();
+  const treeFilterKey = JSON.stringify([
+    search.trim(),
+    statusFilter,
+    priorityFilter,
+    assigneeFilter,
+    typeFilter,
+    sourceFilter,
+    milestoneFilter,
+    tagFilter,
+    hierarchyFilter,
+    hierarchyParentId,
+  ]);
+  useEffect(() => {
+    setSelected(new Set());
+  }, [treeFilterKey]);
+  const tree = useMemo(
+    () => buildWorkTree(items, visible, sortWorkItems(data.items, initialFilters), treeFiltered),
+    [items, visible, data.items, treeFiltered, initialFilters.due, initialFilters.followUp],
+  );
+  useEffect(() => {
+    if (board) return;
+    if (!treeFiltered) {
+      appliedTreeFilter.current = null;
+      return;
+    }
+    if (appliedTreeFilter.current === treeFilterKey) return;
+    appliedTreeFilter.current = treeFilterKey;
+    setCollapsed(new Set());
+    setExpandedItems(
+      new Set(
+        [...tree.nodes.values()].filter((node) => node.children.length).map((node) => node.item.id),
+      ),
+    );
+  }, [tree, treeFiltered, treeFilterKey, board]);
+  const groupedItems = board
+    ? boardPreferences.collapseSubtasks
+      ? parentBoardItems(visible)
+      : visible
+    : indentSubtasks
+      ? tree.roots.map((node) => node.item)
+      : visible;
+  const groupOptions = board
+    ? boardPreferences.columns.filter((column) => !column.hidden || column.id === statusFilter)
+    : groupBy === 'status'
       ? statuses.map((s) => ({ id: s.id, name: s.name }))
       : groupBy === 'priority'
         ? priorities.map((p) => ({ id: p.id, name: p.name }))
@@ -170,11 +276,11 @@ export default function WorkList({
             ];
   const groups =
     groupBy === 'tag' && !board
-      ? groupWorkItemsByTag(visible)
+      ? groupWorkItemsByTag(groupedItems)
       : groupOptions
           .map((g) => ({
             ...g,
-            items: visible.filter((i) =>
+            items: groupedItems.filter((i) =>
               groupBy === 'none' && !board
                 ? true
                 : (board || groupBy === 'status'
@@ -189,32 +295,80 @@ export default function WorkList({
               ? showDone || g.id === statusFilter || !['done', 'canceled'].includes(g.id)
               : g.items.length > 0,
           );
+  function pointerTarget(x: number, y: number, draggedId: string) {
+    const column = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-board-status]');
+    if (!column || !listRef.current?.contains(column)) return null;
+    const cards = Array.from(column.querySelectorAll<HTMLElement>('[data-item-id]')).filter(
+      (card) => card.dataset.itemId !== draggedId,
+    );
+    const before = cards.find((card) => {
+      const rect = card.getBoundingClientRect();
+      return y < rect.top + rect.height / 2;
+    });
+    return {
+      status: column.dataset.boardStatus as Status,
+      beforeId: before?.dataset.itemId || null,
+    };
+  }
+  async function moveCard(item: WorkItem, status: Status, beforeId: string | null) {
+    const updates = boardMoveUpdates(items, item, status, beforeId);
+    if (!updates.length || saving) return;
+    setSaving(true);
+    try {
+      for (const entry of updates)
+        await patch(`/items/${entry.item.id}`, { status: entry.status, position: entry.position });
+    } catch (error) {
+      toast((error as Error).message, 'error');
+    } finally {
+      try {
+        await refresh();
+      } finally {
+        setSaving(false);
+      }
+    }
+  }
   useEffect(() => {
+    if (!board) return;
     const move = (e: PointerEvent) => {
       const drag = pointerDrag.current;
       if (!drag) return;
       if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 6) {
         drag.moved = true;
-        setDragging(drag.id);
+        if (drag.kind === 'card') {
+          setDragging(drag.id);
+          setDropTarget(pointerTarget(e.clientX, e.clientY, drag.id));
+        } else setColumnDragging(drag.id);
         document.body.classList.add('board-dragging');
+        const bounds = listRef.current?.getBoundingClientRect();
+        if (bounds && e.clientY >= bounds.top && e.clientY <= bounds.bottom) {
+          if (e.clientX > bounds.right - 45) listRef.current!.scrollLeft += 18;
+          if (e.clientX < bounds.left + 45) listRef.current!.scrollLeft -= 18;
+        }
       }
     };
     const end = (e: PointerEvent) => {
       const drag = pointerDrag.current;
       pointerDrag.current = null;
       setDragging(null);
+      setColumnDragging(null);
+      setDropTarget(null);
       document.body.classList.remove('board-dragging');
       if (e.type === 'pointercancel' || !drag?.moved) return;
       suppressClick.current = true;
       window.setTimeout(() => {
         suppressClick.current = false;
       }, 50);
-      const column = document
-        .elementFromPoint(e.clientX, e.clientY)
-        ?.closest<HTMLElement>('[data-board-status]');
-      const item = items.find((i) => i.id === drag.id);
-      if (column?.dataset.boardStatus && item && item.status !== column.dataset.boardStatus)
-        void update(item, { status: column.dataset.boardStatus as Status });
+      const target = pointerTarget(e.clientX, e.clientY, drag.id);
+      if (!target) return;
+      if (drag.kind === 'column') {
+        customizeBoard({
+          ...boardPreferences,
+          columns: moveColumn(boardPreferences.columns, drag.id, target.status),
+        });
+      } else {
+        const item = items.find((entry) => entry.id === drag.id);
+        if (item) void moveCard(item, target.status, target.beforeId);
+      }
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', end);
@@ -225,7 +379,7 @@ export default function WorkList({
       window.removeEventListener('pointercancel', end);
       document.body.classList.remove('board-dragging');
     };
-  }, [items]);
+  }, [board, items, boardPreferences, saving]);
   function activeRow() {
     const focused = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>(
       '[data-item-id]',
@@ -235,7 +389,43 @@ export default function WorkList({
       : listRef.current?.querySelector<HTMLElement>('[data-item-id]:hover') || null;
   }
   function activeItem() {
-    return items.find((item) => item.id === activeRow()?.dataset.itemId);
+    return data.items.find((item) => item.id === activeRow()?.dataset.itemId);
+  }
+  function toggleItem(id: string) {
+    setExpandedItems((previous) => {
+      const next = new Set(previous);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+  function navigateTree(direction: 'open' | 'close') {
+    if (board || !indentSubtasks) return false;
+    const row = activeRow();
+    if (!row) return false;
+    const focused = document.activeElement as HTMLElement | null;
+    if (row.contains(focused) && focused !== row && !focused?.closest('.tree-toggle')) return false;
+    const id = row.dataset.itemId!;
+    const node = tree.nodes.get(id);
+    if (!node) return false;
+    if (direction === 'open' && node.children.length) {
+      if (!expandedItems.has(id)) {
+        toggleItem(id);
+        row.focus();
+      } else {
+        const child = row.nextElementSibling as HTMLElement | null;
+        if (child?.dataset.treeParent === id) child.focus();
+      }
+    } else if (direction === 'close') {
+      if (node.children.length && expandedItems.has(id)) {
+        toggleItem(id);
+        row.focus();
+      } else if (row.dataset.treeParent) {
+        const rows = row.closest('.work-group')?.querySelectorAll<HTMLElement>('[data-item-id]');
+        Array.from(rows || [])
+          .find((entry) => entry.dataset.itemId === row.dataset.treeParent)
+          ?.focus();
+      }
+    }
   }
   function moveFocus(direction: number) {
     const rendered = Array.from(
@@ -293,6 +483,8 @@ export default function WorkList({
       },
       next: () => moveFocus(1),
       previous: () => moveFocus(-1),
+      expandTree: () => navigateTree('open'),
+      collapseTree: () => navigateTree('close'),
       open: () => {
         const focused = document.activeElement as HTMLElement | null;
         if (
@@ -335,6 +527,40 @@ export default function WorkList({
       setSaving(false);
     }
   }
+  async function setParentForItems(targets: WorkItem[], parentId: string | null) {
+    if (saving) return false;
+    setSaving(true);
+    const completed = new Set<string>();
+    let failure = '';
+    try {
+      for (const item of targets) {
+        try {
+          await patch(`/items/${item.id}`, { parentId, expectedRevision: item.revision ?? 0 });
+          completed.add(item.id);
+        } catch (error) {
+          failure = (error as Error).message;
+          break;
+        }
+      }
+      await refresh();
+      setSelected((previous) => new Set([...previous].filter((id) => !completed.has(id))));
+      if (failure) {
+        toast(`${completed.size} of ${targets.length} updated. ${failure}`, 'error');
+        // Close the dialog so another attempt uses fresh revisions from bootstrap.
+      } else
+        toast(
+          parentId
+            ? `Parent set for ${completed.size} work items`
+            : `Moved ${completed.size} work items to top level`,
+        );
+      return true;
+    } catch (error) {
+      toast((error as Error).message, 'error');
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
   async function saveView() {
     if (!viewName.trim()) return;
     const filters: Record<string, string> = {
@@ -343,6 +569,8 @@ export default function WorkList({
       ...(projectId ? { projectId } : {}),
       showDone: String(showDone),
       groupBy,
+      indentSubtasks: String(indentSubtasks),
+      ...(board ? { board: JSON.stringify(boardPreferences) } : {}),
     };
     for (const key of [
       'status',
@@ -350,6 +578,8 @@ export default function WorkList({
       'assigneeId',
       'type',
       'source',
+      'hierarchy',
+      'parentId',
       'tag',
       'untagged',
       'search',
@@ -361,6 +591,9 @@ export default function WorkList({
       assigneeId: assigneeFilter,
       type: typeFilter,
       source: sourceFilter,
+      milestoneId: milestoneFilter,
+      hierarchy: hierarchyFilter,
+      parentId: hierarchyParentId,
       tag,
       untagged,
       search: search.trim(),
@@ -402,14 +635,29 @@ export default function WorkList({
       </span>
     );
   }
-  function itemRow(item: WorkItem) {
+  function itemRow({
+    node,
+    depth,
+    parentId,
+    position,
+    setSize,
+  }: ReturnType<typeof flattenWorkTree>[number]) {
+    const { item } = node;
+    const expanded = expandedItems.has(item.id);
     return (
       <div
-        className="work-row"
+        className={`work-row work-tree-row ${depth ? 'work-tree-child' : ''} ${!node.matches && treeFiltered ? 'work-tree-context' : ''}`}
         key={item.id}
         data-item-id={item.id}
+        data-tree-parent={parentId}
+        style={{ '--tree-depth': Math.min(depth, 4) } as CSSProperties}
         tabIndex={0}
-        role="button"
+        role="treeitem"
+        aria-selected={selecting ? selected.has(item.id) : undefined}
+        aria-level={depth + 1}
+        aria-posinset={position}
+        aria-setsize={setSize}
+        aria-expanded={node.children.length ? expanded : undefined}
         aria-label={`${item.identifier} ${item.title}`}
         onClick={() => openItem(item.id)}
         onKeyDown={(e) => {
@@ -424,24 +672,92 @@ export default function WorkList({
           }
         }}
       >
-        {statusControl(item)}
-        <span className="item-identifier">{item.identifier}</span>
-        <div className={`item-name ${item.source ? 'has-source' : ''}`}>
-          <div className="item-title-line">
-            <span className={isDone(item) ? 'completed-title' : ''}>{item.title}</span>
-            {item.visibility === 'private' && <LockKeyhole size={12} className="muted" />}
-            <span className="row-labels">
-              {item.labels.slice(0, 2).map((label) => (
-                <span
-                  key={label}
-                  className={`label-tag label-${label.toLowerCase().replace(/[^a-z]/g, '')}`}
+        <div className="work-tree-main">
+          {selecting && (
+            <input
+              type="checkbox"
+              className="hierarchy-select"
+              aria-label={`Select ${item.identifier}`}
+              checked={selected.has(item.id)}
+              onClick={(event) => event.stopPropagation()}
+              onChange={(event) =>
+                setSelected((previous) => {
+                  const next = new Set(previous);
+                  event.target.checked ? next.add(item.id) : next.delete(item.id);
+                  return next;
+                })
+              }
+            />
+          )}
+          {node.childCount > 0 ? (
+            <button
+              className="tree-toggle tree-chevron"
+              aria-label={`${expanded ? 'Collapse' : 'Expand'} subtasks of ${item.identifier}`}
+              aria-expanded={node.children.length ? expanded : undefined}
+              disabled={!node.children.length}
+              title={
+                node.children.length
+                  ? `${expanded ? 'Collapse' : 'Expand'} subtasks (← / →)`
+                  : !indentSubtasks
+                    ? 'Subtasks are displayed as separate rows'
+                    : 'No subtasks match the current filters'
+              }
+              onClick={(event) => {
+                event.stopPropagation();
+                toggleItem(item.id);
+              }}
+            >
+              {expanded && node.children.length ? (
+                <ChevronDown size={14} />
+              ) : (
+                <ChevronRight size={14} />
+              )}
+            </button>
+          ) : (
+            <span className="tree-spacer" aria-hidden="true" />
+          )}
+          {statusControl(item)}
+          <span className="item-identifier">{item.identifier}</span>
+          <div className={`item-name ${item.source ? 'has-source' : ''}`}>
+            <div className="item-title-line">
+              <span className={isDone(item) ? 'completed-title' : ''}>{item.title}</span>
+              {node.childCount > 0 && (
+                <button
+                  className="tree-toggle tree-count"
+                  aria-label={`${node.completedChildren} of ${node.childCount} subtasks completed for ${item.identifier}`}
+                  aria-expanded={node.children.length ? expanded : undefined}
+                  disabled={!node.children.length}
+                  title={`${node.completedChildren} of ${node.childCount} subtasks completed${treeFiltered ? ` · ${node.children.length} shown by filters` : ''}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    toggleItem(item.id);
+                  }}
                 >
-                  {label}
-                </span>
-              ))}
-            </span>
+                  {node.completedChildren}/{node.childCount} subtasks done
+                </button>
+              )}
+              {item.visibility === 'private' && <LockKeyhole size={12} className="muted" />}
+              <span className="row-labels">
+                {item.labels.slice(0, 2).map((label) => (
+                  <span
+                    key={label}
+                    className={`label-tag label-${label.toLowerCase().replace(/[^a-z]/g, '')}`}
+                  >
+                    {label}
+                  </span>
+                ))}
+              </span>
+            </div>
+            <SourceBadge item={item} />
+            {depth > 0 && (
+              <span className="tree-status">
+                {statuses.find((status) => status.id === item.status)?.name}
+              </span>
+            )}
+            {!node.matches && treeFiltered && (
+              <span className="tree-context-label">Parent context</span>
+            )}
           </div>
-          <SourceBadge item={item} />
         </div>
         <span className="inline-control priority-cell" onClick={(e) => e.stopPropagation()}>
           <PriorityIcon priority={item.priority} />
@@ -470,9 +786,9 @@ export default function WorkList({
             onChange={(e) => update(item, { assigneeId: e.target.value || null })}
           >
             <option value="">Unassigned</option>
-            {data.users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name}
+            {assigneeOptions(data.users, item.assigneeId).map((u) => (
+              <option key={u.id} value={u.id} disabled={u.disabled}>
+                {u.label}
               </option>
             ))}
           </Select>
@@ -486,12 +802,20 @@ export default function WorkList({
           ) : (
             <span className="empty-date">—</span>
           )}
+          <HierarchyMenu
+            item={item}
+            disabled={saving}
+            onParent={() => setParentTargets([item])}
+            onClear={() => void setParentForItems([item], null)}
+          />
         </span>
       </div>
     );
   }
   return (
-    <div className={`work-view ${board ? 'board-view' : ''}`}>
+    <div
+      className={`work-view ${selecting ? 'hierarchy-selecting' : ''} ${board ? 'board-view' : ''} ${board && boardPreferences.compact ? 'board-compact' : ''}`}
+    >
       <div className="work-toolbar">
         <div className="popover-parent">
           <button
@@ -526,6 +850,44 @@ export default function WorkList({
                 }}
               >
                 <h4>Filter work items</h4>
+                <label className="field">
+                  Hierarchy
+                  <Select
+                    className="select"
+                    value={hierarchyFilter}
+                    onChange={(event) => setHierarchyFilter(event.target.value)}
+                  >
+                    <option value="">All levels</option>
+                    <option value="top-level">Top level only</option>
+                    <option value="has-subtasks">Has subtasks</option>
+                    <option value="subtasks">Subtasks of…</option>
+                  </Select>
+                </label>
+                {hierarchyFilter === 'subtasks' && (
+                  <label className="field">
+                    Subtasks of
+                    <Select
+                      className="select"
+                      searchable
+                      aria-label="Subtasks of"
+                      value={parentFilter}
+                      onChange={(event) => setParentFilter(event.target.value)}
+                    >
+                      <option value="">Choose a parent…</option>
+                      {data.items
+                        .filter((item) => progress.has(item.id))
+                        .map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.identifier} · {item.title}
+                          </option>
+                        ))}
+                      {parentFilter &&
+                        !data.items.some(
+                          (item) => item.id === parentFilter && progress.has(item.id),
+                        ) && <option value={parentFilter}>Saved parent (no subtasks here)</option>}
+                    </Select>
+                  </label>
+                )}
                 <label className="field">
                   Tag
                   <Select
@@ -570,6 +932,28 @@ export default function WorkList({
                       !repositories.some(
                         (source) => sourceFilter === `integration:${source.integrationId}`,
                       ) && <option value={sourceFilter}>Saved repository (no items here)</option>}
+                  </Select>
+                </label>
+                <label className="field">
+                  Milestone
+                  <Select
+                    value={milestoneFilter}
+                    onChange={(e) => setMilestoneFilter(e.target.value)}
+                  >
+                    <option value="">All milestones</option>
+                    <option value="null">No milestone</option>
+                    {data.milestones
+                      .filter(
+                        (m) =>
+                          !projectId ||
+                          m.projectId === projectId ||
+                          items.some((item) => item.projectId === m.projectId),
+                      )
+                      .map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.title} · {data.projects.find((p) => p.id === m.projectId)?.name}
+                        </option>
+                      ))}
                   </Select>
                 </label>
                 <label className="field">
@@ -639,8 +1023,11 @@ export default function WorkList({
                     setPriorityFilter('');
                     setAssigneeFilter('');
                     setTypeFilter('');
+                    setMilestoneFilter('');
                     setSourceFilter('');
                     setTagFilter('');
+                    setHierarchyFilter('');
+                    setParentFilter('');
                   }}
                 >
                   Clear filters
@@ -674,6 +1061,18 @@ export default function WorkList({
           )}
         </label>
         <div className="toolbar-spacer" />
+        {!board && (
+          <button
+            className="button"
+            aria-pressed={selecting}
+            onClick={() => {
+              setSelecting(!selecting);
+              setSelected(new Set());
+            }}
+          >
+            {selecting ? 'Done selecting' : 'Select items'}
+          </button>
+        )}
         <button
           className="icon-button save-view-button"
           title="Save view"
@@ -698,6 +1097,12 @@ export default function WorkList({
             </Select>
             <ChevronDown size={13} />
           </label>
+        )}
+        {board && (
+          <button className="button" onClick={() => setBoardSettingsOpen(true)}>
+            <SlidersHorizontal size={14} />
+            Customize board
+          </button>
         )}
         <div className="popover-parent">
           <button
@@ -733,6 +1138,16 @@ export default function WorkList({
                     </Select>
                   </label>
                 )}
+                {!board && (
+                  <label className="check-field">
+                    <input
+                      type="checkbox"
+                      checked={indentSubtasks}
+                      onChange={(event) => setIndentSubtasks(event.target.checked)}
+                    />
+                    Show subtasks under their parent
+                  </label>
+                )}
                 <label className="check-field">
                   <input
                     type="checkbox"
@@ -746,21 +1161,73 @@ export default function WorkList({
           )}
         </div>
       </div>
+      {boardSettingsOpen && (
+        <BoardSettings
+          value={boardPreferences}
+          onSave={customizeBoard}
+          onClose={() => setBoardSettingsOpen(false)}
+        />
+      )}
+      {board && (
+        <p className="board-hint">
+          Drag column handles to rearrange. Drag cards to move or reorder; use Alt + ↑ / ↓ on a
+          focused card to reorder with the keyboard.
+        </p>
+      )}
+      {selecting && !board && (
+        <div className="hierarchy-selection">
+          <strong>{selected.size} selected</strong>
+          <button
+            className="button small"
+            onClick={() => setSelected(new Set(visible.map((item) => item.id)))}
+          >
+            Select all {visible.length} matching
+          </button>
+          <button
+            className="button small"
+            disabled={!selected.size || saving}
+            onClick={() => setParentTargets(data.items.filter((item) => selected.has(item.id)))}
+          >
+            Set parent
+          </button>
+          <button
+            className="button small ghost"
+            disabled={!selected.size}
+            onClick={() => setSelected(new Set())}
+          >
+            Clear selection
+          </button>
+        </div>
+      )}
       <div ref={listRef} className={board ? 'board-columns' : 'work-groups'}>
-        {!board && visible.length === 0 ? (
+        {(board ? groups.length === 0 : visible.length === 0) ? (
           <EmptyState
             icon={<Layers size={27} />}
-            title={items.length ? 'No matching work items' : 'A clear space for what’s next'}
+            title={
+              board
+                ? 'No visible columns'
+                : items.length
+                  ? 'No matching work items'
+                  : 'A clear space for what’s next'
+            }
             description={
-              items.length
-                ? 'Try another search or adjust your filters.'
-                : 'Capture a task, an idea, or something to follow up on.'
+              board
+                ? 'Choose the columns you want to see in Customize board.'
+                : items.length
+                  ? 'Try another search or adjust your filters.'
+                  : 'Capture a task, an idea, or something to follow up on.'
             }
             action={
-              <button className="button primary" onClick={() => createItem(projectId)}>
-                <Plus size={15} />
-                Create work item
-              </button>
+              board ? (
+                <button className="button primary" onClick={() => setBoardSettingsOpen(true)}>
+                  Customize board
+                </button>
+              ) : (
+                <button className="button primary" onClick={() => createItem(projectId)}>
+                  <Plus size={15} />
+                  Create work item
+                </button>
+              )
             }
           />
         ) : (
@@ -769,17 +1236,30 @@ export default function WorkList({
               <section
                 key={group.id}
                 data-board-status={group.id}
-                className={`board-column ${dragging ? 'drop-ready' : ''}`}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const id = e.dataTransfer.getData('text/plain');
-                  const item = items.find((i) => i.id === id);
-                  setDragging(null);
-                  if (item) update(item, { status: group.id as Status });
-                }}
+                className={`board-column ${dropTarget?.status === group.id ? 'drop-ready' : ''} ${columnDragging === group.id ? 'column-dragging' : ''}`}
               >
                 <header>
+                  <button
+                    className="icon-button board-column-handle"
+                    aria-label={`Rearrange ${group.name} column`}
+                    title="Drag to rearrange, or press Enter to customize"
+                    onClick={() => {
+                      if (!suppressClick.current) setBoardSettingsOpen(true);
+                    }}
+                    onPointerDown={(event) => {
+                      if (event.button !== 0) return;
+                      event.currentTarget.setPointerCapture(event.pointerId);
+                      pointerDrag.current = {
+                        id: group.id,
+                        kind: 'column',
+                        x: event.clientX,
+                        y: event.clientY,
+                        moved: false,
+                      };
+                    }}
+                  >
+                    <GripVertical size={14} />
+                  </button>
                   <StatusIcon status={group.id as Status} />
                   <strong>{group.name}</strong>
                   <span>{group.items.length}</span>
@@ -794,15 +1274,18 @@ export default function WorkList({
                 {group.items.map((item) => (
                   <article
                     key={item.id}
-                    className={`board-card ${dragging === item.id ? 'dragging' : ''}`}
+                    className={`board-card ${dragging === item.id ? 'dragging' : ''} ${dropTarget?.beforeId === item.id ? 'board-drop-before' : ''}`}
                     onPointerDown={(e) => {
                       if (
+                        saving ||
                         e.button !== 0 ||
                         (e.target as HTMLElement).closest('select,input,button,a')
                       )
                         return;
+                      e.currentTarget.setPointerCapture(e.pointerId);
                       pointerDrag.current = {
                         id: item.id,
+                        kind: 'card',
                         x: e.clientX,
                         y: e.clientY,
                         moved: false,
@@ -812,6 +1295,18 @@ export default function WorkList({
                       if (!suppressClick.current) openItem(item.id);
                     }}
                     onKeyDown={(e) => {
+                      if (
+                        e.target === e.currentTarget &&
+                        e.altKey &&
+                        ['ArrowUp', 'ArrowDown'].includes(e.key)
+                      ) {
+                        e.preventDefault();
+                        const index = group.items.findIndex((entry) => entry.id === item.id);
+                        if (e.key === 'ArrowUp' && index > 0)
+                          void moveCard(item, item.status, group.items[index - 1].id);
+                        if (e.key === 'ArrowDown' && index < group.items.length - 1)
+                          void moveCard(item, item.status, group.items[index + 2]?.id || null);
+                      }
                       if (e.target === e.currentTarget && e.key === 'Enter') {
                         e.preventDefault();
                         openItem(item.id);
@@ -827,8 +1322,13 @@ export default function WorkList({
                       <PriorityIcon priority={item.priority} />
                     </div>
                     <h3>{item.title}</h3>
+                    {progress.has(item.id) && (
+                      <span className="hierarchy-progress">
+                        {progress.get(item.id)!.done}/{progress.get(item.id)!.total} subtasks done
+                      </span>
+                    )}
                     <SourceBadge item={item} />
-                    {item.labels.length > 0 && (
+                    {boardPreferences.showLabels && item.labels.length > 0 && (
                       <div className="board-labels">
                         {item.labels.slice(0, 2).map((l) => (
                           <span className="label-tag" key={l}>
@@ -850,7 +1350,7 @@ export default function WorkList({
                   </article>
                 ))}
                 <button
-                  className="board-add"
+                  className={`board-add ${dropTarget?.status === group.id && !dropTarget.beforeId ? 'board-drop-before' : ''}`}
                   onClick={() => createItem(projectId, group.id as Status)}
                 >
                   <Plus size={15} />
@@ -885,7 +1385,11 @@ export default function WorkList({
                       ) : null}
                     </span>
                     <strong>{group.name}</strong>
-                    <small>{group.items.length}</small>
+                    <small
+                      title={`${group.items.length} ${indentSubtasks ? 'top-level ' : ''}items`}
+                    >
+                      {group.items.length}
+                    </small>
                   </button>
                   <span className="group-col-priority">Priority</span>
                   <span className="group-col-assignee">Assignee</span>
@@ -895,7 +1399,23 @@ export default function WorkList({
                 </div>
                 {!collapsed.has(group.id) && (
                   <>
-                    {group.items.map(itemRow)}
+                    <div
+                      role="tree"
+                      aria-label={groupBy === 'none' ? group.name : `${group.name} work items`}
+                    >
+                      {(indentSubtasks
+                        ? flattenWorkTree(
+                            group.items.map((item) => tree.nodes.get(item.id)!),
+                            expandedItems,
+                          )
+                        : group.items.map((item, index) => ({
+                            node: { ...tree.nodes.get(item.id)!, children: [] },
+                            depth: 0,
+                            position: index + 1,
+                            setSize: group.items.length,
+                          }))
+                      ).map(itemRow)}
+                    </div>
                     <button
                       className="add-item-row"
                       onClick={() =>
@@ -931,10 +1451,24 @@ export default function WorkList({
             <>
               <kbd>J</kbd>
               <kbd>K</kbd> navigate <span className="footer-divider">·</span> <kbd>↵</kbd> open
+              {!board && (
+                <>
+                  {' '}
+                  <span className="footer-divider">·</span> <kbd>←</kbd>
+                  <kbd>→</kbd> subtasks
+                </>
+              )}
             </>
           )}
         </span>
       </div>
+      {parentTargets && (
+        <ParentPicker
+          items={parentTargets}
+          onClose={() => setParentTargets(null)}
+          onSave={(parentId) => setParentForItems(parentTargets, parentId)}
+        />
+      )}
       {saveOpen && (
         <Modal title="Save this view" onClose={() => setSaveOpen(false)}>
           <form

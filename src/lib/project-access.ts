@@ -28,3 +28,16 @@ export function projectAccessMembers(project: Project, projects: Project[], user
       a.id === project.ownerId ? -1 : b.id === project.ownerId ? 1 : a.name.localeCompare(b.name),
     );
 }
+
+/** The project team is independent of visibility; ownership implies membership. */
+export function projectTeamMembers(project: Project, users: User[]): User[] {
+  return users
+    .filter(
+      (user) =>
+        (project.workspaceId ?? 'default') === (user.workspaceId ?? 'default') &&
+        (user.id === project.ownerId || project.memberIds?.includes(user.id)),
+    )
+    .sort((a, b) =>
+      a.id === project.ownerId ? -1 : b.id === project.ownerId ? 1 : a.name.localeCompare(b.name),
+    );
+}

@@ -1,3 +1,4 @@
+import { trackDesktopWrite } from './desktop-updates';
 export class ApiError extends Error {
   status: number;
   constructor(message: string, status: number) {
@@ -6,26 +7,31 @@ export class ApiError extends Error {
   }
 }
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`/api/v1${path}`, {
-    ...options,
-    credentials: 'same-origin',
-    headers: {
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-      ...options.headers,
-    },
-  });
-  if (!res.ok) {
-    let message = `Request failed (${res.status})`;
-    try {
-      const data = await res.json();
-      message = data.message || data.error || message;
-    } catch {
-      /* non-JSON response */
+  const done = options.method && options.method !== 'GET' ? trackDesktopWrite() : () => {};
+  try {
+    const res = await fetch(`/api/v1${path}`, {
+      ...options,
+      credentials: 'same-origin',
+      headers: {
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        ...options.headers,
+      },
+    });
+    if (!res.ok) {
+      let message = `Request failed (${res.status})`;
+      try {
+        const data = await res.json();
+        message = data.message || data.error || message;
+      } catch {
+        /* non-JSON response */
+      }
+      throw new ApiError(message, res.status);
     }
-    throw new ApiError(message, res.status);
+    if (res.status === 204) return undefined as T;
+    return (await res.json()) as T;
+  } finally {
+    done();
   }
-  if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
 }
 export function post<T>(path: string, body: unknown) {
   return api<T>(path, { method: 'POST', body: JSON.stringify(body) });

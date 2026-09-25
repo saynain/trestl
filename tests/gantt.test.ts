@@ -122,8 +122,8 @@ test('item schedules persist, validate partial updates, protect revisions and re
     assert.equal(march.startDate, '2026-03-31');
     assert.equal(march.dueDate, '2026-03-31');
     const cleared = await request('PATCH', `/items/${item.id}`, { startDate: null, dueDate: null });
-    assert.equal(cleared.json().startDate, null);
-    assert.equal(cleared.json().dueDate, null);
+    assert.equal(cleared.json().item.startDate, null);
+    assert.equal(cleared.json().item.dueDate, null);
   } finally {
     await app.close();
   }

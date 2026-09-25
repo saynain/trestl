@@ -1,13 +1,15 @@
-import { Component, lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
-import { Pencil, PencilRuler, Plus, Search, Trash2 } from 'lucide-react';
+import { Component, lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Pencil, PencilRuler, Plus, Search, Trash2, Upload } from 'lucide-react';
 import type { CanvasCollection, CanvasSummary, Project, ProjectCanvas } from '../../shared/types';
 import { api, post } from '../lib/api';
 import { navigate } from '../lib/model';
+import { useApp } from '../lib/context';
 import { EmptyState, Modal } from './ui';
 import CanvasCard from './CanvasCard';
 import CanvasCollectionDialog from './CanvasCollectionDialog';
 import { organizeCanvases, type CanvasSort } from '../lib/canvas-organization';
 import './canvases.css';
+import { importCanvas, readCanvasImport } from '../lib/canvas-import';
 
 const CanvasEditor = lazy(() => import('./CanvasEditor'));
 class EditorBoundary extends Component<
@@ -36,6 +38,7 @@ class EditorBoundary extends Component<
 }
 
 export default function Canvases({ project, canvasId }: { project: Project; canvasId?: string }) {
+  const { refresh } = useApp();
   const [canvases, setCanvases] = useState<CanvasSummary[]>([]);
   const [collections, setCollections] = useState<CanvasCollection[]>([]);
   const [collectionFilter, setCollectionFilter] = useState('all');
@@ -48,6 +51,8 @@ export default function Canvases({ project, canvasId }: { project: Project; canv
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState('');
+  const importInput = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [retry, setRetry] = useState(0);
   const base = `/projects/${project.id}/canvases`;
@@ -92,6 +97,7 @@ export default function Canvases({ project, canvasId }: { project: Project; canv
             );
           }
         }
+        if (active) void refresh();
       } catch (e) {
         if (active) setError((e as Error).message);
       } finally {
@@ -102,7 +108,7 @@ export default function Canvases({ project, canvasId }: { project: Project; canv
     return () => {
       active = false;
     };
-  }, [base, canvasId, retry]);
+  }, [base, canvasId, retry, refresh]);
   if (loading)
     return (
       <div className="canvas-loading" role="status">
@@ -137,11 +143,44 @@ export default function Canvases({ project, canvasId }: { project: Project; canv
           <h2>Canvases</h2>
           <p>A place to think through systems, sketch ideas, and keep the bigger picture.</p>
         </div>
-        <button className="button primary" onClick={beginCreate}>
-          <Plus size={16} />
-          New canvas
-        </button>
+        <div className="canvas-form-actions">
+          <button
+            className="button"
+            disabled={importing}
+            onClick={() => importInput.current?.click()}
+          >
+            <Upload size={16} />
+            {importing ? 'Importing…' : 'Import .excalidraw'}
+          </button>
+          <button className="button primary" onClick={beginCreate} disabled={importing}>
+            <Plus size={16} />
+            New canvas
+          </button>
+        </div>
       </div>
+      <input
+        ref={importInput}
+        type="file"
+        hidden
+        accept=".excalidraw,application/vnd.excalidraw+json"
+        aria-label="Import .excalidraw file"
+        onChange={async (event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          if (!file || importing) return;
+          setImporting(true);
+          setError('');
+          try {
+            const document = await readCanvasImport(file);
+            const result = await importCanvas(base, file, document, selectedCollection?.id);
+            open(result.id);
+          } catch (e) {
+            setError(`Import failed: ${(e as Error).message}`);
+          } finally {
+            setImporting(false);
+          }
+        }}
+      />
       <div className="canvas-organization">
         <div className="canvas-collection-bar">
           <div className="canvas-collection-filters" role="group" aria-label="Filter by collection">

@@ -59,8 +59,14 @@ jobs:
           IMAGE: ${{ steps.image.outputs.reference }}
           SOURCE_SHA: ${{ steps.image.outputs.source_sha }}
           SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
+          BUILD_REF: ${{ github.ref_name }}
+          BUILD_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           docker build --platform linux/amd64 \
+            --build-arg "TRESTL_BUILD_COMMIT=${SOURCE_SHA}" \
+            --build-arg "TRESTL_BUILD_REF=${BUILD_REF}" \
+            --build-arg "TRESTL_BUILD_ID=${BUILD_ID}" \
+            --build-arg "TRESTL_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --label "org.opencontainers.image.source=${SOURCE_URL}" \
             --label "org.opencontainers.image.revision=${SOURCE_SHA}" \
             --label "org.opencontainers.image.licenses=MIT" \

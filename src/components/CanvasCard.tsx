@@ -154,7 +154,7 @@ export default function CanvasCard({
           format === 'png' ? 'PNG copied to clipboard.' : 'SVG source copied to clipboard.',
         );
       } else {
-        downloadCanvasImage(await image, item.title, format);
+        if (!(await downloadCanvasImage(await image, item.title, format))) return;
         setMessage(`${format.toUpperCase()} downloaded.`);
       }
     });

@@ -1,3 +1,7 @@
+import { ParentSelect, ParentPicker, HierarchyMenu } from './ParentPicker';
+import { MentionTextarea } from './MentionTextarea';
+import { workItemOptions } from '../lib/work-item-options';
+import { assigneeOptions } from '../lib/assignees';
 import { useShortcuts, activateItemControl } from '../lib/keyboard';
 import { itemActions, type ItemAction } from '../lib/shortcuts';
 import { Select } from './Select';
@@ -6,6 +10,11 @@ import {
   ArrowUpRight,
   Download,
   CircleAlert,
+  CircleDot,
+  Tag,
+  UserRound,
+  CalendarDays,
+  ArrowRightLeft,
   GitFork,
   Github,
   ChevronRight,
@@ -83,6 +92,7 @@ function activityText(body: string, data: Bootstrap) {
     priority: 'priority',
     assigneeId: 'assignee',
     projectId: 'project',
+    milestoneId: 'milestone',
     parentId: 'parent item',
     type: 'type',
     startDate: 'start date',
@@ -119,29 +129,50 @@ function activityText(body: string, data: Bootstrap) {
                 ? data.users.find((entry) => entry.id === value)?.name || 'a member'
                 : key === 'projectId'
                   ? data.projects.find((entry) => entry.id === value)?.name || 'a project'
-                  : key === 'parentId'
-                    ? data.items.find((entry) => entry.id === value)?.identifier || 'a work item'
-                    : key === 'startDate' || key === 'dueDate' || key === 'followUpDate'
-                      ? shortDate(value)
-                      : key === 'visibility'
-                        ? value === 'private'
-                          ? 'Private'
-                          : 'Workspace'
-                        : key === 'recurrence'
-                          ? value.charAt(0).toUpperCase() + value.slice(1)
-                          : value;
+                  : key === 'milestoneId'
+                    ? data.milestones.find((entry) => entry.id === value)?.title || 'a milestone'
+                    : key === 'parentId'
+                      ? data.items.find((entry) => entry.id === value)?.identifier || 'a work item'
+                      : key === 'startDate' || key === 'dueDate' || key === 'followUpDate'
+                        ? shortDate(value)
+                        : key === 'visibility'
+                          ? value === 'private'
+                            ? 'Private'
+                            : 'Workspace'
+                          : key === 'recurrence'
+                            ? value.charAt(0).toUpperCase() + value.slice(1)
+                            : value;
       return `changed ${field} to ${readable || value}`;
     })
     .join(' · ');
 }
 
+function ActivityIcon({ body }: { body: string }) {
+  const field = body.split(': ')[0];
+  const Icon =
+    field === 'status'
+      ? CircleDot
+      : field === 'assigneeId'
+        ? UserRound
+        : field === 'labels'
+          ? Tag
+          : ['startDate', 'dueDate', 'followUpDate'].includes(field)
+            ? CalendarDays
+            : ['projectId', 'parentId', 'position'].includes(field)
+              ? ArrowRightLeft
+              : Pencil;
+  return <Icon size={16} aria-hidden="true" />;
+}
+
 export default function ItemDetail({
   id,
+  activityId,
   onClose,
   initialAction,
   onActionHandled,
 }: {
   id: string;
+  activityId?: string;
   onClose: () => void;
   initialAction?: ItemAction;
   onActionHandled?: () => void;
@@ -150,18 +181,24 @@ export default function ItemDetail({
   const actionRoot = useRef<HTMLDivElement>(null);
   const [editField, setEditField] = useState<'title' | 'description'>('title');
   const [detail, setDetail] = useState<Detail | null>(null);
+  useEffect(() => {
+    if (detail?.item.id === id && activityId)
+      document.getElementById(`activity-${activityId}`)?.scrollIntoView({ block: 'center' });
+  }, [detail?.item.id, id, activityId]);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [comment, setComment] = useState('');
+  const [commentPreview, setCommentPreview] = useState(false);
   const [tagDraft, setTagDraft] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showLink, setShowLink] = useState(false);
   const [linkTitle, setLinkTitle] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
   const [linkKind, setLinkKind] = useState('link');
+  const [showParent, setShowParent] = useState(false);
   const [showRelation, setShowRelation] = useState(false);
   const [relationTarget, setRelationTarget] = useState('');
   const [relationKind, setRelationKind] = useState('blocks');
@@ -176,9 +213,11 @@ export default function ItemDetail({
     setError('');
     setEditing(false);
     setComment('');
+    setCommentPreview(false);
     setTagDraft('');
     setConfirmDelete(false);
     setShowRelation(false);
+    setShowParent(false);
     setShowLink(false);
     api<Detail>(`/items/${id}`)
       .then((next) => {
@@ -198,7 +237,10 @@ export default function ItemDetail({
     setSaving(true);
     setError('');
     try {
-      const item = await patch<WorkItem>(`/items/${id}`, changes);
+      const { item } = await patch<{ item: WorkItem }>(`/items/${id}`, {
+        ...changes,
+        ...(changes.parentId !== undefined ? { expectedRevision: detail?.item.revision ?? 0 } : {}),
+      });
       setDetail((current) => current && { ...current, item });
       await Promise.all([reload(), refresh()]);
       return true;
@@ -228,7 +270,10 @@ export default function ItemDetail({
     if (comment.trim())
       await mutate(
         () => post(`/items/${id}/comments`, { body: comment.trim() }),
-        () => setComment(''),
+        () => {
+          setComment('');
+          setCommentPreview(false);
+        },
       );
   }
   async function deleteItem() {
@@ -245,7 +290,7 @@ export default function ItemDetail({
     }
   }
   const item = detail?.item;
-  async function addTags() {
+  async function saveTags(removeTag?: string) {
     if (!item || saving) return;
     const draft = tagDraft;
     const next = [...item.labels];
@@ -255,7 +300,11 @@ export default function ItemDetail({
       .filter(Boolean)) {
       if (!next.some((existing) => existing.toLowerCase() === tag.toLowerCase())) next.push(tag);
     }
-    if (next.length === item.labels.length || (await update({ labels: next }))) {
+    const labels = next.filter((tag) => tag !== removeTag);
+    const unchanged =
+      labels.length === item.labels.length &&
+      labels.every((tag, index) => tag === item.labels[index]);
+    if (unchanged || (await update({ labels }))) {
       setTagDraft((current) => (current === draft ? '' : current));
     }
   }
@@ -367,6 +416,12 @@ export default function ItemDetail({
                 </span>
               )}
               <div className="item-action-spacer" />
+              <HierarchyMenu
+                item={item}
+                disabled={saving}
+                onParent={() => setShowParent(true)}
+                onClear={() => void update({ parentId: null })}
+              />
               <button
                 className="icon-button"
                 aria-label="Copy work item link"
@@ -443,6 +498,17 @@ export default function ItemDetail({
               <form
                 className="item-inline-editor"
                 onKeyDown={(event) => {
+                  if (
+                    event.key === 'Enter' &&
+                    (event.metaKey || event.ctrlKey) &&
+                    !event.altKey &&
+                    !event.shiftKey &&
+                    !event.nativeEvent.isComposing
+                  ) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (!event.repeat && !saving) event.currentTarget.requestSubmit();
+                  }
                   if (event.key === 'Escape') {
                     event.preventDefault();
                     event.stopPropagation();
@@ -465,7 +531,9 @@ export default function ItemDetail({
                   maxLength={240}
                   onChange={(e) => setTitle(e.target.value)}
                 />
-                <textarea
+                <MentionTextarea
+                  excludeItemId={id}
+                  projectId={item.projectId}
                   className="input"
                   aria-label="Description"
                   value={description}
@@ -481,6 +549,8 @@ export default function ItemDetail({
                     className="button primary"
                     type="submit"
                     disabled={saving || !title.trim()}
+                    title="Save changes (Cmd+Enter / Ctrl+Enter)"
+                    aria-keyshortcuts="Meta+Enter Control+Enter"
                   >
                     Save changes
                   </button>
@@ -490,7 +560,12 @@ export default function ItemDetail({
               <>
                 <h1 className="item-detail-title">{item.title}</h1>
                 {item.description ? (
-                  <MarkdownBody>{item.description}</MarkdownBody>
+                  <MarkdownBody
+                    onChange={source ? undefined : (description) => void update({ description })}
+                    saving={saving}
+                  >
+                    {item.description}
+                  </MarkdownBody>
                 ) : source ? (
                   <p className="item-section-empty">No description in {providerName}.</p>
                 ) : (
@@ -577,11 +652,34 @@ export default function ItemDetail({
                 </p>
               )}
             </section>
-            {(detail!.relations.length > 0 || showRelation) && (
+            {(detail!.relations.length > 0 ||
+              !!detail!.projectRelations?.length ||
+              showRelation) && (
               <section className="item-section">
                 <div className="item-section-heading">
                   <h3>Relationships</h3>
                 </div>
+                {detail!.projectRelations?.map((relation) => {
+                  const project = data.projects.find((p) => p.id === relation.projectId);
+                  return (
+                    <div className="item-relation" key={relation.id}>
+                      <span className="muted">Related to project</span>
+                      <a href={`#/project/${relation.projectId}`}>
+                        {project?.name || 'Unavailable project'}
+                      </a>
+                      <button
+                        className="icon-button"
+                        aria-label="Remove project relationship"
+                        disabled={saving}
+                        onClick={() =>
+                          void mutate(() => remove(`/items/${id}/project-relations/${relation.id}`))
+                        }
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  );
+                })}
                 {detail!.relations.map((relation) => {
                   const outward = relation.itemId === id;
                   const target = data.items.find(
@@ -644,6 +742,7 @@ export default function ItemDetail({
                       onChange={(e) => setRelationKind(e.target.value)}
                     >
                       <option value="blocks">Blocks</option>
+                      <option value="blocked_by">Blocked by</option>
                       <option value="related">Related to</option>
                     </Select>
                     <Select
@@ -654,13 +753,14 @@ export default function ItemDetail({
                       onChange={(e) => setRelationTarget(e.target.value)}
                     >
                       <option value="">Select a work item…</option>
-                      {data.items
-                        .filter((i) => i.id !== id)
-                        .map((i) => (
-                          <option key={i.id} value={i.id}>
-                            {i.identifier} · {i.title}
-                          </option>
-                        ))}
+                      {workItemOptions(data.items, data.projects, {
+                        projectId: item.projectId,
+                        excludeItemId: id,
+                      }).map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label} · {option.detail}
+                        </option>
+                      ))}
                     </Select>
                     <div className="item-edit-buttons">
                       <button
@@ -793,100 +893,156 @@ export default function ItemDetail({
               <div className="item-section-heading">
                 <h3>Activity</h3>
                 <span className="muted">
-                  <MessageSquare size={13} />
-                  {detail!.activity.filter((a) => a.kind === 'comment').length}
+                  <MessageSquare size={16} aria-hidden="true" />
+                  {detail!.activity.filter((a) => a.kind === 'comment').length}{' '}
+                  {detail!.activity.filter((a) => a.kind === 'comment').length === 1
+                    ? 'comment'
+                    : 'comments'}
                 </span>
               </div>
-              <div className="item-event">
-                <span className="item-event-dot" />
-                <span>
-                  <strong>{item.importedFrom?.authorName || creator?.name || 'A member'}</strong>{' '}
-                  created this work item{item.importedFrom && ' (imported)'}
-                </span>
-                <time dateTime={item.createdAt}>{shortDate(item.createdAt)}</time>
-              </div>
-              {detail!.activity.map((entry) => {
-                const user = data.users.find((u) => u.id === entry.userId);
-                const commentProvider = entry.source?.provider === 'github' ? 'GitHub' : 'Gitea';
-                const CommentSourceIcon = entry.source?.provider === 'github' ? Github : GitFork;
-                return entry.kind === 'event' ? (
-                  <div key={entry.id} className="item-event">
-                    <span className="item-event-dot" />
-                    <span>
-                      <strong>{entry.importedFrom?.authorName || user?.name || 'A member'}</strong>{' '}
-                      {activityText(entry.body, data)}
-                      {entry.importedFrom && ' (imported)'}
-                    </span>
-                    <time
-                      title={new Date(entry.createdAt).toLocaleString()}
-                      dateTime={entry.createdAt}
-                    >
-                      {shortDate(entry.createdAt)}
-                    </time>
-                  </div>
-                ) : (
-                  <article key={entry.id} className="item-comment">
-                    {entry.importedFrom ? (
-                      <span className="item-source-avatar">
-                        <Download size={15} aria-hidden="true" />
+              <ol className="item-timeline" aria-label="Activity timeline">
+                <li className="item-event">
+                  <span className="item-event-icon">
+                    <CircleDot size={16} aria-hidden="true" />
+                  </span>
+                  <span>
+                    <strong>{item.importedFrom?.authorName || creator?.name || 'A member'}</strong>{' '}
+                    created this work item{item.importedFrom && ' (imported)'}
+                  </span>
+                  <time title={new Date(item.createdAt).toLocaleString()} dateTime={item.createdAt}>
+                    {shortDate(item.createdAt)}
+                  </time>
+                </li>
+                {detail!.activity.map((entry) => {
+                  const user = data.users.find((u) => u.id === entry.userId);
+                  const commentProvider = entry.source?.provider === 'github' ? 'GitHub' : 'Gitea';
+                  const CommentSourceIcon = entry.source?.provider === 'github' ? Github : GitFork;
+                  return entry.kind === 'event' ? (
+                    <li key={entry.id} className="item-event">
+                      <span className="item-event-icon">
+                        <ActivityIcon body={entry.body} />
                       </span>
-                    ) : entry.source ? (
-                      <span className="item-source-avatar">
-                        <CommentSourceIcon size={15} aria-hidden="true" />
-                      </span>
-                    ) : (
-                      <Avatar user={user} size={27} />
-                    )}
-                    <div className="item-comment-content">
-                      <header>
+                      <span>
                         <strong>
-                          {entry.importedFrom?.authorName ||
-                            entry.source?.author ||
-                            user?.name ||
-                            'A member'}
-                        </strong>
-                        {entry.importedFrom ? (
-                          <span className="item-comment-origin">Imported</span>
-                        ) : entry.source ? (
-                          <span className="item-comment-origin">{commentProvider}</span>
-                        ) : source ? (
-                          <span className="item-comment-origin">Internal note</span>
-                        ) : null}
-                        <time
-                          title={new Date(entry.createdAt).toLocaleString()}
-                          dateTime={entry.createdAt}
-                        >
-                          {new Date(entry.createdAt).toLocaleString(undefined, {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </time>
-                      </header>
-                      <MarkdownBody>{entry.body}</MarkdownBody>
-                    </div>
-                  </article>
-                );
-              })}
+                          {entry.importedFrom?.authorName || user?.name || 'A member'}
+                        </strong>{' '}
+                        {activityText(entry.body, data)}
+                        {entry.importedFrom && ' (imported)'}
+                      </span>
+                      <time
+                        title={new Date(entry.createdAt).toLocaleString()}
+                        dateTime={entry.createdAt}
+                      >
+                        {shortDate(entry.createdAt)}
+                      </time>
+                    </li>
+                  ) : (
+                    <li
+                      key={entry.id}
+                      id={`activity-${entry.id}`}
+                      className={`item-comment ${entry.id === activityId ? 'notification-target' : ''}`}
+                    >
+                      {entry.importedFrom ? (
+                        <span className="item-source-avatar">
+                          <Download size={15} aria-hidden="true" />
+                        </span>
+                      ) : entry.source ? (
+                        <span className="item-source-avatar">
+                          <CommentSourceIcon size={15} aria-hidden="true" />
+                        </span>
+                      ) : (
+                        <span className="item-timeline-avatar">
+                          <Avatar user={user} size={36} />
+                        </span>
+                      )}
+                      <article className="item-comment-content">
+                        <header>
+                          <strong>
+                            {entry.importedFrom?.authorName ||
+                              entry.source?.author ||
+                              user?.name ||
+                              'A member'}
+                          </strong>
+                          {entry.importedFrom ? (
+                            <span className="item-comment-origin">Imported</span>
+                          ) : entry.source ? (
+                            <span className="item-comment-origin">{commentProvider}</span>
+                          ) : source ? (
+                            <span className="item-comment-origin">Internal note</span>
+                          ) : null}
+                          <time
+                            title={new Date(entry.createdAt).toLocaleString()}
+                            dateTime={entry.createdAt}
+                          >
+                            {new Date(entry.createdAt).toLocaleString(undefined, {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </time>
+                        </header>
+                        <MarkdownBody>{entry.body}</MarkdownBody>
+                      </article>
+                    </li>
+                  );
+                })}
+              </ol>
+              <h4 className="item-comment-heading">
+                {source ? 'Add an internal note' : 'Add a comment'}
+              </h4>
               <form className="item-comment-form" onSubmit={sendComment}>
-                <Avatar user={data.user} size={27} />
+                <Avatar user={data.user} size={36} />
                 <div>
-                  <textarea
-                    className="input"
-                    aria-label={source ? 'Internal note' : 'Comment'}
-                    placeholder={source ? 'Add an internal note…' : 'Leave a comment or an update…'}
-                    rows={3}
-                    data-shortcut="m"
-                    value={comment}
-                    onChange={(e) => setComment(e.target.value)}
-                    onKeyDown={(e) => {
-                      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                        e.preventDefault();
-                        void sendComment();
+                  <div
+                    className="item-comment-toolbar"
+                    role="group"
+                    aria-label="Comment editor mode"
+                  >
+                    <button
+                      type="button"
+                      aria-pressed={!commentPreview}
+                      onClick={() => setCommentPreview(false)}
+                    >
+                      Write
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={commentPreview}
+                      onClick={() => setCommentPreview(true)}
+                    >
+                      Preview
+                    </button>
+                  </div>
+                  {commentPreview ? (
+                    <div className="item-comment-preview" aria-label="Comment preview">
+                      {comment.trim() ? (
+                        <MarkdownBody>{comment}</MarkdownBody>
+                      ) : (
+                        <p className="muted">Nothing to preview yet.</p>
+                      )}
+                    </div>
+                  ) : (
+                    <MentionTextarea
+                      excludeItemId={id}
+                      projectId={item.projectId}
+                      className="input"
+                      aria-label={source ? 'Internal note' : 'Comment'}
+                      placeholder={
+                        source ? 'Add an internal note…' : 'Leave a comment or an update…'
                       }
-                    }}
-                  />
+                      rows={3}
+                      data-shortcut="m"
+                      value={comment}
+                      onChange={(e) => setComment(e.target.value)}
+                      onKeyDown={(e) => {
+                        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                          e.preventDefault();
+                          void sendComment();
+                        }
+                      }}
+                    />
+                  )}
                   {source && (
                     <p className="item-comment-scope">
                       Internal notes stay in Trestl and are never posted to {providerName}.
@@ -957,9 +1113,9 @@ export default function ItemDetail({
                   onChange={(e) => void update({ assigneeId: e.target.value || null })}
                 >
                   <option value="">Unassigned</option>
-                  {data.users.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name}
+                  {assigneeOptions(data.users, item.assigneeId).map((u) => (
+                    <option key={u.id} value={u.id} disabled={u.disabled}>
+                      {u.label}
                     </option>
                   ))}
                 </Select>
@@ -976,6 +1132,15 @@ export default function ItemDetail({
                   ))}
                 </Select>
               </Property>
+              <Property name="Parent">
+                <ParentSelect
+                  items={data.items}
+                  movingIds={[id]}
+                  value={item.parentId}
+                  onChange={(parentId) => void update({ parentId })}
+                  disabled={saving}
+                />
+              </Property>
               <Property name="Project">
                 <Select
                   shortcut="shift+p"
@@ -988,6 +1153,23 @@ export default function ItemDetail({
                       {p.name}
                     </option>
                   ))}
+                </Select>
+              </Property>
+              <Property name="Milestone">
+                <Select
+                  aria-label="Milestone"
+                  value={item.milestoneId || ''}
+                  disabled={!item.projectId}
+                  onChange={(e) => void update({ milestoneId: e.target.value || null })}
+                >
+                  <option value="">No milestone</option>
+                  {data.milestones
+                    .filter((m) => m.projectId === item.projectId)
+                    .map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.title}
+                      </option>
+                    ))}
                 </Select>
               </Property>
               <div className="item-property-divider" />
@@ -1038,37 +1220,42 @@ export default function ItemDetail({
                   <option value="private">Private</option>
                 </Select>
               </Property>
-              <label className="item-tag-editor">
-                <span>Tags</span>
-                <input
-                  data-shortcut="l"
-                  placeholder="Add tags, separated by commas"
-                  value={tagDraft}
-                  onChange={(e) => setTagDraft(e.target.value)}
-                  onBlur={() => void addTags()}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                      e.preventDefault();
-                      e.currentTarget.blur();
-                    }
-                  }}
-                />
-              </label>
-              <div className="item-tag-list">
-                {item.labels.map((tag) => (
-                  <span className="badge" key={tag}>
-                    {tag}
-                    <button
-                      type="button"
-                      aria-label={`Remove tag ${tag}`}
-                      onClick={() =>
-                        void update({ labels: item.labels.filter((value) => value !== tag) })
+              <div
+                className="item-tags"
+                onBlur={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget)) void saveTags();
+                }}
+              >
+                <label className="item-tag-editor">
+                  <span>Tags</span>
+                  <input
+                    data-shortcut="l"
+                    placeholder="Add tags, separated by commas"
+                    value={tagDraft}
+                    onChange={(e) => setTagDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                        e.preventDefault();
+                        e.currentTarget.blur();
                       }
-                    >
-                      <X size={10} aria-hidden="true" />
-                    </button>
-                  </span>
-                ))}
+                    }}
+                  />
+                </label>
+                <div className="item-tag-list">
+                  {item.labels.map((tag) => (
+                    <span className="item-tag" key={tag}>
+                      <span className="item-tag-name">{tag}</span>
+                      <button
+                        type="button"
+                        aria-label={`Remove tag ${tag}`}
+                        title={`Remove tag ${tag}`}
+                        onClick={() => void saveTags(tag)}
+                      >
+                        <X size={12} aria-hidden="true" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
               </div>
             </fieldset>
             <div className="item-property-divider" />
@@ -1123,6 +1310,13 @@ export default function ItemDetail({
             )}
           </aside>
         </div>
+      )}
+      {showParent && item && (
+        <ParentPicker
+          items={[item]}
+          onClose={() => setShowParent(false)}
+          onSave={(parentId) => update({ parentId })}
+        />
       )}
     </Modal>
   );

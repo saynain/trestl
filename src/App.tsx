@@ -1,3 +1,7 @@
+import { watchAppearance } from './lib/themes';
+import CliLoginApproval from './components/CliLoginApproval';
+import { WeeklyReview } from './components/ProjectUpdates';
+import Notifications, { NotificationBell } from './components/Notifications';
 import Canvases from './components/Canvases';
 import GanttView from './components/GanttView';
 import ShortcutHelp from './components/ShortcutHelp';
@@ -14,6 +18,7 @@ import {
   ChevronDown,
   ChevronRight,
   FolderOpen,
+  Download,
   Inbox,
   Layers,
   Lightbulb,
@@ -35,7 +40,6 @@ import {
 import type { Bootstrap, Project, Status, User } from '../shared/types';
 import { api, ApiError, patch, remove } from './lib/api';
 import {
-  readTheme,
   readUiPreferences,
   saveUiPreferences,
   defaultUiPreferences,
@@ -61,6 +65,7 @@ import ItemDetail from './components/ItemDetail';
 import ItemForm from './components/ItemForm';
 import ProjectForm from './components/ProjectForm';
 import ProjectAccess from './components/ProjectAccess';
+import { ExportProject, ImportProject } from './components/ProjectTransfer';
 import Settings from './components/Settings';
 export default function App() {
   const [auth, setAuth] = useState<{
@@ -111,10 +116,14 @@ export default function App() {
   );
   const [message, setMessage] = useState<{ text: string; kind: string } | null>(null);
   const [projectMenu, setProjectMenu] = useState(false);
+  const [exportProject, setExportProject] = useState<Project | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const toastTimer = useRef<number | undefined>(undefined);
   const loadSequence = useRef(0);
+  useEffect(() => {
+    if (data?.user) return watchAppearance(data.user);
+  }, [data?.user.id]);
   const toast = useCallback((text: string, kind = 'success') => {
     setMessage({ text, kind });
     clearTimeout(toastTimer.current);
@@ -125,7 +134,6 @@ export default function App() {
     try {
       const next = await api<Bootstrap>('/bootstrap');
       if (sequence === loadSequence.current) {
-        document.documentElement.dataset.theme = readTheme(next.user);
         setProfilePreferences((current) =>
           current?.userId === next.user.id
             ? current
@@ -323,6 +331,7 @@ export default function App() {
       />
     );
   if (!data) return null;
+  if (route.page === 'cli-login') return <CliLoginApproval email={data.user.email} />;
   const project =
     route.page === 'project' ? data.projects.find((p) => p.id === route.id) : undefined;
   const view = route.page === 'view' ? data.views.find((v) => v.id === route.id) : undefined;
@@ -331,19 +340,21 @@ export default function App() {
   const title =
     project?.name ||
     view?.name ||
-    (route.page === 'home'
-      ? 'Home'
-      : route.page === 'projects'
-        ? 'All projects'
-        : route.page === 'my-work'
-          ? 'My work'
-          : route.page === 'settings'
-            ? 'Administration'
-            : route.page === 'account-settings'
-              ? 'Account settings'
-              : route.page === 'inbox'
-                ? 'Inbox'
-                : 'Work items');
+    (route.page === 'notifications'
+      ? 'Notifications'
+      : route.page === 'home'
+        ? 'Home'
+        : route.page === 'projects'
+          ? 'All projects'
+          : route.page === 'my-work'
+            ? 'My work'
+            : route.page === 'settings'
+              ? 'Administration'
+              : route.page === 'account-settings'
+                ? 'Account settings'
+                : route.page === 'inbox'
+                  ? 'Inbox'
+                  : 'Work items');
   const description =
     route.page === 'projects'
       ? 'A little structure for everything you’re moving forward.'
@@ -414,7 +425,12 @@ export default function App() {
           />
         )}
         <main className="main-area">
-          <header className="topbar">
+          <header
+            className="topbar"
+            data-tauri-drag-region={
+              import.meta.env.VITE_TRESTL_DESKTOP_PLATFORM === 'darwin' ? 'deep' : undefined
+            }
+          >
             <button
               className="icon-button sidebar-toggle"
               aria-label={uiPreferences.zenMode ? 'Show sidebar' : 'Hide sidebar'}
@@ -449,6 +465,7 @@ export default function App() {
               <span>{title}</span>
             </div>
             <div className="topbar-actions">
+              <NotificationBell />
               {route.page !== 'account-settings' && (
                 <div className="member-stack">
                   {data.users.slice(0, 3).map((u) => (
@@ -465,16 +482,19 @@ export default function App() {
                   <Search size={17} />
                 </button>
               ) : (
-                <button
-                  className="button primary new-item-button"
-                  onClick={() =>
-                    route.page === 'projects' ? createProject() : createItem(project?.id)
-                  }
-                >
-                  <Plus size={15} />
-                  {route.page === 'projects' ? 'New project' : 'New item'}
-                  <kbd>{route.page === 'projects' ? '+' : 'C'}</kbd>
-                </button>
+                <div className="topbar-create-actions">
+                  {route.page === 'projects' && <ImportProject />}
+                  <button
+                    className="button primary new-item-button"
+                    onClick={() =>
+                      route.page === 'projects' ? createProject() : createItem(project?.id)
+                    }
+                  >
+                    <Plus size={15} />
+                    {route.page === 'projects' ? 'New project' : 'New item'}
+                    <kbd>{route.page === 'projects' ? '+' : 'C'}</kbd>
+                  </button>
+                </div>
               )}
             </div>
           </header>
@@ -484,6 +504,8 @@ export default function App() {
               section={route.tab}
               scope={route.page === 'account-settings' ? 'account' : 'workspace'}
             />
+          ) : route.page === 'notifications' ? (
+            <Notifications key={`${data.user.id}:${data.workspace?.id}`} tab={route.tab} />
           ) : route.page === 'home' ? (
             <Home tab={route.tab} />
           ) : (
@@ -525,17 +547,13 @@ export default function App() {
                               : 'Time-bound'}
                         </span>
                         <span>·</span>
-                        {project.visibility === 'private' ? (
-                          <ProjectAccess key={project.id} project={project} />
-                        ) : (
-                          <span>Workspace</span>
-                        )}
+                        <ProjectAccess key={project.id} project={project} />
                         <span>·</span>
                       </>
                     )}
                     <span>
                       {route.page === 'projects'
-                        ? `${data.projects.filter((p) => p.status !== 'archived').length} active projects`
+                        ? `${data.projects.filter((p) => p.status === 'active').length} active projects`
                         : `${headingItems.filter((i) => !isDone(i)).length} active items`}
                     </span>
                     {project?.dueDate && (
@@ -585,6 +603,15 @@ export default function App() {
                             Add subproject
                           </button>
                           <button
+                            onClick={() => {
+                              setExportProject(project);
+                              setProjectMenu(false);
+                            }}
+                          >
+                            <Download size={15} />
+                            Export project
+                          </button>
+                          <button
                             onClick={async () => {
                               try {
                                 await patch(`/projects/${project.id}`, {
@@ -621,11 +648,31 @@ export default function App() {
                   </div>
                 )}
               </div>
+              {route.page === 'projects' && (
+                <nav className="page-tabs" aria-label="Project views">
+                  <button
+                    className={route.tab !== 'weekly' ? 'active' : ''}
+                    onClick={() => navigate('projects')}
+                  >
+                    All projects
+                  </button>
+                  <button
+                    className={route.tab === 'weekly' ? 'active' : ''}
+                    onClick={() => navigate('projects', undefined, 'weekly')}
+                  >
+                    Weekly review
+                  </button>
+                </nav>
+              )}
               {route.page !== 'projects' && (
                 <nav className="page-tabs">
                   {project && (
                     <button
-                      className={route.tab === 'overview' ? 'active' : ''}
+                      className={
+                        route.tab === 'overview' || route.tab.startsWith('overview/')
+                          ? 'active'
+                          : ''
+                      }
                       onClick={() => navigate(route.page, route.id, 'overview')}
                     >
                       Overview
@@ -697,11 +744,20 @@ export default function App() {
               )}
               <div className="page-body">
                 {route.page === 'projects' ? (
-                  <AllProjects />
+                  route.tab === 'weekly' ? (
+                    <WeeklyReview />
+                  ) : (
+                    <AllProjects />
+                  )
                 ) : project && route.tab === 'gantt' ? (
                   <GanttView key={project.id} project={project} items={items} />
-                ) : project && route.tab === 'overview' ? (
-                  <Overview project={project} items={items} />
+                ) : project && (route.tab === 'overview' || route.tab.startsWith('overview/')) ? (
+                  <Overview
+                    key={`${project.id}:${route.tab}`}
+                    project={project}
+                    items={items}
+                    milestoneId={route.tab.split('/')[1]}
+                  />
                 ) : project && (route.tab === 'roadmap' || presentingRoadmap) ? (
                   <RoadmapView key={project.id} project={project} presenting={presentingRoadmap} />
                 ) : project && (route.tab === 'canvases' || route.tab.startsWith('canvases/')) ? (
@@ -724,7 +780,7 @@ export default function App() {
                   />
                 ) : (
                   <WorkList
-                    key={`${route.page}-${route.id}-${isBoard}`}
+                    key={`${data.user.id}-${data.user.workspaceId}-${route.page}-${route.id}-${isBoard}`}
                     items={items}
                     projectId={project?.id}
                     board={isBoard}
@@ -747,10 +803,14 @@ export default function App() {
         <ItemDetail
           key={route.itemId}
           id={route.itemId}
+          activityId={route.activityId}
           onClose={closeItem}
           initialAction={itemAction}
           onActionHandled={() => setItemAction(undefined)}
         />
+      )}
+      {exportProject && (
+        <ExportProject project={exportProject} onClose={() => setExportProject(null)} />
       )}
       {newItem && <ItemForm {...newItem} onClose={() => setNewItem(null)} />}
       {newProject && <ProjectForm {...newProject} onClose={() => setNewProject(null)} />}

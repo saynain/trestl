@@ -130,8 +130,13 @@ test('OIDC validates signed identities, PKCE, browser state and domain; recovery
       verified = true,
       sub = email,
       badNonce = false,
+      cliCode = '',
     ) => {
-      const response = await app.inject({ url: '/api/v1/auth/provider/start' });
+      const response = await app.inject({
+        url:
+          '/api/v1/auth/provider/start' +
+          (cliCode ? `?cli_code=${encodeURIComponent(cliCode)}` : ''),
+      });
       assert.equal(response.statusCode, 302, response.body);
       const url = new URL(response.headers.location!);
       assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
@@ -148,10 +153,16 @@ test('OIDC validates signed identities, PKCE, browser state and domain; recovery
         '/api/v1/auth/provider/callback?code=' + code + '&state=' + url.searchParams.get('state');
       return { callback, cookie: response.cookies.map((c) => `${c.name}=${c.value}`).join('; ') };
     };
-    const first = await start();
+    assert.equal(
+      (await app.inject({ url: '/api/v1/auth/provider/start?cli_code=https://evil.example' }))
+        .statusCode,
+      400,
+    );
+    const first = await start(undefined, true, undefined, false, 'ABCD-EFGH');
     assert.equal((await app.inject({ url: first.callback })).statusCode, 400);
     const signed = await app.inject({ url: first.callback, headers: { cookie: first.cookie } });
     assert.equal(signed.statusCode, 302, signed.body);
+    assert.equal(signed.headers.location, '/cli-login?code=ABCD-EFGH');
     const memberCookie = cookieOf(signed);
     const boot = (
       await app.inject({ url: '/api/v1/bootstrap', headers: { cookie: memberCookie } })

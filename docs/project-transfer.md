@@ -5,7 +5,7 @@ server, or between two self-hosted installations. It works across PGlite and
 PostgreSQL because the file contains application records, not a database dump.
 Both installations must run a release supporting project transfer version 1.
 
-1. On the source, open the project's **Overview → Export project** and choose
+1. On the source, open the project's **⋯ Project options → Export project** and choose
    **Download project**. The file ends in `.trestl-project.json`.
 2. On the destination, open **Projects → Import project** and select the file.
 3. Review the proposed project names and keys, visibility, and assignee mappings.
@@ -17,7 +17,7 @@ Both installations must run a release supporting project transfer version 1.
 The source stays untouched. An import creates a new root project and preserves
 its subproject hierarchy, work item hierarchy, descriptions, tags, dates,
 statuses, recurrence, comments and history, internal relationships, resource
-links, milestones, roadmaps, canvas collections, and canvas scenes with embedded
+links, milestones, roadmaps, project health updates, canvas collections, and canvas scenes with embedded
 images. IDs and work item numbers are newly allocated. Original work item
 identifiers remain available in the item details. Original author names and dates
 are retained and identified as imported history, including former contributors.
@@ -71,3 +71,8 @@ Options contain `projects` (each with source `id`, destination `name`, `key`, an
 signed-in installation member or a write-scoped token. Read tokens can export
 accessible projects but cannot import. File contents are treated as untrusted
 input; account IDs from the source never establish destination ownership or access.
+
+Project health updates retain their status, Markdown text, original dates, and author names.
+Imported authors are labeled as imported history, not matched to local accounts. Re-exporting
+preserves this provenance and the ordering of updates. Older files without project updates
+remain importable and produce an empty update history.

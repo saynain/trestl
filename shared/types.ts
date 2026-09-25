@@ -42,8 +42,21 @@ export interface Project {
   dueDate: string | null;
   visibility: Visibility;
   ownerId: string;
-  /** Additional workspace members allowed into a private project; absent on older records. */
+  /** Project team members in addition to the owner; also grants access when private. Absent on older records. */
   memberIds?: string[];
+  createdAt: string;
+}
+export type ProjectHealth = 'on_track' | 'at_risk' | 'off_track';
+export interface ProjectUpdate {
+  /** Source identity is provenance, never a verified local user. */
+  importedFrom?: { authorName: string };
+  /** Retains deterministic ordering when imported IDs change. */
+  sortKey?: string;
+  id: string;
+  projectId: string;
+  authorId: string;
+  health: ProjectHealth;
+  body: string;
   createdAt: string;
 }
 export type RoadmapHorizon = 'current' | 'next' | 'future' | 'deferred';
@@ -77,6 +90,8 @@ export interface IssueSource {
 }
 export interface WorkItem {
   importedFrom?: { authorName: string; identifier?: string };
+  /** Absent on records created before milestone linking. */
+  milestoneId?: string | null;
   revision?: number;
   workspaceId?: string;
   id: string;
@@ -120,6 +135,23 @@ export interface Relation {
   targetId: string;
   kind: 'blocks' | 'related';
 }
+export interface ProjectRelation {
+  id: string;
+  itemId: string;
+  projectId: string;
+}
+export interface MentionNotification {
+  id: string;
+  workspaceId: string;
+  recipientId: string;
+  actorId: string;
+  itemId: string;
+  /** Null for a description mention; otherwise the comment's activity ID. */
+  activityId: string | null;
+  kind: 'mention';
+  createdAt: string;
+  readAt: string | null;
+}
 export interface ResourceLink {
   id: string;
   projectId: string | null;
@@ -138,6 +170,9 @@ export interface SavedView {
   userId: string;
 }
 export interface Milestone {
+  /** Computed from linked work items visible to the caller. */
+  itemIds?: string[];
+  progress?: { total: number; done: number };
   revision?: number;
   id: string;
   projectId: string;
@@ -152,18 +187,23 @@ export interface Bootstrap {
   workspaces?: (Workspace & { role: User['role'] })[];
   /** Only relationships whose two endpoints are visible to the signed-in user. */
   relations?: Relation[];
+  projectRelations?: ProjectRelation[];
+  notifications?: MentionNotification[];
   user: User;
   users: User[];
   projects: Project[];
+  projectUpdates?: ProjectUpdate[];
   items: WorkItem[];
   views: SavedView[];
   links: ResourceLink[];
   milestones: Milestone[];
+  canvases?: CanvasSummary[];
 }
 export interface ItemDetail {
   item: WorkItem;
   activity: Activity[];
   relations: Relation[];
+  projectRelations?: ProjectRelation[];
   links: ResourceLink[];
 }
 export interface ApiError {

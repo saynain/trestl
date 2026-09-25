@@ -1,4 +1,5 @@
-import { ExportProject, ImportProject } from './ProjectTransfer';
+import { MilestoneItems, MilestoneProgress } from './MilestoneItems';
+import { ProjectUpdates } from './ProjectUpdates';
 import { Select } from './Select';
 import { useState, type FormEvent } from 'react';
 import {
@@ -30,14 +31,13 @@ import ConfluenceSearch from './ConfluenceSearch';
 import GitIssueSearch from './GitIssueSearch';
 import { MarkdownBody } from './MarkdownBody';
 export function AllProjects() {
-  const { data, createProject } = useApp();
+  const { data, createProject, editProject } = useApp();
   const [showArchived, setShowArchived] = useState(false);
   const projects = data.projects.filter((p) => showArchived || p.status !== 'archived');
   return (
     <div className="projects-content">
       <div className="section-title">
         <span>{projects.length} projects</span>
-        <ImportProject />
         <label className="check-field">
           <input
             type="checkbox"
@@ -60,44 +60,53 @@ export function AllProjects() {
           const items = data.items.filter((i) => i.projectId && ids.has(i.projectId));
           const done = items.filter(isDone).length;
           return (
-            <button
-              className="project-table-row"
-              key={project.id}
-              onClick={() => navigate('project', project.id, 'overview')}
-            >
-              <span className="project-table-name">
-                <span className="project-small-icon" style={{ background: `${project.color}15` }}>
-                  <ProjectIcon project={project} size={22} />
+            <div className="project-table-entry" key={project.id}>
+              <button
+                className="project-table-row"
+                onClick={() => navigate('project', project.id, 'overview')}
+              >
+                <span className="project-table-name">
+                  <span className="project-small-icon" style={{ background: `${project.color}15` }}>
+                    <ProjectIcon project={project} size={22} />
+                  </span>
+                  <span>
+                    <strong>{project.name}</strong>
+                    <small>
+                      {project.parentId
+                        ? data.projects.find((p) => p.id === project.parentId)?.name
+                        : project.key}
+                      {project.visibility === 'private' && <> · Private</>}
+                    </small>
+                  </span>
                 </span>
-                <span>
-                  <strong>{project.name}</strong>
+                <span className="lifecycle-badge">
+                  <span className={`tiny-dot ${project.status}`} />
+                  {project.lifecycle === 'ongoing'
+                    ? 'Ongoing'
+                    : project.status === 'completed'
+                      ? 'Completed'
+                      : 'Time-bound'}
+                </span>
+                <span className="project-progress">
+                  <span className="progress-track">
+                    <span style={{ width: `${items.length ? (done / items.length) * 100 : 0}%` }} />
+                  </span>
                   <small>
-                    {project.parentId
-                      ? data.projects.find((p) => p.id === project.parentId)?.name
-                      : project.key}
-                    {project.visibility === 'private' && <> · Private</>}
+                    {done}/{items.length}
                   </small>
                 </span>
-              </span>
-              <span className="lifecycle-badge">
-                <span className={`tiny-dot ${project.status}`} />
-                {project.lifecycle === 'ongoing'
-                  ? 'Ongoing'
-                  : project.status === 'completed'
-                    ? 'Completed'
-                    : 'Time-bound'}
-              </span>
-              <span className="project-progress">
-                <span className="progress-track">
-                  <span style={{ width: `${items.length ? (done / items.length) * 100 : 0}%` }} />
-                </span>
-                <small>
-                  {done}/{items.length}
-                </small>
-              </span>
-              <span className="muted">{shortDate(project.dueDate) || '—'}</span>
-              <Avatar user={data.users.find((u) => u.id === project.ownerId)} />
-            </button>
+                <span className="muted">{shortDate(project.dueDate) || '—'}</span>
+                <Avatar user={data.users.find((u) => u.id === project.ownerId)} />
+              </button>
+              <button
+                className="icon-button project-table-edit"
+                aria-label={`Edit ${project.name}`}
+                title="Edit project"
+                onClick={() => editProject(project)}
+              >
+                <Pencil size={15} />
+              </button>
+            </div>
           );
         })}
       </div>
@@ -116,9 +125,18 @@ export function AllProjects() {
     </div>
   );
 }
-export function Overview({ project, items }: { project: Project; items: WorkItem[] }) {
+export function Overview({
+  project,
+  items,
+  milestoneId,
+}: {
+  project: Project;
+  items: WorkItem[];
+  milestoneId?: string;
+}) {
   const { data, refresh, toast, createProject, editProject, openItem } = useApp();
   const [milestoneOpen, setMilestoneOpen] = useState(false);
+  const [selectedMilestone, setSelectedMilestone] = useState<string | null>(milestoneId ?? null);
   const [milestoneTitle, setMilestoneTitle] = useState('');
   const [milestoneDue, setMilestoneDue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -151,11 +169,22 @@ export function Overview({ project, items }: { project: Project; items: WorkItem
   }
   return (
     <div className="overview-content">
+      {selectedMilestone && milestones.find((m) => m.id === selectedMilestone) && (
+        <Modal
+          title={milestones.find((m) => m.id === selectedMilestone)!.title}
+          onClose={() => {
+            setSelectedMilestone(null);
+            if (milestoneId) navigate('project', project.id, 'overview');
+          }}
+        >
+          <MilestoneItems milestone={milestones.find((m) => m.id === selectedMilestone)!} />
+        </Modal>
+      )}
       <div className="overview-main">
+        <ProjectUpdates key={project.id} project={project} />
         <section className="overview-section">
           <div className="section-heading">
             <h2>About this project</h2>
-            <ExportProject project={project} />
             <button
               className="icon-button"
               aria-label="Edit project"
@@ -309,7 +338,13 @@ export function Overview({ project, items }: { project: Project; items: WorkItem
                 >
                   {m.completed ? <CircleCheck size={18} className="green" /> : <Circle size={18} />}
                 </button>
-                <span className={m.completed ? 'completed-title' : ''}>{m.title}</span>
+                <button
+                  className={`milestone-title-button ${m.completed ? 'completed-title' : ''}`}
+                  onClick={() => setSelectedMilestone(m.id)}
+                >
+                  {m.title}
+                </button>
+                <MilestoneProgress milestone={m} />
                 <small>{shortDate(m.dueDate) || 'No date'}</small>
                 <button
                   className="icon-button subtle"
@@ -333,6 +368,29 @@ export function Overview({ project, items }: { project: Project; items: WorkItem
         </section>
       </div>
       <aside className="overview-aside">
+        {!!data.projectRelations?.some((r) => r.projectId === project.id) && (
+          <section>
+            <h3>Related work items</h3>
+            {data.projectRelations
+              .filter((r) => r.projectId === project.id)
+              .map((relation) => {
+                const item = data.items.find((i) => i.id === relation.itemId);
+                return item ? (
+                  <button
+                    className="upcoming-item"
+                    key={relation.id}
+                    onClick={() => openItem(item.id)}
+                  >
+                    <span>
+                      <StatusIcon status={item.status} />
+                      <small>{item.identifier}</small>
+                    </span>
+                    <strong>{item.title}</strong>
+                  </button>
+                ) : null;
+              })}
+          </section>
+        )}
         <h3>Coming up</h3>
         {active
           .filter((i) => i.dueDate)

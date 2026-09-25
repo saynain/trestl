@@ -1,6 +1,8 @@
 #!/usr/bin/env node
+import { browserLogin } from './browser-login.js';
 import { parseArgs } from 'node:util';
-import { readFile } from 'node:fs/promises';
+import { basename } from 'node:path';
+import { readFile, stat } from 'node:fs/promises';
 import {
   credentialPath,
   listProfiles,
@@ -13,13 +15,20 @@ import {
 } from './auth.js';
 import { initializeConfig, repositoryConfig } from './config.js';
 import { CliError, httpError, usage } from './errors.js';
-import type { Project, WorkItem, ItemDetail, Milestone } from '../shared/types';
+import type {
+  Project,
+  WorkItem,
+  ItemDetail,
+  Milestone,
+  ProjectCanvas,
+  CanvasSummary,
+} from '../shared/types';
 const help = `Trestl — project work from your terminal
 
 Usage: trestl <command> [arguments] [options]
 
 Commands:
-  login                         Validate and save a personal API token
+  login                         Sign in using your browser
   logout                        Remove the saved token for a profile
   auth status                   Check authentication (never prints the token)
   profiles list                 Discover saved profiles locally (no network)
@@ -30,14 +39,21 @@ Commands:
   search <text>                 Search titles, descriptions, identifiers
   create <title>                Create a work item
   update <id-or-identifier>      Update a work item
+  delete <id-or-identifier>      Delete an item using --expected-revision
   projects                      List projects
   project-create <name>         Create a project (requires --key)
   project-update <id-or-key>    Update project dates or description
   relation-add <blocker> <dependent>  Add a finish-to-start dependency
+  relation-remove <blocker> <dependent>  Remove a finish-to-start dependency
   milestone-update <id>         Update milestone title or date
   milestones                    List milestones (optional --project)
   milestone-create <title>     Create a milestone (requires --project)
   comment <id-or-identifier> <text>  Add an internal comment
+  canvases list                 List canvases (requires a project)
+  canvases create <title>       Create a blank canvas
+  canvases import <file>        Import an .excalidraw file as a new canvas
+  canvases show <id>            Print a browser link; --json includes revision
+  canvases delete <id>          Delete using --expected-revision from show
   export                        Export your accessible workspace as JSON
 
 Options:
@@ -45,17 +61,26 @@ Options:
   --page                        Return one page as {data,nextCursor?}
   --limit <1-500>               Page size (default: 100)
   --cursor <cursor>             Continue a page (requires --page)
-  --expected-revision <number>  Update only the revision you previously read
-  --idempotency-key <key>       Deduplicate a create/comment across retries
+  --expected-revision <number>  Change or delete only the revision you read
+  --idempotency-key <key>       Deduplicate item/milestone creation or comments
   --version                     Show CLI version
   --profile <name>              Saved account profile (default: default)
   --url <server-url>            Server URL; saved during login
-  --token-stdin                 Read login token from standard input
+  --no-browser                  Print the approval URL without opening it
+  --name <name>                 Name this CLI session for later revocation
+  --scope <read|write>           CLI access (default: write)
+  --token                       Enter an existing API token using a hidden prompt
+  --token-stdin                 Read an existing token from standard input
   --project <id-or-key>          Filter or set project (use "none" to clear)
+  --parent <id-or-identifier>   Set a parent work item
+  --no-parent                  Clear the parent work item
+  --milestone <id-or-title>     Set a milestone in the item project
+  --no-milestone               Clear the milestone
   --status <status>             backlog|todo|in_progress|in_review|done|canceled
   --priority <priority>         none|low|medium|high|urgent
   --type <type>                 task|bug|idea|followup
-  --title <title>               New title for update
+  --title <title>               New title for update or canvas import
+  --collection <id|none>        Collection for canvas create/import
   --description <text>          Item description
   --start <YYYY-MM-DD|none>     Scheduled start
   --key <key>                   Unique project key
@@ -86,6 +111,10 @@ Examples:
 const common = ['profile', 'url', 'json', 'no-config'];
 const fields = [
   'project',
+  'parent',
+  'no-parent',
+  'milestone',
+  'no-milestone',
   'status',
   'priority',
   'type',
@@ -109,7 +138,7 @@ const filters = [
   'page',
 ];
 const commandOptions: Record<string, string[]> = {
-  login: ['token-stdin'],
+  login: ['token-stdin', 'token', 'no-browser', 'name', 'scope'],
   logout: [],
   auth: [],
   profiles: [],
@@ -118,22 +147,66 @@ const commandOptions: Record<string, string[]> = {
   list: filters,
   search: filters,
   get: [],
+  delete: ['expected-revision'],
   projects: [],
   'project-create': ['key', 'description', 'lifecycle', 'color', 'start', 'due', 'visibility'],
   'project-update': ['description', 'start', 'due'],
   'relation-add': [],
+  'relation-remove': [],
   'milestone-update': ['title', 'due', 'expected-revision'],
   milestones: ['project'],
-  'milestone-create': ['project', 'due', 'completed'],
+  'milestone-create': ['project', 'due', 'completed', 'idempotency-key'],
   export: [],
+  canvases: ['project', 'title', 'collection', 'expected-revision'],
   create: [...fields, 'idempotency-key'],
   update: [...fields, 'title', 'expected-revision'],
   comment: ['idempotency-key'],
 };
-const booleanOptions = ['json', 'help', 'version', 'token-stdin', 'no-config', 'page', 'completed'];
+const booleanOptions = [
+  'json',
+  'help',
+  'version',
+  'token-stdin',
+  'token',
+  'no-browser',
+  'no-config',
+  'page',
+  'completed',
+  'no-parent',
+  'no-milestone',
+];
 const stringOptions = [...new Set([...common, ...Object.values(commandOptions).flat()])].filter(
   (key) => !booleanOptions.includes(key),
 );
+function commandHelp(command: string): string {
+  if (!Object.hasOwn(commandOptions, command))
+    throw usage(`Unknown command "${command}". Run trestl --help.`);
+  const options = commandOptions[command];
+  const usageLines = help
+    .split('\n')
+    .filter((line) => line.startsWith(`  ${command} `))
+    .map((line) => `Usage: trestl ${line.trim().split(/\s{2,}/)[0]} [options]`);
+  const accepted = new Set([...common, ...options, 'help']);
+  const flagLines = help.split('\n').filter((line) => {
+    const flag = /^  --([a-z-]+)/.exec(line)?.[1];
+    return flag && accepted.has(flag);
+  });
+  const notes: Record<string, string> = {
+    create:
+      'Use a parent item to group work into epics or features; keep --type task, bug, idea or followup. Milestones must belong to the item project; parents must be accessible.',
+    update:
+      'Only supplied fields change. Use none to clear dates, project, assignee or labels. --no-parent and --no-milestone clear those assignments. Without --expected-revision the CLI reads the current revision before updating.',
+    delete:
+      'Requires --expected-revision from get --json. Stale revisions fail without deleting. Move or delete child items first.',
+    'relation-remove':
+      'Pass the blocker first and dependent second, using IDs or identifiers. Removes only that directed blocks relation.',
+    'milestone-create':
+      'Requires an explicit --project. Reuse --idempotency-key with identical input after an uncertain response.',
+    milestones:
+      'Shows done / total progress for linked items, plus the revision used by milestone-update.',
+  };
+  return `${usageLines.join('\n')}\n\nOptions:\n${flagLines.join('\n')}\n${notes[command] ? `\n${notes[command]}\n` : ''}`;
+}
 const jsonRequested = process.argv.slice(2).includes('--json');
 
 async function main() {
@@ -169,8 +242,9 @@ async function main() {
     return;
   }
   if (values.help || !parsed.positionals.length) {
-    if (values.json) output({ help });
-    else process.stdout.write(help);
+    const text = parsed.positionals.length ? commandHelp(parsed.positionals[0]) : help;
+    if (values.json) output({ help: text });
+    else process.stdout.write(text);
     return;
   }
   const [command, ...args] = parsed.positionals;
@@ -179,22 +253,45 @@ async function main() {
   for (const key of Object.keys(values))
     if (![...common, ...commandOptions[command]].includes(key))
       throw usage(`--${key} is not supported by ${command}.`);
-  const count = ['comment', 'relation-add'].includes(command)
-    ? 2
-    : [
-          'get',
-          'search',
-          'create',
-          'update',
-          'auth',
-          'profiles',
-          'project-create',
-          'project-update',
-          'milestone-update',
-          'milestone-create',
-        ].includes(command)
-      ? 1
-      : 0;
+  const canvasAction = command === 'canvases' ? args[0] : undefined;
+  if (command === 'canvases') {
+    if (!['list', 'create', 'import', 'show', 'delete'].includes(canvasAction || ''))
+      throw usage(
+        'Usage: trestl canvases <list|create|import|show|delete> [argument] --project <id-or-key>',
+      );
+    const allowed = [
+      ...common,
+      'project',
+      ...(canvasAction === 'import' ? ['title', 'collection'] : []),
+      ...(canvasAction === 'create' ? ['collection'] : []),
+      ...(canvasAction === 'delete' ? ['expected-revision'] : []),
+    ];
+    for (const key of Object.keys(values))
+      if (!allowed.includes(key))
+        throw usage(`--${key} is not supported by canvases ${canvasAction}.`);
+  }
+  const count =
+    command === 'canvases'
+      ? canvasAction === 'list'
+        ? 1
+        : 2
+      : ['comment', 'relation-add', 'relation-remove'].includes(command)
+        ? 2
+        : [
+              'get',
+              'delete',
+              'search',
+              'create',
+              'update',
+              'auth',
+              'profiles',
+              'project-create',
+              'project-update',
+              'milestone-update',
+              'milestone-create',
+            ].includes(command)
+          ? 1
+          : 0;
   if (args.length !== count)
     throw usage(
       `Incorrect arguments for ${command}. Quote text containing spaces. Run trestl --help.`,
@@ -204,6 +301,9 @@ async function main() {
   if (command === 'project-create' && !values.key) throw usage('project-create requires --key.');
   if (command === 'milestone-create' && (!values.project || values.project === 'none'))
     throw usage('milestone-create requires an explicit --project.');
+  for (const field of ['parent', 'milestone'])
+    if (values[field] !== undefined && values[`no-${field}`])
+      throw usage(`Choose --${field} or --no-${field}, not both.`);
   if (values.cursor !== undefined && !values.page) throw usage('--cursor requires --page.');
   function integer(key: string, min: number, max: number): number | undefined {
     if (values[key] === undefined) return undefined;
@@ -215,6 +315,10 @@ async function main() {
   }
   integer('limit', 1, 500);
   const expectedRevision = integer('expected-revision', 0, 2147483646);
+  if (command === 'delete' && expectedRevision === undefined)
+    throw usage('delete requires --expected-revision from get --json.');
+  if (canvasAction === 'delete' && expectedRevision === undefined)
+    throw usage('canvases delete requires --expected-revision from canvases show --json.');
   if (
     values['idempotency-key'] &&
     !/^[A-Za-z0-9._:-]{1,128}$/.test(String(values['idempotency-key']))
@@ -273,6 +377,13 @@ async function main() {
     });
     return;
   }
+  if (
+    command === 'login' &&
+    (values.token || values['token-stdin']) &&
+    (values['no-browser'] || values.name || values.scope)
+  )
+    throw usage('Browser options cannot be combined with --token or --token-stdin.');
+  if (values.token && values['token-stdin']) throw usage('Choose --token or --token-stdin.');
   const saved = await loadCredentials(path);
   const url = serverUrl(
     String(values.url || process.env.TRESTL_URL || saved?.url || 'http://localhost:4317'),
@@ -281,7 +392,13 @@ async function main() {
   if (environmentToken) secrets.add(environmentToken);
   const token =
     command === 'login'
-      ? await readToken(Boolean(values['token-stdin']))
+      ? values.token || values['token-stdin']
+        ? await readToken(Boolean(values['token-stdin']))
+        : await browserLogin(url, {
+            noBrowser: Boolean(values['no-browser']),
+            name: values.name as string | undefined,
+            scope: values.scope as string | undefined,
+          })
       : environmentToken || (saved?.url === url ? saved.token : undefined);
   if (!token) {
     if (saved && saved.url !== url)
@@ -389,6 +506,78 @@ async function main() {
     });
     return;
   }
+  if (command === 'canvases') {
+    const projectRef = values.project ?? repository.config.project;
+    if (!projectRef || projectRef === 'none')
+      throw usage('Canvases require --project <id-or-key> or a repository project default.');
+    let document: unknown;
+    if (canvasAction === 'import') {
+      try {
+        if ((await stat(args[1])).size > 8 * 1024 * 1024)
+          throw usage('Choose a canvas smaller than 8 MB.');
+        document = JSON.parse(await readFile(args[1], 'utf8'));
+        if (
+          !document ||
+          typeof document !== 'object' ||
+          !('type' in document) ||
+          document.type !== 'excalidraw'
+        )
+          throw usage('Choose a valid .excalidraw file.');
+      } catch (error) {
+        if (error instanceof CliError) throw error;
+        throw usage('Cannot read a valid .excalidraw JSON file at the supplied path.');
+      }
+    }
+    const project = await api<Project>(`projects/${encodeURIComponent(String(projectRef))}`);
+    const canvasBase = `projects/${encodeURIComponent(project.id)}/canvases`;
+    if (canvasAction === 'list') {
+      const canvases = await all<CanvasSummary>(canvasBase);
+      output(
+        canvases,
+        canvases.map((c) => ({
+          ID: c.id,
+          Title: c.title,
+          Revision: c.revision,
+          Updated: c.updatedAt,
+        })),
+      );
+    } else if (canvasAction === 'create' || canvasAction === 'import') {
+      const title =
+        canvasAction === 'create'
+          ? args[1]
+          : (values.title ??
+            (basename(args[1])
+              .replace(/\.excalidraw$/i, '')
+              .trim()
+              .slice(0, 240) ||
+              'Imported canvas'));
+      output(
+        await api<ProjectCanvas>(
+          `${canvasBase}${canvasAction === 'import' ? '/import' : ''}`,
+          'POST',
+          {
+            title,
+            ...(canvasAction === 'import' ? { document } : {}),
+            ...(values.collection
+              ? { collectionId: values.collection === 'none' ? null : values.collection }
+              : {}),
+          },
+        ),
+      );
+    } else if (canvasAction === 'show') {
+      const result = await api<{ id: string; title: string; revision: number; url: string }>(
+        `${canvasBase}/${encodeURIComponent(args[1])}/show`,
+      );
+      const link = new URL(result.url, `${url}/`).href;
+      if (values.json) output({ ...result, url: link });
+      else process.stdout.write(`${link}\n`);
+    } else {
+      await api(`${canvasBase}/${encodeURIComponent(args[1])}`, 'DELETE', { expectedRevision });
+      if (values.json) output({ deleted: true, id: args[1] });
+      else process.stdout.write('Canvas deleted.\n');
+    }
+    return;
+  }
   if (command === 'export') {
     output(await api('export'));
     return;
@@ -407,9 +596,29 @@ async function main() {
     );
     return;
   }
-  if (command === 'relation-add') {
+  if (command === 'delete') {
+    await api(itemPath(), 'DELETE', { expectedRevision });
+    if (values.json) output({ deleted: true, id: args[0] });
+    else process.stdout.write('Work item deleted.\n');
+    return;
+  }
+  if (command === 'relation-add' || command === 'relation-remove') {
     const blocker = await api<ItemDetail>(itemPath());
     const dependent = await api<ItemDetail>(`items/${encodeURIComponent(args[1])}`);
+    if (command === 'relation-remove') {
+      const relation = blocker.relations.find(
+        (r) =>
+          r.kind === 'blocks' && r.itemId === blocker.item.id && r.targetId === dependent.item.id,
+      );
+      if (!relation) throw new CliError('Dependency not found in that direction.', 'not_found', 4);
+      await api(
+        `items/${encodeURIComponent(blocker.item.id)}/relations/${encodeURIComponent(relation.id)}`,
+        'DELETE',
+      );
+      if (values.json) output({ deleted: true, id: relation.id });
+      else process.stdout.write('Dependency removed.\n');
+      return;
+    }
     output(
       await api(`items/${encodeURIComponent(blocker.item.id)}/relations`, 'POST', {
         targetId: dependent.item.id,
@@ -459,9 +668,9 @@ async function main() {
       ? await api<Project>(`projects/${encodeURIComponent(String(values.project))}`)
       : null;
     if (command === 'milestones') {
-      const milestones = (await all<Milestone>('milestones')).filter(
-        (m) => !project || m.projectId === project.id,
-      );
+      const milestones = (
+        await all<Milestone & { progress?: { done: number; total: number } }>('milestones')
+      ).filter((m) => !project || m.projectId === project.id);
       output(
         milestones,
         milestones.map((m) => ({
@@ -469,6 +678,8 @@ async function main() {
           Title: m.title,
           Due: m.dueDate || '—',
           Completed: m.completed,
+          Progress: m.progress ? `${m.progress.done} / ${m.progress.total}` : '—',
+          Revision: m.revision ?? 0,
         })),
       );
     } else {
@@ -544,19 +755,49 @@ async function main() {
       project === 'none'
         ? null
         : (await api<Project>(`projects/${encodeURIComponent(String(project))}`)).id;
+  let currentItem: WorkItem | undefined;
+  async function current() {
+    return (currentItem ??= (await api<ItemDetail>(itemPath())).item);
+  }
+  if (values['no-parent']) body.parentId = null;
+  if (values.parent !== undefined)
+    body.parentId = (
+      await api<ItemDetail>(`items/${encodeURIComponent(String(values.parent))}`)
+    ).item.id;
+  if (values['no-milestone']) body.milestoneId = null;
+  if (values.milestone !== undefined) {
+    const projectId = Object.hasOwn(body, 'projectId')
+      ? body.projectId
+      : command === 'update'
+        ? (await current()).projectId
+        : null;
+    if (!projectId) throw usage('A milestone requires an item project. Set --project first.');
+    const milestones = await all<Milestone>('milestones');
+    const byId = milestones.find((m) => m.id === values.milestone);
+    const matches = byId
+      ? [byId]
+      : milestones.filter((m) => m.projectId === projectId && m.title === values.milestone);
+    if (!matches.length)
+      throw new CliError('Milestone not found in the item project.', 'not_found', 4);
+    if (matches.length > 1)
+      throw usage('Milestone title is ambiguous in this project. Use its ID.');
+    if (matches[0].projectId !== projectId)
+      throw usage('Milestone belongs to a different project.');
+    body.milestoneId = matches[0].id;
+  }
   if (command === 'create') body.title = args[0];
   if (!Object.keys(body).length)
     throw usage('No changes specified. Use --status, --title, --due, or another update option.');
   if (command === 'update') {
-    body.expectedRevision =
-      expectedRevision ?? (await api<ItemDetail>(itemPath())).item.revision ?? 0;
+    body.expectedRevision = expectedRevision ?? (await current()).revision ?? 0;
   }
-  const result = await api<WorkItem>(
+  const result = await api<WorkItem | { item: WorkItem }>(
     command === 'create' ? 'items' : itemPath(),
     command === 'create' ? 'POST' : 'PATCH',
     body,
   );
-  output(result, rows([result]));
+  const item = 'item' in result ? result.item : result;
+  output(item, rows([item]));
 }
 
 main().catch((error: unknown) => {

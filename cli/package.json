@@ -1,6 +1,6 @@
 {
   "name": "@trestl/cli",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "description": "Trestl command line client for people and agents",
   "type": "module",
   "license": "MIT",

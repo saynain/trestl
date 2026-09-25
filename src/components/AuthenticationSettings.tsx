@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '../lib/api';
 import { useApp } from '../lib/context';
+import { Select } from './Select';
 type Settings = {
   mode: 'local' | 'google' | 'oidc' | 'proxy';
   origin: string;
@@ -12,6 +13,24 @@ type Settings = {
   proxySecretConfigured: boolean;
 };
 export default function AuthenticationSettings() {
+  if (import.meta.env.VITE_TRESTL_DESKTOP === 'true') {
+    return (
+      <section className="settings-section">
+        <h2>Authentication</h2>
+        <p>
+          This desktop installation uses local accounts. Your projects and account stay on this
+          computer.
+        </p>
+        <p>
+          Organization sign-in and authentication proxies are available in self-hosted web
+          installations.
+        </p>
+      </section>
+    );
+  }
+  return <HostedAuthenticationSettings />;
+}
+function HostedAuthenticationSettings() {
   const { toast, refresh } = useApp();
   const [settings, setSettings] = useState<Settings | null>(null),
     [error, setError] = useState(''),
@@ -70,8 +89,10 @@ export default function AuthenticationSettings() {
         <form className="settings-form" onSubmit={save}>
           <label className="field">
             Sign-in method
-            <select
-              className="input"
+            <Select
+              className="select"
+              searchable={false}
+              disabled={busy}
               value={settings.mode}
               onChange={(e) =>
                 setSettings({ ...settings, mode: e.target.value as Settings['mode'] })
@@ -81,7 +102,7 @@ export default function AuthenticationSettings() {
               <option value="google">Google</option>
               <option value="oidc">OpenID Connect (OIDC)</option>
               <option value="proxy">Trusted authentication proxy</option>
-            </select>
+            </Select>
           </label>
           <label className="field">
             Installation URL

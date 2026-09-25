@@ -1,3 +1,5 @@
+<img src="public/trestl-mark.svg" alt="" width="60" height="48" />
+
 # Trestl
 
 A self-hosted project workspace for personal projects and small teams.
@@ -13,6 +15,7 @@ still developing.
 - Capture private tasks, ideas, and follow-ups in your personal inbox.
 - Organize nested projects and work in lists, boards, and saved views.
 - Plan dates, dependencies, milestones, Gantt schedules, and project roadmaps.
+- Post project health updates and review active projects together in a weekly meeting.
 - Draw together in project canvases with live edits, collaborator cursors, and the
   embedded Excalidraw editor. See [canvas collaboration](docs/canvas-collaboration.md).
 - Collaborate through project sharing, assignments, and internal discussions.
@@ -21,10 +24,49 @@ still developing.
 
 See the [user guide](docs/user-guide.md) for the complete workflows.
 
+## Install the desktop app
+
+Starting with v0.4.0, download the macOS, Windows, or Linux installer from
+[GitHub Releases](https://github.com/saynain/trestl/releases/latest). The app
+includes its runtime and local database; no server setup is needed. See the
+[desktop guide](docs/desktop.md) for platform requirements, backups, and checksum
+verification. Downloads require access while this repository is private.
+
+## Install the CLI
+
+Download the tarball and checksum from [GitHub Releases](https://github.com/saynain/trestl/releases/latest), or pull the identical artifact from `ghcr.io/saynain/trestl-cli:v0.4.0` using ORAS. Node.js 22.9+ is required on macOS, Linux and Windows.
+
+```sh
+gh release download v0.4.0 --repo saynain/trestl --pattern 'trestl-cli-*.tgz' --pattern SHA256SUMS
+shasum -a 256 -c SHA256SUMS  # Linux: sha256sum -c SHA256SUMS
+npm install --global ./trestl-cli-0.4.0.tgz --ignore-scripts
+trestl login --profile work --url https://projects.example.com
+trestl auth status --profile work
+```
+
+Sign in in your browser and approve the code displayed in your terminal. Your CLI uses the same user and permissions as the app. Use `--scope read` for read-only access. See the [CLI guide](cli/README.md) for Windows checksums, GHCR installation, automation and token revocation. Downloads require access while the repository/packages are private.
+
+### Project updates and weekly review
+
+Open a project's **Overview → Write update** to share progress, blockers, and next steps
+with an **On track**, **At risk**, or **Off track** health status. The latest update appears
+above the project description; expand **Previous updates** to read its history.
+Health is independent of the project's lifecycle status.
+
+Open **All projects → Weekly review** for projects whose status is **Active**, including
+active subprojects. The review shows the latest update, author, owner, and target date,
+with off-track and at-risk projects first. Search by project name or key, filter by health,
+or choose **Needs update** for missing updates and those at least seven days old.
+You can write an update directly from the review. Existing project permissions apply.
+
+Updates are stored in the installation database and included in portable project transfers.
+Imported updates retain their original health, text, date, and author name, labeled as imported history.
+
 ## Choose how to run it
 
 | Mode                                      | Best for                                  | Data                                     |
 | ----------------------------------------- | ----------------------------------------- | ---------------------------------------- |
+| [Desktop app](docs/desktop.md) | A native, offline workspace on your computer | PGlite in the OS app-data folder |
 | [Development server](docs/development.md) | Local use and development with hot reload | PGlite in `.data/`, or PostgreSQL        |
 | [Docker Compose](deploy/README.md)        | A packaged self-hosted installation       | PostgreSQL in a persistent Docker volume |
 | [Kubernetes](deploy/kubernetes/README.md) | Running on an existing cluster            | External PostgreSQL                      |
@@ -98,6 +140,7 @@ configuration outside the product repository.
 
 - [User guide](docs/user-guide.md)
 - [Transfer projects between installations](docs/project-transfer.md)
+- [Desktop app: downloads, local storage, and backups](docs/desktop.md)
 - [Development and checks](docs/development.md)
 - [Docker, configuration, backups, and upgrades](deploy/README.md)
 - [Kubernetes deployment](deploy/kubernetes/README.md)
@@ -120,9 +163,12 @@ installation-wide JSON restore are not implemented. Project export/import suppor
 portability but does not replace database backups. Database migrations run at
 startup; back up before upgrading and retain your `APP_SECRET`.
 
-The CLI and container image can be built from source. This repository does
-not yet publish an npm package, a hosted SaaS, or a public container release.
+The CLI and container image can be built from source or published through the release workflows. The CLI is distributed through GitHub Releases and GHCR, not the npm registry. This project does not provide a hosted SaaS. Private artifacts require access until their visibility is explicitly changed for an open-source launch.
 
 ### Authentication proxy deployments
 
 For a dedicated company installation behind Traefik and oauth2-proxy, see [Google/proxy authentication](docs/proxy-auth.md). Proxy authentication provides automatic approved-user provisioning and personal API-token access for CLI and Raycast. Every authentication mode uses one installation. Local authentication remains the default. Keep actual domains, emails, and secrets in private deployment configuration.
+
+## Website and documentation
+
+The [Astro website](website/README.md) lives in `website/` and builds separately from the application. Its interactive demo reuses the product UI with isolated sample data, and its documentation is generated from this repository's guides. Run `pnpm --dir website install --frozen-lockfile`, then `pnpm --dir website build` after installing root dependencies. Deploy `website/dist/` to a static host.

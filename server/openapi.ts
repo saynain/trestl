@@ -136,6 +136,11 @@ const schemas: Record<string, unknown> = {
       title: string,
       description: string,
       projectId: nullableString,
+      milestoneId: {
+        ...nullableString,
+        description:
+          'Milestone in the item’s project. Moving projects clears this unless explicitly supplied.',
+      },
       parentId: nullableString,
       type: itemType,
       status,
@@ -210,6 +215,13 @@ const schemas: Record<string, unknown> = {
   Milestone: {
     type: 'object',
     properties: {
+      itemIds: { type: 'array', items: uuid, readOnly: true },
+      progress: {
+        type: 'object',
+        readOnly: true,
+        description: 'Counts visible linked items; only done counts as completed.',
+        properties: { total: { type: 'integer' }, done: { type: 'integer' } },
+      },
       revision: { type: 'integer', minimum: 0, readOnly: true },
       id: uuid,
       projectId: uuid,
@@ -224,29 +236,93 @@ const list = (name: string) => ({
   type: 'object',
   properties: { data: { type: 'array', items: ref(name) }, nextCursor: string },
 });
+schemas.RelationDetail = {
+  allOf: [
+    ref('Relation'),
+    {
+      type: 'object',
+      required: ['direction', 'relatedItem'],
+      properties: {
+        direction: {
+          type: 'string',
+          enum: ['outgoing', 'incoming'],
+          description:
+            'Relative to the requested item. A blocks relation points from itemId to targetId.',
+        },
+        relatedItem: {
+          type: 'object',
+          required: ['id', 'identifier', 'title'],
+          properties: { id: uuid, identifier: string, title: string },
+        },
+      },
+    },
+  ],
+};
+schemas.ProjectRelation = {
+  type: 'object',
+  properties: { id: uuid, itemId: uuid, projectId: uuid },
+};
 schemas.ItemDetail = {
   type: 'object',
   properties: {
     item: ref('WorkItem'),
     activity: { type: 'array', items: ref('Activity') },
     relations: { type: 'array', items: ref('Relation') },
+    projectRelations: { type: 'array', items: ref('ProjectRelation') },
     links: { type: 'array', items: ref('ResourceLink') },
+  },
+};
+schemas.ProjectUpdate = {
+  type: 'object',
+  required: ['id', 'projectId', 'authorId', 'health', 'body', 'createdAt'],
+  properties: {
+    importedFrom: {
+      type: 'object',
+      readOnly: true,
+      description: 'Original author name from an imported file; not a verified local identity.',
+      properties: { authorName: string },
+      required: ['authorName'],
+    },
+    sortKey: { ...uuid, readOnly: true },
+    id: uuid,
+    projectId: uuid,
+    authorId: uuid,
+    health: { type: 'string', enum: ['on_track', 'at_risk', 'off_track'] },
+    body: { type: 'string', minLength: 1, maxLength: 20000 },
+    createdAt: { type: 'string', format: 'date-time' },
+  },
+};
+schemas.MentionNotification = {
+  type: 'object',
+  properties: {
+    id: uuid,
+    workspaceId: uuid,
+    recipientId: uuid,
+    actorId: uuid,
+    itemId: uuid,
+    activityId: { ...uuid, nullable: true },
+    kind: { type: 'string', enum: ['mention'] },
+    createdAt: { type: 'string', format: 'date-time' },
+    readAt: { type: 'string', format: 'date-time', nullable: true },
   },
 };
 schemas.Bootstrap = {
   type: 'object',
   properties: {
+    notifications: { type: 'array', items: ref('MentionNotification') },
     authMode: { type: 'string', enum: ['local', 'google', 'oidc', 'proxy'] },
     workspace: ref('Workspace'),
     workspaces: { type: 'array', items: ref('Workspace') },
     user: ref('User'),
     users: { type: 'array', items: ref('User') },
     projects: { type: 'array', items: ref('Project') },
+    projectUpdates: { type: 'array', items: ref('ProjectUpdate') },
     items: { type: 'array', items: ref('WorkItem') },
     views: { type: 'array', items: ref('SavedView') },
     links: { type: 'array', items: ref('ResourceLink') },
     milestones: { type: 'array', items: ref('Milestone') },
     relations: { type: 'array', items: ref('Relation') },
+    projectRelations: { type: 'array', items: ref('ProjectRelation') },
   },
 };
 const object = (properties: Record<string, unknown>, required: string[] = []) => ({
@@ -298,7 +374,9 @@ function operation(
     browserOnly?: boolean;
     created?: boolean;
     noContent?: boolean;
+    optionalBody?: boolean;
     parameters?: unknown[];
+    description?: string;
   } = {},
 ) {
   const params = [
@@ -311,8 +389,16 @@ function operation(
     ...(options.parameters ?? []),
   ];
   const code = options.noContent ? '204' : options.created ? '201' : '200';
+  const revisionBody = body as
+    { properties?: { expectedRevision?: unknown }; required?: string[] } | undefined;
+  const revisionDescription = revisionBody?.properties?.expectedRevision
+    ? `${revisionBody.required?.includes('expectedRevision') ? 'Required' : 'Optional'} expectedRevision compares the submitted revision with the current resource revision${path.endsWith('/roadmap') ? ' (roadmap.revision)' : ''}. Read the resource first and send its revision; a stale revision returns 409 without applying changes. After a conflict, read the resource again before retrying.${method === 'delete' ? '' : ' Successful updates return the new revision in the updated resource.'}${revisionBody.required?.includes('expectedRevision') ? '' : ' Omit expectedRevision only when applying the operation regardless of the current revision is intended.'}`
+    : undefined;
   (paths[path] ??= {})[method] = {
     summary,
+    ...((options.description || revisionDescription) && {
+      description: [options.description, revisionDescription].filter(Boolean).join(' '),
+    }),
     operationId: `${method}${path.replace(/[^a-zA-Z]/g, '_')}`,
     security: options.public
       ? []
@@ -321,7 +407,12 @@ function operation(
         : [{ bearerAuth: [] }, { cookieAuth: [] }],
     ...(params.length ? { parameters: params } : {}),
     ...(body
-      ? { requestBody: { required: true, content: { 'application/json': { schema: body } } } }
+      ? {
+          requestBody: {
+            required: !options.optionalBody,
+            content: { 'application/json': { schema: body } },
+          },
+        }
       : {}),
     responses: {
       [code]: {
@@ -437,6 +528,26 @@ operation(
     },
   },
 );
+operation(
+  '/projects/{id}/updates',
+  'get',
+  'Read project health updates, newest first; requires project access',
+  object({ data: { type: 'array', items: ref('ProjectUpdate') } }),
+);
+operation(
+  '/projects/{id}/updates',
+  'post',
+  'Post a health update as the signed-in user; requires project access',
+  ref('ProjectUpdate'),
+  object(
+    {
+      health: { type: 'string', enum: ['on_track', 'at_risk', 'off_track'] },
+      body: { type: 'string', minLength: 1, maxLength: 20000 },
+    },
+    ['health', 'body'],
+  ),
+  { created: true },
+);
 const idempotencyParameter = {
   name: 'Idempotency-Key',
   in: 'header',
@@ -464,7 +575,7 @@ const resources = [
   ],
   ['views', 'SavedView', ['id', 'userId', 'workspaceId'], ['name', 'filters', 'layout']],
   ['links', 'ResourceLink', ['id'], ['title', 'url', 'kind']],
-  ['milestones', 'Milestone', ['id', 'revision'], ['projectId', 'title']],
+  ['milestones', 'Milestone', ['id', 'revision', 'itemIds', 'progress'], ['projectId', 'title']],
 ] as const;
 for (const [path, schema, omit, required] of resources) {
   const parameters =
@@ -473,6 +584,7 @@ for (const [path, schema, omit, required] of resources) {
           'q',
           'projectId',
           'parentId',
+          'milestoneId',
           'assigneeId',
           'status',
           'priority',
@@ -489,20 +601,23 @@ for (const [path, schema, omit, required] of resources) {
     `Create ${schema}`,
     ref(schema),
     writable(schema, [...omit], [...required]),
-    { created: true, ...(path === 'items' ? { parameters: [idempotencyParameter] } : {}) },
+    {
+      created: true,
+      ...(['items', 'milestones'].includes(path) ? { parameters: [idempotencyParameter] } : {}),
+    },
   );
-  if (path === 'items' || path === 'projects')
+  if (path === 'items' || path === 'projects' || path === 'milestones')
     operation(
       `/${path}/{id}`,
       'get',
-      `Get ${schema}${path === 'items' ? ' by UUID or identifier' : ' by UUID or key'}`,
+      `Get ${schema}${path === 'items' ? ' by UUID or identifier' : path === 'projects' ? ' by UUID or key' : ' by UUID'}`,
       ref(path === 'items' ? 'ItemDetail' : schema),
     );
   operation(
     `/${path}/{id}`,
     'patch',
     `Update ${schema}${path === 'items' ? '; linked title, description and externalUrl changes return 409. Planning fields stay local.' : ''}`,
-    ref(schema),
+    path === 'items' ? object({ item: ref('WorkItem') }, ['item']) : ref(schema),
     path === 'items' || path === 'milestones'
       ? {
           ...writable(schema, [...omit]),
@@ -518,7 +633,23 @@ for (const [path, schema, omit, required] of resources) {
         }
       : writable(schema, [...omit]),
   );
-  operation(`/${path}/{id}`, 'delete', `Delete ${schema}`, {}, undefined, { noContent: true });
+  operation(
+    `/${path}/{id}`,
+    'delete',
+    `Delete ${schema}`,
+    {},
+    path === 'items'
+      ? object({
+          expectedRevision: {
+            type: 'integer',
+            minimum: 0,
+            maximum: 2147483646,
+            description: 'Optional compare-and-set revision; stale deletions return 409.',
+          },
+        })
+      : undefined,
+    { noContent: true, ...(path === 'items' ? { optionalBody: true } : {}) },
+  );
 }
 operation(
   '/items/{id}/comments',
@@ -530,18 +661,62 @@ operation(
 );
 operation(
   '/items/{id}/relations',
+  'get',
+  'List accessible item relationships in both directions',
+  object({ data: { type: 'array', items: ref('RelationDetail') } }, ['data']),
+  undefined,
+  {
+    description:
+      'Accepts an item UUID or identifier. Includes only relationships whose two items are accessible. relatedItem identifies the opposite endpoint for display; itemId and targetId retain the original direction.',
+  },
+);
+operation(
+  '/items/{id}/relations',
   'post',
   'Link related or blocked work',
   ref('Relation'),
-  object({ targetId: uuid, kind: { type: 'string', enum: ['blocks', 'related'] } }, [
+  object({ targetId: uuid, kind: { type: 'string', enum: ['blocks', 'blocked_by', 'related'] } }, [
     'targetId',
     'kind',
   ]),
-  { created: true },
+  {
+    created: true,
+    description:
+      'blocked_by means the target blocks this item. It is stored and returned as a blocks relationship from the target to this item, sharing the same relationship ID as the equivalent blocks request. Self-links and dependency cycles are rejected.',
+  },
 );
 operation('/items/{id}/relations/{relationId}', 'delete', 'Delete a relationship', {}, undefined, {
   noContent: true,
 });
+operation(
+  '/items/{id}/project-relations/{relationId}',
+  'delete',
+  'Delete a project relationship',
+  {},
+  undefined,
+  { noContent: true },
+);
+operation(
+  '/notifications',
+  'get',
+  'List your accessible mention notifications, newest first',
+  list('MentionNotification'),
+);
+operation(
+  '/notifications/{id}',
+  'patch',
+  'Mark your notification read or unread',
+  ref('MentionNotification'),
+  object({ read: { type: 'boolean' } }, ['read']),
+);
+operation(
+  '/notifications/read-all',
+  'post',
+  'Mark all accessible notifications as read',
+  {},
+  object({}),
+  { noContent: true },
+);
 operation('/users', 'get', 'List workspace members', list('User'));
 operation(
   '/users',
@@ -609,6 +784,7 @@ operation(
       exportedAt: string,
       activity: { type: 'array', items: ref('Activity') },
       relations: { type: 'array', items: ref('Relation') },
+      projectRelations: { type: 'array', items: ref('ProjectRelation') },
     },
   },
 );
@@ -726,6 +902,42 @@ schemas.GitConnection = object({
   updatedAt: string,
   configured: { type: 'boolean' },
 });
+
+operation(
+  '/admin/version',
+  'get',
+  'Read running server version and latest stable release (admin only)',
+  object({
+    running: object({
+      version: string,
+      commit: nullableString,
+      buildId: nullableString,
+      builtAt: nullableString,
+      release: { type: 'boolean' },
+    }),
+    latest: {
+      ...object({ version: string, url: string, publishedAt: nullableString }),
+      type: ['object', 'null'],
+    },
+    status: { type: 'string', enum: ['up-to-date', 'update-available', 'unreleased', 'unknown'] },
+    checkedAt: string,
+    message: nullableString,
+  }),
+  undefined,
+  {
+    browserOnly: true,
+    description:
+      'Checks the public saynain/trestl GitHub Releases API with no credentials. Results, including failures, are cached for 15 minutes. Manual refresh is bounded to one upstream check per minute.',
+    parameters: [
+      {
+        name: 'refresh',
+        in: 'query',
+        schema: { type: 'boolean' },
+        description: 'Request a fresh release check, subject to the one-minute minimum interval.',
+      },
+    ],
+  },
+);
 
 const authenticationFields = {
   mode: { type: 'string', enum: ['local', 'google', 'oidc', 'proxy'] },
@@ -1066,6 +1278,49 @@ operation(
   { created: true },
 );
 operation(
+  '/projects/{projectId}/canvases/import',
+  'post',
+  'Import a native .excalidraw document as one new canvas (8 MiB request limit); editor-only preferences are discarded',
+  ref('ProjectCanvas'),
+  object(
+    {
+      title: canvasMetadata.title,
+      collectionId: canvasMetadata.collectionId,
+      document: {
+        type: 'object',
+        required: ['type', 'elements'],
+        additionalProperties: true,
+        properties: {
+          type: { type: 'string', const: 'excalidraw' },
+          elements: canvasSceneSchema.properties.elements,
+          appState: {
+            type: 'object',
+            additionalProperties: true,
+            properties: {
+              viewBackgroundColor: { type: 'string', maxLength: 100 },
+              gridSize: { type: ['number', 'null'], exclusiveMinimum: 0 },
+            },
+          },
+          files: canvasSceneSchema.properties.files,
+        },
+      },
+    },
+    ['title', 'document'],
+  ),
+  { created: true },
+);
+operation(
+  '/projects/{projectId}/canvases/{canvasId}/show',
+  'get',
+  'Return a browser link and current revision; URL is relative to the installation origin and requires project access',
+  object({ id: uuid, title: string, revision: { type: 'integer' }, url: string }, [
+    'id',
+    'title',
+    'revision',
+    'url',
+  ]),
+);
+operation(
   '/projects/{projectId}/canvases/{canvasId}',
   'get',
   'Read an editable canvas; access follows project and ancestor privacy',
@@ -1149,7 +1404,7 @@ export const openapi = {
   openapi: '3.1.0',
   info: {
     title: 'Trestl API',
-    version: '0.1.0',
+    version: '0.4.0',
     description:
       'Repository-independent project planning. Authenticate with a browser session or a scoped personal token. Core collection responses use data arrays; /integrations returns a direct array; item pagination uses opaque cursor values returned as nextCursor. Private project access is inherited by descendants. All dates are ISO YYYY-MM-DD and timestamps are UTC ISO 8601. The bootstrap endpoint is intended for small self-hosted workspaces. Repository imports require an admin account. Git and Confluence connections use individual credentials and explicit allowed origins. Work mutations never post to external providers; GitHub App authorization and refresh exchange credentials with GitHub.',
   },

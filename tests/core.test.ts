@@ -737,14 +737,14 @@ test('bootstrap uses bounded database reads while resolving large nested and mal
     assert.equal(visible.items.length, 51);
     assert.equal(visible.projects.length, 1);
     assert.ok(
-      reads <= 14,
-      `Bootstrap used ${reads} queries; expected at most five authentication/configuration reads, seven collection reads and two installation reads`,
+      reads <= 18,
+      `Bootstrap used ${reads} queries; expected at most five authentication/configuration reads, eleven collection reads and two installation reads`,
     );
     reads = 0;
     const own = (await api('GET', '/bootstrap')).json();
     assert.equal(own.items.length, 102);
     assert.equal(own.projects.length, 2);
-    assert.ok(reads <= 14);
+    assert.ok(reads <= 18);
   } finally {
     await app.close();
   }
@@ -790,7 +790,7 @@ test('linked issue content is source-owned while planning and recurring successo
       title: item.title,
     });
     assert.equal(updated.statusCode, 200, updated.body);
-    assert.equal(updated.json().source.state, 'closed');
+    assert.equal(updated.json().item.source.state, 'closed');
     const bootstrap = (await api('GET', '/bootstrap')).json();
     assert.deepEqual(bootstrap.items[0].source, source);
     const note = await api('POST', `/items/${item.id}/comments`, { body: 'Internal note' });
@@ -807,7 +807,10 @@ test('linked issue content is source-owned while planning and recurring successo
       (await api('PATCH', `/items/${successor.id}`, { title: 'My native follow-up' })).statusCode,
       200,
     );
-    await ctx.store.put('items', { ...updated.json(), source: { ...source, connected: false } });
+    await ctx.store.put('items', {
+      ...updated.json().item,
+      source: { ...source, connected: false },
+    });
     assert.equal(
       (await api('PATCH', `/items/${item.id}`, { title: 'Still source-owned' })).statusCode,
       409,
@@ -841,7 +844,7 @@ test('API numbering follows projects, moves, recurrence and deletion', async () 
     );
     const moved = await api('PATCH', `/items/${first.id}`, { projectId: b.id });
     assert.equal(moved.statusCode, 200, moved.body);
-    assert.equal(moved.json().identifier, 'BB-02');
+    assert.equal(moved.json().item.identifier, 'BB-02');
     const completed = await api('PATCH', `/items/${first.id}`, { status: 'done' });
     assert.equal(completed.statusCode, 200, completed.body);
     const followup = (await api('GET', '/bootstrap'))
@@ -885,6 +888,62 @@ test('installation inbox numbering is shared while private items stay private', 
     assert.equal((await other('GET', '/items/INBOX-01')).statusCode, 404);
     assert.equal((await other('GET', '/items/INBOX-02')).json().item.id, second.id);
     assert.equal((await api('GET', '/items/INBOX-01')).json().item.id, first.id);
+  } finally {
+    await app.close();
+  }
+});
+
+test('workspace project membership identifies the team without restricting collaboration', async () => {
+  const app = await createApp({ dataDir: ':memory:', integrations: false });
+  try {
+    const lead = await setup(app);
+    const owner = client(app, lead.cookie);
+    const response = await owner('POST', '/users', {
+      name: 'Teammate',
+      email: 'team@public.test',
+      password: 'sharing-password',
+    });
+    assert.equal(response.statusCode, 201);
+    const user = response.json();
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: { email: user.email, password: 'sharing-password' },
+    });
+    const teammate = client(app, `${login.cookies[0].name}=${login.cookies[0].value}`);
+    const created = await owner('POST', '/projects', {
+      key: 'TEAM',
+      name: 'Public team',
+      visibility: 'workspace',
+      memberIds: [user.id, user.id, lead.user.id],
+    });
+    assert.equal(created.statusCode, 201);
+    const path = `/projects/${created.json().id}`;
+    assert.deepEqual(created.json().memberIds, [user.id]);
+    assert.equal((await teammate('PATCH', path, { memberIds: [] })).statusCode, 403);
+    const removed = await owner('PATCH', path, { memberIds: [] });
+    assert.equal(removed.statusCode, 200);
+    assert.deepEqual(removed.json().memberIds, []);
+    assert.equal((await teammate('GET', path)).statusCode, 200);
+    assert.equal(
+      (await teammate('PATCH', path, { description: 'Still collaborating' })).statusCode,
+      200,
+    );
+    assert.equal((await teammate('PATCH', path, { memberIds: [user.id] })).statusCode, 403);
+    assert.equal((await owner('PATCH', path, { memberIds: [user.id] })).statusCode, 200);
+    for (const visibility of ['private', 'workspace']) {
+      const changed = await owner('PATCH', path, { visibility });
+      assert.equal(changed.statusCode, 200);
+      assert.deepEqual(changed.json().memberIds, [user.id]);
+      assert.equal((await teammate('GET', path)).statusCode, 200);
+    }
+    const parent = await owner('POST', '/projects', {
+      key: 'HIDDEN',
+      name: 'Private parent',
+      visibility: 'private',
+    });
+    assert.equal((await owner('PATCH', path, { parentId: parent.json().id })).statusCode, 200);
+    assert.equal((await teammate('GET', path)).statusCode, 404);
   } finally {
     await app.close();
   }

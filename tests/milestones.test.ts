@@ -82,3 +82,144 @@ test('milestone edits persist, increment revisions, reject stale drags and retai
     await app.close();
   }
 });
+
+test('linked work drives visible milestone progress, validates scope, clears assignments, and retries safely', async () => {
+  const app = await createApp({ dataDir: ':memory:', integrations: false });
+  try {
+    const setup = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/setup',
+      payload: {
+        name: 'Planner',
+        email: 'links@example.test',
+        password: 'milestone-test-password',
+        seedDemo: false,
+      },
+    });
+    const cookie = setup.cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+    const api = (
+      method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+      path: string,
+      payload?: object,
+      headers: Record<string, string> = {},
+    ) =>
+      app.inject({
+        method,
+        url: '/api/v1' + path,
+        headers: { cookie, ...headers },
+        ...(payload ? { payload } : {}),
+      });
+    const p = (await api('POST', '/projects', { key: 'LINK', name: 'Linked work' })).json();
+    const other = (await api('POST', '/projects', { key: 'OTHER', name: 'Other project' })).json();
+    const input = { projectId: p.id, title: 'Release' };
+    const m = (
+      await api('POST', '/milestones', input, { 'idempotency-key': 'release-once' })
+    ).json();
+    assert.equal(
+      (await api('POST', '/milestones', input, { 'idempotency-key': 'release-once' })).json().id,
+      m.id,
+    );
+    assert.equal(
+      (
+        await api(
+          'POST',
+          '/milestones',
+          { ...input, title: 'Different' },
+          { 'idempotency-key': 'release-once' },
+        )
+      ).statusCode,
+      409,
+    );
+    const next = (await api('POST', '/milestones', { projectId: other.id, title: 'Next' })).json();
+    for (const invalid of [
+      { projectId: other.id, milestoneId: m.id },
+      { milestoneId: m.id },
+      { projectId: p.id, milestoneId: '00000000-0000-4000-8000-000000000000' },
+    ]) {
+      assert.equal((await api('POST', '/items', { title: 'Invalid', ...invalid })).statusCode, 400);
+    }
+    const active = (
+      await api('POST', '/items', { title: 'Active', projectId: p.id, milestoneId: m.id })
+    ).json();
+    const done = (
+      await api('POST', '/items', {
+        title: 'Done',
+        status: 'done',
+        projectId: p.id,
+        milestoneId: m.id,
+      })
+    ).json();
+    const canceled = (
+      await api('POST', '/items', {
+        title: 'Canceled',
+        status: 'canceled',
+        projectId: p.id,
+        milestoneId: m.id,
+      })
+    ).json();
+    await api('POST', '/items', {
+      title: 'Private',
+      visibility: 'private',
+      projectId: p.id,
+      milestoneId: m.id,
+    });
+    let detail = (await api('GET', `/milestones/${m.id}`)).json();
+    assert.deepEqual(detail.progress, { total: 4, done: 1 });
+    assert.ok(detail.itemIds.includes(done.id));
+    assert.equal(detail.completed, false);
+    assert.equal((await api('GET', `/items?milestoneId=${m.id}`)).json().data.length, 4);
+    assert.equal((await api('GET', `/items?milestoneId=null`)).json().data.length, 0);
+    assert.equal(
+      (await api('PATCH', `/milestones/${m.id}`, { projectId: other.id })).statusCode,
+      409,
+    );
+    assert.equal(
+      (await api('PATCH', `/items/${active.id}`, { milestoneId: next.id })).statusCode,
+      400,
+    );
+    await api('PATCH', `/items/${active.id}`, { projectId: other.id });
+    assert.equal((await api('GET', `/items/${active.id}`)).json().item.milestoneId, null);
+    await api('PATCH', `/items/${active.id}`, { projectId: p.id, milestoneId: m.id });
+    await api('PATCH', `/items/${active.id}`, { projectId: other.id, milestoneId: next.id });
+    assert.deepEqual((await api('GET', `/milestones/${next.id}`)).json().progress, {
+      total: 1,
+      done: 0,
+    });
+    await api('PATCH', `/items/${canceled.id}`, { milestoneId: null });
+    detail = (await api('GET', `/milestones/${m.id}`)).json();
+    assert.deepEqual(detail.progress, { total: 2, done: 1 });
+    // Progress and linked IDs must not leak private work to another project member.
+    const { memberSession, cookieOf } = await import('./installation-fixture.ts');
+    const member = await memberSession(app, cookie, {
+      name: 'Member',
+      email: 'member@milestone.test',
+      password: 'milestone-test-password',
+    });
+    const visible = (
+      await api('GET', `/milestones/${m.id}`, undefined, { cookie: cookieOf(member) })
+    ).json();
+    assert.deepEqual(visible.progress, { total: 1, done: 1 });
+    assert.deepEqual(visible.itemIds, [done.id]);
+    const before = (await api('GET', `/items/${done.id}`)).json().item;
+    assert.equal((await api('DELETE', `/milestones/${m.id}`)).statusCode, 204);
+    const after = (await api('GET', `/items/${done.id}`)).json().item;
+    assert.equal(after.milestoneId, null);
+    assert.ok(after.revision > (before.revision ?? 0));
+    assert.equal(
+      (
+        await api('PATCH', `/items/${done.id}`, {
+          title: 'Stale edit',
+          expectedRevision: before.revision,
+        })
+      ).statusCode,
+      409,
+    );
+    assert.equal((await api('GET', `/milestones/${m.id}`)).statusCode, 404);
+    assert.equal(
+      (await api('POST', '/milestones', input, { 'idempotency-key': 'release-once' })).statusCode,
+      404,
+    );
+  } finally {
+    await app.close();
+  }
+});
