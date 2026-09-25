@@ -7,6 +7,7 @@ import {
   type Mention,
 } from '../../shared/mentions';
 import { useApp } from '../lib/context';
+import { workItemOptions } from '../lib/work-item-options';
 import './mentions.css';
 
 type Option = Mention & { label: string; detail: string };
@@ -16,10 +17,12 @@ export function MentionTextarea({
   onChange,
   onKeyDown,
   excludeItemId,
+  projectId,
   ...props
 }: Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'value'> & {
   value: string;
   excludeItemId?: string;
+  projectId?: string | null;
 }) {
   const { data } = useApp();
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -39,9 +42,12 @@ export function MentionTextarea({
       : query?.kind === 'project'
         ? data.projects.map((p) => ({ kind: 'project', id: p.id, label: p.name, detail: p.key }))
         : query?.kind === 'item'
-          ? data.items
-              .filter((i) => i.id !== excludeItemId)
-              .map((i) => ({ kind: 'item', id: i.id, label: i.identifier, detail: i.title }))
+          ? workItemOptions(data.items, data.projects, {
+              projectId,
+              excludeItemId,
+              query: query.query,
+              limit: 8,
+            }).map((option) => ({ ...option, kind: 'item' }))
           : [];
   const options = candidates
     .filter((o) =>

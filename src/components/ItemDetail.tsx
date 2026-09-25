@@ -1,5 +1,6 @@
 import { ParentSelect, ParentPicker, HierarchyMenu } from './ParentPicker';
 import { MentionTextarea } from './MentionTextarea';
+import { workItemOptions } from '../lib/work-item-options';
 import { assigneeOptions } from '../lib/assignees';
 import { useShortcuts, activateItemControl } from '../lib/keyboard';
 import { itemActions, type ItemAction } from '../lib/shortcuts';
@@ -532,6 +533,7 @@ export default function ItemDetail({
                 />
                 <MentionTextarea
                   excludeItemId={id}
+                  projectId={item.projectId}
                   className="input"
                   aria-label="Description"
                   value={description}
@@ -751,13 +753,14 @@ export default function ItemDetail({
                       onChange={(e) => setRelationTarget(e.target.value)}
                     >
                       <option value="">Select a work item…</option>
-                      {data.items
-                        .filter((i) => i.id !== id)
-                        .map((i) => (
-                          <option key={i.id} value={i.id}>
-                            {i.identifier} · {i.title}
-                          </option>
-                        ))}
+                      {workItemOptions(data.items, data.projects, {
+                        projectId: item.projectId,
+                        excludeItemId: id,
+                      }).map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label} · {option.detail}
+                        </option>
+                      ))}
                     </Select>
                     <div className="item-edit-buttons">
                       <button
@@ -1022,6 +1025,7 @@ export default function ItemDetail({
                   ) : (
                     <MentionTextarea
                       excludeItemId={id}
+                      projectId={item.projectId}
                       className="input"
                       aria-label={source ? 'Internal note' : 'Comment'}
                       placeholder={
