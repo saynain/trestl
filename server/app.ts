@@ -1600,7 +1600,7 @@ export async function createApp(
   });
   app.post<{ Params: { id: string } }>('/api/v1/items/:id/relations', async (request, reply) => {
     const input = z
-      .object({ targetId: z.string().uuid(), kind: z.enum(['blocks', 'related']) })
+      .object({ targetId: z.string().uuid(), kind: z.enum(['blocks', 'blocked_by', 'related']) })
       .strict()
       .parse(request.body);
     const result = await mutate(async (s) => {
@@ -1608,17 +1608,29 @@ export async function createApp(
         item = await checkedItem(s, u, request.params.id);
       await checkedItem(s, u, input.targetId);
       if (item.id === input.targetId) fail(400, 'Cannot relate an item to itself');
+      // Store dependencies in one direction, regardless of which endpoint adds the link.
+      const relation = {
+        itemId: input.kind === 'blocked_by' ? input.targetId : item.id,
+        targetId: input.kind === 'blocked_by' ? item.id : input.targetId,
+        kind: input.kind === 'blocked_by' ? 'blocks' : input.kind,
+      };
       const relations = await s.list<Relation>('relations');
       const existing = relations.find(
-        (r) => r.itemId === item.id && r.targetId === input.targetId && r.kind === input.kind,
+        (r) =>
+          r.itemId === relation.itemId &&
+          r.targetId === relation.targetId &&
+          r.kind === relation.kind,
       );
       if (existing) return existing;
-      if (input.kind === 'blocks' && createsDependencyCycle(relations, item.id, input.targetId))
+      if (
+        relation.kind === 'blocks' &&
+        createsDependencyCycle(relations, relation.itemId, relation.targetId)
+      )
         fail(
           409,
           'This dependency would create a cycle. Remove a blocking link in the chain first.',
         );
-      return s.put('relations', { id: id(), itemId: item.id, ...input });
+      return s.put('relations', { id: id(), ...relation });
     });
     return reply.code(201).send(result);
   });
