@@ -1,8 +1,8 @@
 import { fromMarkdown } from 'mdast-util-from-markdown';
 
-export type MentionKind = 'user' | 'item' | 'project';
+export type MentionKind = 'user' | 'item' | 'project' | 'canvas';
 export type Mention = { kind: MentionKind; id: string };
-export const mentionTriggers = { user: '@', item: '/', project: '$' } as const;
+export const mentionTriggers = { user: '@', item: '/', project: '$', canvas: '!' } as const;
 
 // Stable IDs survive renames and moves. Ordinary Markdown keeps exports readable.
 export function mentionHref({ kind, id }: Mention) {
@@ -11,7 +11,7 @@ export function mentionHref({ kind, id }: Mention) {
 
 export function parseMentionHref(href: string): Mention | null {
   const match =
-    /^#\/mention\/(user|item|project)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(
+    /^#\/mention\/(user|item|project|canvas)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(
       href,
     );
   return match ? { kind: match[1].toLowerCase() as MentionKind, id: match[2].toLowerCase() } : null;
@@ -38,7 +38,7 @@ export function extractMentions(markdown: string): Mention[] {
 
 export function mentionQuery(value: string, caret: number) {
   const before = value.slice(0, caret);
-  const match = /(?:^|[\s(])([@/$])([^\s\[\]()@/$`]{0,80})$/.exec(before);
+  const match = /(?:^|[\s(])([@/$!])([^\s\[\]()@/$!`]{0,80})$/.exec(before);
   if (!match) return null;
   const start = caret - match[2].length - 1;
   // Never offer mentions inside code, links, or Markdown link destinations.
@@ -60,7 +60,9 @@ export function mentionQuery(value: string, caret: number) {
   visit(tree);
   if (excluded) return null;
   return {
-    kind: ({ '@': 'user', '/': 'item', $: 'project' } as const)[match[1] as '@' | '/' | '$'],
+    kind: ({ '@': 'user', '/': 'item', $: 'project', '!': 'canvas' } as const)[
+      match[1] as '@' | '/' | '$' | '!'
+    ],
     query: match[2],
     start,
     end: caret,

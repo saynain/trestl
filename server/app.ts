@@ -5,6 +5,7 @@ import {
 } from './cli-login.ts';
 import { compareProjectUpdates } from '../shared/project-updates.ts';
 import { addMentionRelations } from './mentions.ts';
+import { extractMentions } from '../shared/mentions.ts';
 import { authSettings, configuredProxy, registerAuthSettings } from './auth-settings.ts';
 import { createInstallation, installation, migrateInstallation } from './installation.ts';
 import {
@@ -44,6 +45,7 @@ import type {
   User,
   Workspace,
   ProjectCanvas,
+  CanvasSummary,
   CanvasCollection,
   Project,
   ProjectUpdate,
@@ -362,6 +364,27 @@ export async function createApp(
       return fail(404, 'Project not found');
     return project;
   };
+  const checkedCanvas = async (s: Store, user: User, canvasId: string) => {
+    const canvas = await s.get<ProjectCanvas>('canvases', canvasId);
+    if (!canvas || !sameWorkspace(user, canvas) || !(await canProjectIn(s, user, canvas.projectId)))
+      return fail(404, 'Canvas not found');
+    return canvas;
+  };
+  const validateProjectCanvasMentions = async (
+    s: Store,
+    user: User,
+    body: string,
+    previous = '',
+  ) => {
+    const old = new Set(
+      extractMentions(previous)
+        .filter((m) => m.kind === 'canvas')
+        .map((m) => m.id),
+    );
+    for (const mention of extractMentions(body))
+      if (mention.kind === 'canvas' && !old.has(mention.id))
+        await checkedCanvas(s, user, mention.id);
+  };
   const saveMentions = (
     s: Store,
     u: User,
@@ -379,6 +402,7 @@ export async function createApp(
       {
         item: (targetId) => checkedItem(s, u, targetId),
         project: (projectId) => checkedProject(s, u, projectId),
+        canvas: (canvasId) => checkedCanvas(s, u, canvasId),
         recipientCanRead: (recipient) => canItemIn(s, recipient, item.id),
       },
       activityId,
@@ -720,6 +744,7 @@ export async function createApp(
       allUpdates,
       allProjectRelations,
       allNotifications,
+      allCanvases,
     ] = await Promise.all([
       store.list<Project>('projects'),
       store.list<WorkItem>('items'),
@@ -731,6 +756,11 @@ export async function createApp(
       store.list<ProjectUpdate>('projectUpdates'),
       store.list<ProjectRelation>('projectRelations'),
       store.list<MentionNotification>('notifications'),
+      db
+        .query<{ data: CanvasSummary }>(
+          "SELECT data - 'scene' AS data FROM entities WHERE collection='canvases'",
+        )
+        .then((result) => result.rows.map((row) => row.data)),
     ]);
     const projectsById = new Map(allProjects.map((project) => [project.id, project]));
     const itemsById = new Map(allItems.map((item) => [item.id, item]));
@@ -784,6 +814,9 @@ export async function createApp(
       workspaces: (await userWorkspaces(store, user.id)).filter((w) => w.id === workspaceOf(user)),
       users: users.filter((member) => sameWorkspace(user, member)),
       projects,
+      canvases: allCanvases.filter(
+        (canvas) => sameWorkspace(user, canvas) && projectVisible(canvas.projectId),
+      ),
       projectUpdates: allUpdates.filter((update) => projectVisible(update.projectId)),
       items,
       views: allViews.filter((view) => view.userId === user.id && sameWorkspace(user, view)),
@@ -937,6 +970,7 @@ export async function createApp(
       };
       await validateProject(s, u, p);
       await validateProjectMembers(s, p);
+      await validateProjectCanvasMentions(s, u, p.description);
       return s.put('projects', p);
     });
     return reply.code(201).send(result);
@@ -988,6 +1022,7 @@ export async function createApp(
         await validateProjectMembers(s, p);
       }
       await validateProject(s, u, p);
+      await validateProjectCanvasMentions(s, u, p.description, old.description);
       if (
         old.ownerId !== u.id &&
         input.parentId !== undefined &&

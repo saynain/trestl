@@ -197,6 +197,7 @@ export interface Bootstrap {
   views: SavedView[];
   links: ResourceLink[];
   milestones: Milestone[];
+  canvases?: CanvasSummary[];
 }
 export interface ItemDetail {
   item: WorkItem;

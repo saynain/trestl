@@ -22,16 +22,19 @@ const markdownComponents: Components = {
     const target =
       mention.kind === 'user'
         ? app.data.users.find((u) => u.id === mention.id)
-        : mention.kind === 'project'
-          ? app.data.projects.find((p) => p.id === mention.id)
-          : app.data.items.find((i) => i.id === mention.id);
+        : mention.kind === 'canvas'
+          ? app.data.canvases?.find((c) => c.id === mention.id)
+          : mention.kind === 'project'
+            ? app.data.projects.find((p) => p.id === mention.id)
+            : app.data.items.find((i) => i.id === mention.id);
     if (!target)
       return (
         <span className="mention mention-unavailable">
           Unavailable {mention.kind === 'user' ? 'person' : mention.kind}
         </span>
       );
-    const label = 'identifier' in target ? target.identifier : target.name;
+    const label =
+      'identifier' in target ? target.identifier : 'name' in target ? target.name : target.title;
     if (mention.kind === 'user')
       return (
         <span className="mention" title={label}>
@@ -42,12 +45,18 @@ const markdownComponents: Components = {
     return (
       <a
         className="mention"
-        href={`#/${mention.kind}/${mention.id}`}
+        href={
+          mention.kind === 'canvas' && 'projectId' in target
+            ? `#/project/${target.projectId}?tab=${encodeURIComponent(`canvases/${mention.id}`)}`
+            : `#/${mention.kind}/${mention.id}`
+        }
         title={'title' in target ? target.title : label}
         onClick={(event) => {
           if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
           event.preventDefault();
           if (mention.kind === 'item') app.openItem(mention.id);
+          else if (mention.kind === 'canvas' && 'projectId' in target)
+            navigate('project', target.projectId!, `canvases/${mention.id}`);
           else navigate('project', mention.id);
         }}
       >

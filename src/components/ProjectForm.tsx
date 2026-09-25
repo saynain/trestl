@@ -1,3 +1,4 @@
+import { MentionTextarea } from './MentionTextarea';
 import { Select } from './Select';
 import { useState, type FormEvent } from 'react';
 import { Lock, FolderTree } from 'lucide-react';
@@ -134,7 +135,9 @@ export default function ProjectForm({
         </div>
         <label className="field">
           Description
-          <textarea
+          <MentionTextarea
+            kinds={['canvas']}
+            projectId={project?.id ?? parentId}
             className="input"
             rows={5}
             aria-describedby="project-description-hint"
