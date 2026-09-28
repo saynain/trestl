@@ -13,6 +13,7 @@ still developing.
 ## What you can do
 
 - Capture private tasks, ideas, and follow-ups in your personal inbox.
+- Add screenshots and Mermaid diagrams to work item descriptions and comments.
 - Organize nested projects and work in lists, boards, and saved views.
 - Plan dates, dependencies, milestones, Gantt schedules, and project roadmaps.
 - Post project health updates and review active projects together in a weekly meeting.
@@ -26,7 +27,7 @@ See the [user guide](docs/user-guide.md) for the complete workflows.
 
 ## Install the desktop app
 
-The desktop app and its bundled server are aligned to **v0.5.0**. Signed macOS,
+The desktop app and its bundled server are aligned to **v0.6.0**. Signed macOS,
 Windows, and Linux release installers are pending signing configuration; they
 are not included in the current web/CLI release. Test installers are available
 from successful **Desktop installers** workflow runs in GitHub Actions.
@@ -36,12 +37,12 @@ verification. Downloads require access while this repository is private.
 
 ## Install the CLI
 
-Download the tarball and checksum from [GitHub Releases](https://github.com/saynain/trestl/releases/latest), or pull the identical artifact from `ghcr.io/saynain/trestl-cli:v0.5.0` using ORAS. Node.js 22.9+ is required on macOS, Linux and Windows.
+Download the tarball and checksum from [GitHub Releases](https://github.com/saynain/trestl/releases/latest), or pull the identical artifact from `ghcr.io/saynain/trestl-cli:v0.6.0` using ORAS. Node.js 22.9+ is required on macOS, Linux and Windows.
 
 ```sh
-gh release download v0.5.0 --repo saynain/trestl --pattern 'trestl-cli-*.tgz' --pattern SHA256SUMS
+gh release download v0.6.0 --repo saynain/trestl --pattern 'trestl-cli-*.tgz' --pattern SHA256SUMS
 shasum -a 256 -c SHA256SUMS  # Linux: sha256sum -c SHA256SUMS
-npm install --global ./trestl-cli-0.5.0.tgz --ignore-scripts
+npm install --global ./trestl-cli-0.6.0.tgz --ignore-scripts
 trestl login --profile work --url https://projects.example.com
 trestl auth status --profile work
 ```
@@ -66,12 +67,12 @@ Imported updates retain their original health, text, date, and author name, labe
 
 ## Choose how to run it
 
-| Mode                                      | Best for                                  | Data                                     |
-| ----------------------------------------- | ----------------------------------------- | ---------------------------------------- |
-| [Desktop app](docs/desktop.md) | A native, offline workspace on your computer | PGlite in the OS app-data folder |
-| [Development server](docs/development.md) | Local use and development with hot reload | PGlite in `.data/`, or PostgreSQL        |
-| [Docker Compose](deploy/README.md)        | A packaged self-hosted installation       | PostgreSQL in a persistent Docker volume |
-| [Kubernetes](deploy/kubernetes/README.md) | Running on an existing cluster            | External PostgreSQL                      |
+| Mode                                      | Best for                                     | Data                                     |
+| ----------------------------------------- | -------------------------------------------- | ---------------------------------------- |
+| [Desktop app](docs/desktop.md)            | A native, offline workspace on your computer | PGlite in the OS app-data folder         |
+| [Development server](docs/development.md) | Local use and development with hot reload    | PGlite in `.data/`, or PostgreSQL        |
+| [Docker Compose](deploy/README.md)        | A packaged self-hosted installation          | PostgreSQL in a persistent Docker volume |
+| [Kubernetes](deploy/kubernetes/README.md) | Running on an existing cluster               | External PostgreSQL                      |
 
 ### Local development
 

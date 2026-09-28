@@ -6,24 +6,24 @@ A standalone Node.js client for Trestl. Run it from any repository or directory;
 
 Install [Node.js 22.9 or newer](https://nodejs.org/), then download the `.tgz` and `SHA256SUMS` from the [latest GitHub release](https://github.com/saynain/trestl/releases/latest). The same package works on macOS, Linux and Windows and contains no runtime dependencies.
 
-For version 0.5.0, using the GitHub CLI (also works while the repository is private):
+For version 0.6.0, using the GitHub CLI (also works while the repository is private):
 
 ```sh
-gh release download v0.5.0 --repo saynain/trestl --pattern 'trestl-cli-*.tgz' --pattern SHA256SUMS
+gh release download v0.6.0 --repo saynain/trestl --pattern 'trestl-cli-*.tgz' --pattern SHA256SUMS
 # macOS; on Linux use sha256sum -c SHA256SUMS
 shasum -a 256 -c SHA256SUMS
-npm install --global ./trestl-cli-0.5.0.tgz --ignore-scripts
+npm install --global ./trestl-cli-0.6.0.tgz --ignore-scripts
 trestl --version
 ```
 
-On Windows, compare `(Get-FileHash .\trestl-cli-0.5.0.tgz -Algorithm SHA256).Hash` with `SHA256SUMS`, then run the same npm install command. npm must have a writable global prefix; use a Node version manager or a user-owned prefix if needed.
+On Windows, compare `(Get-FileHash .\trestl-cli-0.6.0.tgz -Algorithm SHA256).Hash` with `SHA256SUMS`, then run the same npm install command. npm must have a writable global prefix; use a Node version manager or a user-owned prefix if needed.
 
 The identical tarball is also distributed as an OCI artifact in GHCR. With [ORAS](https://oras.land/docs/installation/) installed:
 
 ```sh
-oras pull ghcr.io/saynain/trestl-cli:v0.5.0
+oras pull ghcr.io/saynain/trestl-cli:v0.6.0
 shasum -a 256 -c SHA256SUMS
-npm install --global ./trestl-cli-0.5.0.tgz --ignore-scripts
+npm install --global ./trestl-cli-0.6.0.tgz --ignore-scripts
 ```
 
 This is a downloadable package artifact, not a Docker image. Registry mirrors can copy it with `oras copy`; use a digest reference for reproducible installs. While private, GHCR requires `oras login ghcr.io` with a GitHub account/token that can read the package. GitHub source/release visibility and GHCR package visibility are separate settings. This package is not published to npm.
@@ -49,7 +49,7 @@ For automation or an older server, create a personal API token in Settings and u
 pnpm install --frozen-lockfile
 pnpm build:cli
 node scripts/package-cli.mjs
-npm install --global ./dist/cli-release/trestl-cli-0.5.0.tgz --ignore-scripts
+npm install --global ./dist/cli-release/trestl-cli-0.6.0.tgz --ignore-scripts
 ```
 
 During development, `pnpm cli` runs the same CLI from source. Use `pnpm -s cli` to suppress pnpm's banner when processing JSON. See [CLI releases](../docs/cli-releases.md) for publishing and [proxy deployment](../docs/proxy-auth.md) for gateway configuration.

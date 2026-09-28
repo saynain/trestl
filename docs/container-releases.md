@@ -31,12 +31,12 @@ automatic deployment and no mutable `latest` tag.
 After merging and verifying a release commit on `main`, push a new version tag:
 
 ```sh
-git tag v0.5.0 <release-commit>
-git push origin refs/tags/v0.5.0
+git tag v0.6.0 <release-commit>
+git push origin refs/tags/v0.6.0
 ```
 
 Use the next unused version, optionally with a prerelease suffix such as
-`v0.5.0-rc.1`. The workflow rejects other tag formats and commits outside main's
+`v0.6.0-rc.1`. The workflow rejects other tag formats and commits outside main's
 history. Treat release tags as immutable: never move or reuse one. Deployment
 repositories must pin digests, not rely on tags being technically immutable.
 
@@ -113,7 +113,7 @@ time through these non-secret Docker build arguments (also available as runtime
 environment variables for other deployment systems):
 
 - `TRESTL_BUILD_COMMIT`: full source commit.
-- `TRESTL_BUILD_REF`: source tag or branch, such as `v0.5.0` or `main`.
+- `TRESTL_BUILD_REF`: source tag or branch, such as `v0.6.0` or `main`.
 - `TRESTL_BUILD_ID`: deployment/build identifier.
 - `TRESTL_BUILD_DATE`: ISO 8601 UTC build timestamp.
 
