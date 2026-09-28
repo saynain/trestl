@@ -95,6 +95,7 @@ const projectAllowsUser = (project: Project, user: User) =>
 const title = z.string().trim().min(1).max(240);
 const description = z.string().max(100000);
 const imageLimit = 8 * 1024 * 1024;
+const workspaceImageLimit = 1024 * 1024 * 1024;
 const imageTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const;
 function validImage(data: Buffer, type: string) {
   if (type === 'image/png')
@@ -242,6 +243,7 @@ export async function createApp(
     githubFetch?: typeof fetch;
     proxyAuth?: ProxyAuthConfig | null;
     desktopToken?: string;
+    imageStorageLimitBytes?: number;
   } = {},
 ) {
   const environmentProxy =
@@ -402,14 +404,24 @@ export async function createApp(
     if (!data.length || data.length > imageLimit || !validImage(data, mimeType))
       fail(400, 'The image is empty, too large, or does not match its file type');
     const imageId = id();
-    await db.query(
-      "DELETE FROM item_images WHERE item_id IS NULL AND created_at < NOW() - INTERVAL '7 days'",
-    );
-    await db.query(
-      `INSERT INTO item_images(id,creator_id,workspace_id,mime_type,data)
-       VALUES($1,$2,$3,$4,$5)`,
-      [imageId, user.id, workspaceOf(user), mimeType, data],
-    );
+    await mutate(async (_s, tx) => {
+      await tx.query(
+        "DELETE FROM item_images WHERE item_id IS NULL AND created_at < NOW() - INTERVAL '7 days'",
+      );
+      const used = (
+        await tx.query<{ bytes: string }>(
+          'SELECT COALESCE(SUM(octet_length(data)), 0) AS bytes FROM item_images WHERE workspace_id=$1',
+          [workspaceOf(user)],
+        )
+      ).rows[0]?.bytes;
+      if (Number(used ?? 0) + data.length > (options.imageStorageLimitBytes ?? workspaceImageLimit))
+        fail(413, 'Workspace image storage limit reached (1 GB)');
+      await tx.query(
+        `INSERT INTO item_images(id,creator_id,workspace_id,mime_type,data)
+         VALUES($1,$2,$3,$4,$5)`,
+        [imageId, user.id, workspaceOf(user), mimeType, data],
+      );
+    });
     return reply.code(201).send({ url: `/api/v1/images/${imageId}` });
   });
   app.get<{ Params: { id: string } }>('/api/v1/images/:id', async (request, reply) => {
@@ -425,13 +437,24 @@ export async function createApp(
         request.params.id,
       ])
     ).rows[0];
-    if (
-      !image ||
-      image.workspace_id !== workspaceOf(user) ||
-      (image.creator_id !== user.id &&
-        (!image.item_id || !(await canItemIn(store, user, image.item_id))))
-    )
-      fail(404, 'Image not found');
+    if (!image || image.workspace_id !== workspaceOf(user)) fail(404, 'Image not found');
+    if (image.creator_id !== user.id) {
+      if (!image.item_id || !(await canItemIn(store, user, image.item_id)))
+        fail(404, 'Image not found');
+      const path = `/api/v1/images/${request.params.id}`;
+      const reference = await db.query<{ linked: boolean }>(
+        `SELECT EXISTS (
+           SELECT 1 FROM entities WHERE collection='items' AND id=$1
+             AND data->>'description' LIKE '%' || $2 || '%'
+           UNION ALL
+           SELECT 1 FROM entities WHERE collection='activity'
+             AND data->>'itemId'=$1 AND data->>'kind'='comment'
+             AND data->>'body' LIKE '%' || $2 || '%'
+         ) AS linked`,
+        [image.item_id, path],
+      );
+      if (!reference.rows[0]?.linked) fail(404, 'Image not found');
+    }
     return reply
       .header('Cache-Control', 'private, no-store')
       .header('X-Content-Type-Options', 'nosniff')

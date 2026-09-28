@@ -62,6 +62,26 @@ test('uploaded images follow the referenced work item access', async () => {
     assert.equal(image.headers['content-type'], 'image/png');
     assert.equal(image.headers['x-content-type-options'], 'nosniff');
     assert.deepEqual(image.rawPayload, png);
+    const removeReference = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/items/${itemResponse.json().id}`,
+      headers: { cookie: owner },
+      payload: { description: '' },
+    });
+    assert.equal(removeReference.statusCode, 200, removeReference.body);
+    assert.equal(
+      (await getImage(member)).statusCode,
+      404,
+      'Removing the link revokes viewer access',
+    );
+    const restoreReference = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/items/${itemResponse.json().id}`,
+      headers: { cookie: owner },
+      payload: { description: `![Screenshot](${url})` },
+    });
+    assert.equal(restoreReference.statusCode, 200, restoreReference.body);
+    assert.equal((await getImage(member)).statusCode, 200);
 
     const revoke = await app.inject({
       method: 'PATCH',
@@ -97,6 +117,25 @@ test('comment images bind to their work item and invalid files are rejected', as
       },
     });
     const cookie = cookieOf(setup);
+    const memberLogin = await memberSession(app, cookie, {
+      name: 'Member',
+      email: 'member@comment-images.test',
+      password: 'correct-horse-battery',
+    });
+    const member = cookieOf(memberLogin);
+    const project = (
+      await app.inject({
+        method: 'POST',
+        url: '/api/v1/projects',
+        headers: { cookie },
+        payload: {
+          key: 'COMMENT',
+          name: 'Comment images',
+          visibility: 'private',
+          memberIds: [memberLogin.json().id],
+        },
+      })
+    ).json();
     const upload = (payload: Buffer) =>
       app.inject({
         method: 'POST',
@@ -111,7 +150,7 @@ test('comment images bind to their work item and invalid files are rejected', as
         method: 'POST',
         url: '/api/v1/items',
         headers: { cookie },
-        payload: { title: 'Comment image' },
+        payload: { title: 'Comment image', projectId: project.id },
       })
     ).json();
     const comment = await app.inject({
@@ -122,6 +161,43 @@ test('comment images bind to their work item and invalid files are rejected', as
     });
     assert.equal(comment.statusCode, 201, comment.body);
     assert.equal((await app.inject({ method: 'GET', url, headers: { cookie } })).statusCode, 200);
+    assert.equal(
+      (await app.inject({ method: 'GET', url, headers: { cookie: member } })).statusCode,
+      200,
+    );
+  } finally {
+    await app.close();
+  }
+});
+
+test('workspace image quota rejects additional uploads', async () => {
+  const app = await createApp({
+    dataDir: ':memory:',
+    integrations: false,
+    imageStorageLimitBytes: png.length,
+  });
+  try {
+    const setup = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/setup',
+      payload: {
+        name: 'Owner',
+        email: 'owner@image-quota.test',
+        password: 'correct-horse-battery',
+      },
+    });
+    const cookie = cookieOf(setup);
+    const upload = () =>
+      app.inject({
+        method: 'POST',
+        url: '/api/v1/images',
+        headers: { cookie, 'content-type': 'image/png' },
+        payload: png,
+      });
+    assert.equal((await upload()).statusCode, 201);
+    const full = await upload();
+    assert.equal(full.statusCode, 413, full.body);
+    assert.match(full.json().message, /storage limit reached/i);
   } finally {
     await app.close();
   }

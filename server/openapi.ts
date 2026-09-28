@@ -680,6 +680,10 @@ paths['/images'] = {
         content: { 'application/json': { schema: object({ url: string }, ['url']) } },
       },
       ...errorResponses,
+      413: {
+        description: 'Image exceeds the upload size or workspace storage limit',
+        content: { 'application/json': { schema: ref('Error') } },
+      },
     },
   },
 };

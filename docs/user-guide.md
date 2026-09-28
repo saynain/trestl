@@ -44,7 +44,7 @@ Open any row to edit its normal work-item properties, or complete it directly on
 - Create ongoing or time-bound projects, nest related projects, and keep work outside projects in your inbox.
 - Capture tasks, ideas, bugs, and follow-ups with separate delivery and review dates.
 - Work from lists, boards, project views, My Work, and saved views. Filter by status, priority, and ownership.
-- Open a work item to focus on its Markdown description and discussion; edit planning attributes in the side panel. Use **Add image** or paste a screenshot in a description or comment to insert an image at the cursor. PNG, JPEG, GIF, and WebP images up to 8 MB are supported. Images follow the work item’s visibility after saving.
+- Open a work item to focus on its Markdown description and discussion; edit planning attributes in the side panel. Use **Add image** or paste a screenshot in a description or comment to insert an image at the cursor. PNG, JPEG, GIF, and WebP images up to 8 MB are supported, with 1 GB total image storage per workspace. Images follow the work item’s visibility after saving; removing a link revokes access for other viewers.
 - Choose **Settings → General → Work item view → Centered box** to open items in a centered dialog. The side panel remains the default; small screens use the full screen. UI preferences are saved per profile in the current browser.
 - Toggle **zen mode** with **⌘B / Ctrl+B**, the sidebar button in the top bar, or Settings to hide the desktop sidebar. On mobile, the shortcut opens or closes navigation.
 - Add subtasks, blockers and related work, recurring tasks, labels, milestones, and documentation links.
