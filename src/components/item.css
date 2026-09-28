@@ -53,6 +53,36 @@
 .item-description-input::placeholder {
   color: var(--muted);
 }
+.image-markdown-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0 8px;
+  font-size: var(--text-sm);
+}
+.image-markdown-upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--accent);
+  background: transparent;
+  cursor: pointer;
+}
+.image-markdown-upload:hover {
+  background: var(--surface-hover);
+}
+.image-markdown-upload:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.image-markdown-error {
+  margin: 2px 0 8px;
+  color: var(--danger, #b33);
+  font-size: var(--text-sm);
+}
 .item-title-input:focus,
 .item-description-input:focus {
   box-shadow: none;

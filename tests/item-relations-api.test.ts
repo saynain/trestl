@@ -311,7 +311,7 @@ test('OpenAPI documents item mutation envelopes, relation reads and revision pre
   );
   for (const methods of Object.values(paths)) {
     for (const operation of Object.values(methods)) {
-      if (operation.requestBody?.content['application/json'].schema.properties?.expectedRevision) {
+      if (operation.requestBody?.content['application/json']?.schema.properties?.expectedRevision) {
         assert.match(operation.description, /expectedRevision/);
         assert.match(operation.description, /409/);
       }

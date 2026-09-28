@@ -1,5 +1,5 @@
 import { assigneeOptions } from '../lib/assignees';
-import { MentionTextarea } from './MentionTextarea';
+import { ImageMarkdownTextarea } from './ImageMarkdownTextarea';
 import { Select } from './Select';
 import { useShortcuts, activateItemControl } from '../lib/keyboard';
 import { useRef, useState, type FormEvent } from 'react';
@@ -39,10 +39,11 @@ export default function ItemForm({
     parent?.visibility || (projectId ? 'workspace' : 'private'),
   );
   const [saving, setSaving] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
   const [error, setError] = useState('');
   async function submit(e?: FormEvent, keepOpen = false) {
     e?.preventDefault();
-    if (!title.trim() || saving || !formRef.current?.reportValidity()) return;
+    if (!title.trim() || saving || imageUploading || !formRef.current?.reportValidity()) return;
     const formData = new FormData(formRef.current);
     const submittedStartDate = String(formData.get('startDate') || '');
     const submittedDueDate = String(formData.get('dueDate') || '');
@@ -94,7 +95,7 @@ export default function ItemForm({
         void submit(undefined, true);
       },
     },
-    { root: formRef, enabled: !saving },
+    { root: formRef, enabled: !saving && !imageUploading },
   );
   return (
     <Modal
@@ -144,13 +145,14 @@ export default function ItemForm({
           maxLength={240}
           required
         />
-        <MentionTextarea
+        <ImageMarkdownTextarea
           projectId={project || null}
           className="item-description-input"
           aria-label="Description"
           placeholder="Add a description, a thought, or some context…"
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          setValue={setDescription}
+          onBusyChange={setImageUploading}
           rows={5}
         />
         <div className="item-form-properties">
@@ -269,7 +271,7 @@ export default function ItemForm({
             type="submit"
             title="Create work item; add Shift to the keyboard shortcut to keep composing"
             className="button primary"
-            disabled={!title.trim() || saving}
+            disabled={!title.trim() || saving || imageUploading}
           >
             <Plus size={14} />
             {saving ? 'Creating…' : 'Create work item'}

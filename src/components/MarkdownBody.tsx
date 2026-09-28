@@ -6,6 +6,7 @@ import { createContext, useContext } from 'react';
 import Markdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { rehypeTaskCheckboxes, setMarkdownTaskChecked } from '../lib/markdown-tasks';
+import { MermaidDiagram } from './MermaidDiagram';
 import './MarkdownBody.css';
 
 const TaskContext = createContext<{
@@ -15,6 +16,26 @@ const TaskContext = createContext<{
 }>({ source: '', saving: false });
 
 const markdownComponents: Components = {
+  pre: function CodeBlock({ node, children, ...props }) {
+    const code = node?.children[0];
+    if (code?.type === 'element' && code.tagName === 'code') {
+      const classes = code.properties.className;
+      const language = Array.isArray(classes)
+        ? classes.find((value) => typeof value === 'string' && value.startsWith('language-'))
+        : undefined;
+      if (language === 'language-mermaid' || language === 'language-flowchart') {
+        const raw = code.children
+          .map((child) => (child.type === 'text' ? child.value : ''))
+          .join('');
+        const source =
+          language === 'language-flowchart' && !/^\s*(?:flowchart|graph)\b/i.test(raw)
+            ? `flowchart TD\n${raw}`
+            : raw;
+        return <MermaidDiagram source={source} />;
+      }
+    }
+    return <pre {...props}>{children}</pre>;
+  },
   a: function MentionLink({ node, ...props }) {
     const app = useContext(AppContext);
     const mention = parseMentionHref(props.href || '');

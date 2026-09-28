@@ -1,5 +1,5 @@
 import { ParentSelect, ParentPicker, HierarchyMenu } from './ParentPicker';
-import { MentionTextarea } from './MentionTextarea';
+import { ImageMarkdownTextarea } from './ImageMarkdownTextarea';
 import { workItemOptions } from '../lib/work-item-options';
 import { assigneeOptions } from '../lib/assignees';
 import { useShortcuts, activateItemControl } from '../lib/keyboard';
@@ -190,7 +190,9 @@ export default function ItemDetail({
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [descriptionUploading, setDescriptionUploading] = useState(false);
   const [comment, setComment] = useState('');
+  const [commentUploading, setCommentUploading] = useState(false);
   const [commentPreview, setCommentPreview] = useState(false);
   const [tagDraft, setTagDraft] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -267,7 +269,7 @@ export default function ItemDetail({
   }
   async function sendComment(e?: FormEvent) {
     e?.preventDefault();
-    if (comment.trim())
+    if (comment.trim() && !commentUploading)
       await mutate(
         () => post(`/items/${id}/comments`, { body: comment.trim() }),
         () => {
@@ -507,7 +509,8 @@ export default function ItemDetail({
                   ) {
                     event.preventDefault();
                     event.stopPropagation();
-                    if (!event.repeat && !saving) event.currentTarget.requestSubmit();
+                    if (!event.repeat && !saving && !descriptionUploading)
+                      event.currentTarget.requestSubmit();
                   }
                   if (event.key === 'Escape') {
                     event.preventDefault();
@@ -518,7 +521,11 @@ export default function ItemDetail({
                 }}
                 onSubmit={async (e) => {
                   e.preventDefault();
-                  if (title.trim() && (await update({ title: title.trim(), description })))
+                  if (
+                    title.trim() &&
+                    !descriptionUploading &&
+                    (await update({ title: title.trim(), description }))
+                  )
                     setEditing(false);
                 }}
               >
@@ -531,13 +538,14 @@ export default function ItemDetail({
                   maxLength={240}
                   onChange={(e) => setTitle(e.target.value)}
                 />
-                <MentionTextarea
+                <ImageMarkdownTextarea
                   excludeItemId={id}
                   projectId={item.projectId}
                   className="input"
                   aria-label="Description"
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  setValue={setDescription}
+                  onBusyChange={setDescriptionUploading}
                   rows={8}
                 />
                 <div className="item-edit-buttons">
@@ -548,7 +556,7 @@ export default function ItemDetail({
                   <button
                     className="button primary"
                     type="submit"
-                    disabled={saving || !title.trim()}
+                    disabled={saving || descriptionUploading || !title.trim()}
                     title="Save changes (Cmd+Enter / Ctrl+Enter)"
                     aria-keyshortcuts="Meta+Enter Control+Enter"
                   >
@@ -1023,7 +1031,7 @@ export default function ItemDetail({
                       )}
                     </div>
                   ) : (
-                    <MentionTextarea
+                    <ImageMarkdownTextarea
                       excludeItemId={id}
                       projectId={item.projectId}
                       className="input"
@@ -1034,7 +1042,8 @@ export default function ItemDetail({
                       rows={3}
                       data-shortcut="m"
                       value={comment}
-                      onChange={(e) => setComment(e.target.value)}
+                      setValue={setComment}
+                      onBusyChange={setCommentUploading}
                       onKeyDown={(e) => {
                         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
                           e.preventDefault();
@@ -1053,7 +1062,7 @@ export default function ItemDetail({
                     <button
                       type="submit"
                       className="button primary small"
-                      disabled={saving || !comment.trim()}
+                      disabled={saving || commentUploading || !comment.trim()}
                     >
                       <Send size={12} />
                       {saving ? 'Saving…' : source ? 'Add internal note' : 'Comment'}
