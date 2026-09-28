@@ -44,7 +44,7 @@ Open any row to edit its normal work-item properties, or complete it directly on
 - Create ongoing or time-bound projects, nest related projects, and keep work outside projects in your inbox.
 - Capture tasks, ideas, bugs, and follow-ups with separate delivery and review dates.
 - Work from lists, boards, project views, My Work, and saved views. Filter by status, priority, and ownership.
-- Open a work item to focus on its Markdown description and discussion; edit planning attributes in the side panel.
+- Open a work item to focus on its Markdown description and discussion; edit planning attributes in the side panel. Use **Add image** or paste a screenshot in a description or comment to insert an image at the cursor. PNG, JPEG, GIF, and WebP images up to 8 MB are supported. Images follow the work item’s visibility after saving.
 - Choose **Settings → General → Work item view → Centered box** to open items in a centered dialog. The side panel remains the default; small screens use the full screen. UI preferences are saved per profile in the current browser.
 - Toggle **zen mode** with **⌘B / Ctrl+B**, the sidebar button in the top bar, or Settings to hide the desktop sidebar. On mobile, the shortcut opens or closes navigation.
 - Add subtasks, blockers and related work, recurring tasks, labels, milestones, and documentation links.
@@ -52,6 +52,17 @@ Open any row to edit its normal work-item properties, or complete it directly on
 - Connect GitHub or Gitea repositories through Settings. Import issue descriptions and discussions while retaining local planning fields.
 - Search and preview Confluence pages through your personal connection, and link documentation to work without copying it into a wiki.
 - Create scoped API tokens, export accessible workspace data, and use the CLI or Raycast extension.
+
+Mermaid diagrams render from fenced Markdown blocks in descriptions and comments, including comment previews:
+
+````markdown
+```mermaid
+flowchart LR
+  Idea --> Done
+```
+````
+
+A `flowchart` code fence also works; Trestl assumes top-to-bottom flow when the source omits a Mermaid `flowchart` declaration.
 
 Recurring work creates the next occurrence when you complete the current item. Review dates and overdue work appear in the application; email, push notifications, and a separate notification delivery service are not implemented.
 

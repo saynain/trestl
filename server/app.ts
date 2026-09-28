@@ -94,6 +94,26 @@ const projectAllowsUser = (project: Project, user: User) =>
   !!project.memberIds?.includes(user.id);
 const title = z.string().trim().min(1).max(240);
 const description = z.string().max(100000);
+const imageLimit = 8 * 1024 * 1024;
+const imageTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const;
+function validImage(data: Buffer, type: string) {
+  if (type === 'image/png')
+    return data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  if (type === 'image/jpeg') return data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
+  if (type === 'image/gif') return ['GIF87a', 'GIF89a'].includes(data.toString('ascii', 0, 6));
+  if (type === 'image/webp')
+    return data.toString('ascii', 0, 4) === 'RIFF' && data.toString('ascii', 8, 12) === 'WEBP';
+  return false;
+}
+function imageIds(markdown: string) {
+  return [
+    ...new Set(
+      [...markdown.matchAll(/\/api\/v1\/images\/([0-9a-f-]{36})(?=[^0-9a-f-]|$)/gi)]
+        .map((match) => match[1].toLowerCase())
+        .filter((value) => z.uuid().safeParse(value).success),
+    ),
+  ];
+}
 const safeUrl = z
   .string()
   .url()
@@ -271,6 +291,11 @@ export async function createApp(
   app.decorateRequest('sessionMethod', null);
   app.decorateRequest('tokenScope', null);
   await app.register(cookie);
+  app.addContentTypeParser(
+    [...imageTypes],
+    { parseAs: 'buffer', bodyLimit: imageLimit },
+    (_request, body, done) => done(null, body),
+  );
   await app.register(websocket, {
     options: { maxPayload: 8 * 1024 * 1024, perMessageDeflate: false },
   });
@@ -360,6 +385,59 @@ export async function createApp(
     if (!item || !(await canItemIn(s, user, item.id))) return fail(404, 'Work item not found');
     return item;
   };
+  const bindImages = async (tx: Database, user: User, itemId: string, markdown: string) => {
+    for (const imageId of imageIds(markdown))
+      await tx.query(
+        `UPDATE item_images SET item_id=$1
+         WHERE id=$2 AND creator_id=$3 AND workspace_id=$4 AND (item_id IS NULL OR item_id=$1)`,
+        [itemId, imageId, user.id, workspaceOf(user)],
+      );
+  };
+  app.post('/api/v1/images', { bodyLimit: imageLimit }, async (request, reply) => {
+    const user = requireUser(request);
+    const mimeType = request.headers['content-type']?.split(';')[0]?.toLowerCase() ?? '';
+    const data = request.body;
+    if (!Buffer.isBuffer(data) || !imageTypes.some((type) => type === mimeType))
+      fail(415, 'Choose a PNG, JPEG, GIF, or WebP image');
+    if (!data.length || data.length > imageLimit || !validImage(data, mimeType))
+      fail(400, 'The image is empty, too large, or does not match its file type');
+    const imageId = id();
+    await db.query(
+      "DELETE FROM item_images WHERE item_id IS NULL AND created_at < NOW() - INTERVAL '7 days'",
+    );
+    await db.query(
+      `INSERT INTO item_images(id,creator_id,workspace_id,mime_type,data)
+       VALUES($1,$2,$3,$4,$5)`,
+      [imageId, user.id, workspaceOf(user), mimeType, data],
+    );
+    return reply.code(201).send({ url: `/api/v1/images/${imageId}` });
+  });
+  app.get<{ Params: { id: string } }>('/api/v1/images/:id', async (request, reply) => {
+    const user = requireUser(request);
+    const image = (
+      await db.query<{
+        creator_id: string;
+        workspace_id: string;
+        item_id: string | null;
+        mime_type: string;
+        data: Uint8Array;
+      }>('SELECT creator_id,workspace_id,item_id,mime_type,data FROM item_images WHERE id=$1', [
+        request.params.id,
+      ])
+    ).rows[0];
+    if (
+      !image ||
+      image.workspace_id !== workspaceOf(user) ||
+      (image.creator_id !== user.id &&
+        (!image.item_id || !(await canItemIn(store, user, image.item_id))))
+    )
+      fail(404, 'Image not found');
+    return reply
+      .header('Cache-Control', 'private, no-store')
+      .header('X-Content-Type-Options', 'nosniff')
+      .type(image.mime_type)
+      .send(Buffer.from(image.data));
+  });
   const checkedProject = async (s: Store, user: User, key: string) => {
     const project =
       (await s.get<Project>('projects', key)) ??
@@ -1242,6 +1320,7 @@ export async function createApp(
       };
       await validateItem(s, u, item);
       const result = await s.put('items', item);
+      await bindImages(tx, u, item.id, item.description);
       await saveMentions(s, u, item, item.description);
       if (retry) await s.put('idempotency', { ...retry, itemId: item.id, result });
       return result;
@@ -1324,8 +1403,10 @@ export async function createApp(
       if (item.projectId !== old.projectId)
         item.identifier = await nextItemIdentifier(tx, item.projectId, workspaceOf(item));
       const saved = await s.put('items', item, expectedRevision);
-      if (input.description !== undefined)
+      if (input.description !== undefined) {
+        await bindImages(tx, u, item.id, item.description);
         await saveMentions(s, u, item, item.description, old.description);
+      }
       const changes = Object.entries(input)
         .filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(old[k as keyof WorkItem]))
         .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : (v ?? 'cleared')}`);
@@ -1430,12 +1511,13 @@ export async function createApp(
     const { expectedRevision } = z
       .object({ expectedRevision: z.number().int().min(0).max(2147483646).optional() })
       .parse(request.body ?? {});
-    await mutate(async (s) => {
+    await mutate(async (s, tx) => {
       const item = await checkedItem(s, requireUser(request), request.params.id);
       if (expectedRevision !== undefined && expectedRevision !== (item.revision ?? 0))
         fail(409, 'Work item changed. Read it again before deleting.');
       if ((await s.list<WorkItem>('items')).some((x) => x.parentId === item.id))
         fail(409, 'Move or delete subtasks first');
+      await tx.query('DELETE FROM item_images WHERE item_id=$1', [item.id]);
       for (const a of await s.list<Activity>('activity'))
         if (a.itemId === item.id) await s.remove('activity', a.id);
       for (const l of await s.list<ResourceLink>('links'))
@@ -1456,7 +1538,7 @@ export async function createApp(
         .object({ body: z.string().trim().min(1).max(50000) })
         .strict()
         .parse(request.body);
-    const result = await mutate(async (s) => {
+    const result = await mutate(async (s, tx) => {
       const item = await checkedItem(s, u, request.params.id);
       const retry = retryContext(request, u, `comment:${item.id}`, input);
       const previous = await replay(s, u, retry);
@@ -1469,6 +1551,7 @@ export async function createApp(
         body: input.body,
         createdAt: now(),
       });
+      await bindImages(tx, u, item.id, input.body);
       await saveMentions(s, u, item, input.body, '', result.id);
       if (retry) await s.put('idempotency', { ...retry, itemId: item.id, result });
       return result;

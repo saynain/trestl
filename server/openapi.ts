@@ -659,6 +659,50 @@ operation(
   object({ body: { type: 'string', minLength: 1, maxLength: 50000 } }, ['body']),
   { created: true, parameters: [idempotencyParameter] },
 );
+paths['/images'] = {
+  post: {
+    summary: 'Upload a PNG, JPEG, GIF, or WebP image for work item Markdown (8 MB maximum)',
+    operationId: 'post_image',
+    security: [{ bearerAuth: [] }, { cookieAuth: [] }],
+    requestBody: {
+      required: true,
+      content: Object.fromEntries(
+        ['image/png', 'image/jpeg', 'image/gif', 'image/webp'].map((type) => [
+          type,
+          { schema: { type: 'string', format: 'binary' } },
+        ]),
+      ),
+    },
+    responses: {
+      201: {
+        description:
+          'Image URL. It becomes visible to work item readers when referenced in a description or comment.',
+        content: { 'application/json': { schema: object({ url: string }, ['url']) } },
+      },
+      ...errorResponses,
+    },
+  },
+};
+paths['/images/{id}'] = {
+  get: {
+    summary: 'Read an uploaded image when you own it or can access its work item',
+    operationId: 'get_image',
+    security: [{ bearerAuth: [] }, { cookieAuth: [] }],
+    parameters: [{ name: 'id', in: 'path', required: true, schema: uuid }],
+    responses: {
+      200: {
+        description: 'Image bytes',
+        content: Object.fromEntries(
+          ['image/png', 'image/jpeg', 'image/gif', 'image/webp'].map((type) => [
+            type,
+            { schema: { type: 'string', format: 'binary' } },
+          ]),
+        ),
+      },
+      ...errorResponses,
+    },
+  },
+};
 operation(
   '/items/{id}/relations',
   'get',

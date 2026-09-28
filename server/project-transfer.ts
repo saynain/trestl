@@ -30,6 +30,7 @@ import {
 const transferWarnings = [
   'Only content accessible to the exporting account is included. References outside the exported project tree are omitted.',
   'Projects are copied with new IDs and work item numbers. The source is unchanged; internal references are updated where their targets are included; external links keep their original URLs.',
+  'Screenshots uploaded to work item descriptions or comments stay on the source installation. Re-upload them after import if needed.',
   'Integration credentials and memberships are excluded. Linked issues become independent work items with their original external URL; live synchronization must be configured separately.',
 ];
 const importWarnings = [

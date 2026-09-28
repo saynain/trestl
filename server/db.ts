@@ -82,6 +82,17 @@ export async function openDatabase(
     `CREATE TABLE IF NOT EXISTS credentials (user_id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password TEXT NOT NULL)`,
   );
   await db.query(
+    `CREATE TABLE IF NOT EXISTS item_images (
+      id TEXT PRIMARY KEY,
+      creator_id TEXT NOT NULL,
+      workspace_id TEXT NOT NULL,
+      item_id TEXT,
+      mime_type TEXT NOT NULL,
+      data BYTEA NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+  );
+  await db.query(
     `CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL)`,
   );
   await db.query(

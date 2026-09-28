@@ -76,3 +76,26 @@
   max-width: 100%;
   border-radius: 5px;
 }
+
+.item-diagram,
+.item-diagram-error {
+  margin: 12px 0;
+  padding: 16px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.item-diagram svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: auto;
+}
+.item-diagram-error > span {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.item-diagram-error pre {
+  margin-bottom: 0;
+}

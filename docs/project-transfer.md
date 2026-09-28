@@ -35,6 +35,7 @@ belonging to other users and relationships outside the exported tree are omitted
 Resource links with references outside the tree are omitted too. Existing URLs in
 Markdown and canvas content keep their original destinations; they are not
 rewritten to the new installation. Review those links after migration.
+Screenshots uploaded into work item descriptions or comments stay on the source installation and are not included in the project file. Re-upload them on the destination if needed.
 
 Authentication settings, passwords, API tokens, and integration credentials are
 never part of a project export. Repository-linked issues become ordinary,
