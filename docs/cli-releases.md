@@ -9,7 +9,7 @@ Manual runs on `main` publish a unique `sha-<commit>-<run>-<attempt>` registry t
 For a new release:
 
 1. Update the root, CLI, Tauri config, Cargo manifest, and Cargo lockfile versions together (`pnpm desktop:version` checks them), and the README's pinned examples. Add release notes at `docs/releases/v<version>.md`; the workflow uses this file as the GitHub Release description. Run CI on `main`.
-2. Tag that exact commit `v<version>` and push the tag. The application image, CLI, and desktop workflows run. Signed desktop installers publish when signing is configured; otherwise the desktop workflow reports publication as pending. See [desktop releases](desktop.md#release-v050).
+2. Tag that exact commit `v<version>` and push the tag. The application image, CLI, and desktop workflows run. Signed desktop installers publish when signing is configured; otherwise the desktop workflow reports publication as pending. See [desktop releases](desktop.md#release-v060).
 3. Verify the release assets and registry digest in Actions. Install the downloaded tarball and test browser login against a server running the matching version.
 
 This workflow does not publish an npm registry package. GitHub Release downloads avoid requiring ORAS for ordinary users; GHCR provides the same package for registry-based distribution and mirrors.
