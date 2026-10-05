@@ -1017,13 +1017,37 @@
     flex-direction: column;
   }
   .item-properties {
+    order: -1;
     border-left: 0;
-    border-top: 1px solid var(--border);
+    border-top: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 16px;
+  }
+  .item-properties > h3 {
+    margin-bottom: 12px;
   }
   .item-properties fieldset {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     column-gap: 12px;
+    row-gap: 8px;
+  }
+  .item-properties .item-property {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 3px;
+    min-width: 0;
+  }
+  .item-properties .item-property > span {
+    padding-left: 4px;
+  }
+  .item-properties .item-property input,
+  .item-properties .item-property .picker-trigger {
+    min-height: 36px;
+  }
+  .item-properties .item-property-divider {
+    margin: 4px 0;
   }
   .item-property-divider {
     grid-column: 1/-1;
@@ -1440,5 +1464,26 @@
   .item-comment-content > header,
   .item-comment-content > .item-markdown {
     padding: 12px;
+  }
+}
+
+.mobile-property-toggle {
+  display: none;
+}
+@media (max-width: 570px) {
+  .mobile-property-toggle {
+    display: inline-flex;
+    margin-top: 8px;
+  }
+  .item-properties:not(.expanded) > :not(h3):not(fieldset):not(.mobile-property-toggle),
+  .item-properties:not(.expanded)
+    fieldset
+    > :not([data-property='Status']):not([data-property='Planning status']):not(
+      [data-property='Priority']
+    ):not([data-property='Due date']) {
+    display: none;
+  }
+  .item-properties:not(.expanded) [data-property='Due date'] {
+    grid-column: 1/-1;
   }
 }

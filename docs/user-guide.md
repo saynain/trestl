@@ -8,6 +8,12 @@ Open the workspace picker below the Trestl logo in the top-left corner and choos
 
 Projects, tasks, workspace members, exports, and repository connections are isolated between workspaces, including through the API. **Settings → Members** still adds collaborators to the current workspace. Existing installations retain their original workspace and data; creating a new profile does not seed or copy example projects.
 
+## Activity calendars
+
+Each project's **Overview** includes a GitHub-style activity calendar. **People** in the sidebar shows the same calendar for a workspace member; **My activity** in the account menu opens your own. Choose a year, then hover, focus, or select a day to see its count. On small screens, scroll the calendar horizontally.
+
+Activity counts verified work-item and project creation, work-item changes and comments, and project updates. Dates use UTC. Project totals include accessible subprojects and explicitly linked work; user totals cover the current workspace. Counts include only work the viewer can access, so different people may see different totals. Imported history, external-service authors, and automatically generated task creations are excluded from local user attribution. The calendar reflects retained records: deleting work removes its activity, and older creations without a verified actor or project/canvas edits without recorded events are not reconstructed.
+
 ## Gantt schedules and dependencies
 
 Open a project's **Gantt** tab to plan work with start and due dates, drag or resize bars, inspect milestones, and schedule undated items. **Fit** brings the schedule into view; **Completed** includes finished work. Click a bar or dependency badge to edit dates and inspect linked tasks. **Manage relationships** opens the task detail, where **Relationships → Blocks** adds a dependency.
@@ -166,3 +172,16 @@ An administrator sets `CONFLUENCE_ALLOWED_ORIGINS` to a comma-separated list of 
 - **Data Center:** application URL including any context path such as `/confluence`, and a personal access token.
 
 Search and page previews call Confluence using that user's credentials, so the provider enforces their page permissions. Credentials are not shared between workspace members, and page content is not stored as a shared cache. Search returns up to 25 results; previews show up to 3,000 characters of plain text and a link to the original page. Refine the search to narrow larger result sets. These connections support reading and linking pages; Confluence editing, OAuth/SSO connections, and paginated search are not implemented. See Atlassian's [Cloud search API](https://developer.atlassian.com/cloud/confluence/rest/v1/api-group-search/) and [Data Center access tokens](https://confluence.atlassian.com/enterprise/using-personal-access-tokens-1026032365.html).
+
+
+## Daily planning and reliable saves
+
+Home separates deadlines and review dates that need attention from continuing work. Add a few items to Today for your personal plan; the selection is scoped to your account, installation, and day. Tasks use a due date, while follow-ups and someday captures use a review date. Completion and postponement offer Undo. Capture feedback provides Open and Undo so you can immediately find or retract the new item. Use `g h` to return Home and `j`/`k` to move between its items.
+
+New-item, item-edit, and comment drafts recover when you reopen the form in the same browser. Item saves check the revision you edited. If someone changed the item, load the latest version, compare it with your retained draft, and explicitly reapply or discard the draft. Board moves and bulk parent changes commit together.
+
+## Review evidence and roadmap delivery
+
+Weekly review shows visible work completed since the latest update (or the last seven days), overdue and upcoming work, unresolved dependencies, and overdue milestones. Expand the evidence to open the underlying work. Draft from evidence prepares editable update text; project health remains your explicit choice.
+
+Roadmap features can link projects, milestones, and individual work items. Delivery progress and risks are calculated from the linked work you can access. These links do not replace the feature's editorial status. Export/import preserves links within the exported project tree; links to work outside the package are omitted.

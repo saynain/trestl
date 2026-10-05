@@ -17,6 +17,7 @@ export const shortcuts = {
   help: { keys: ['?'], label: 'Keyboard shortcuts', group: 'Workspace', dialog: true },
   dismiss: { keys: ['escape'], label: 'Close menu or dialog', group: 'Workspace', typing: true },
   create: { keys: ['c'], label: 'Create work item', group: 'Workspace' },
+  home: { keys: ['g h'], label: 'Go to Home', group: 'Navigation' },
   inbox: { keys: ['g i'], label: 'Go to Inbox', group: 'Navigation' },
   myWork: { keys: ['g m'], label: 'Go to My work', group: 'Navigation' },
   projects: { keys: ['g p'], label: 'Go to All projects', group: 'Navigation' },

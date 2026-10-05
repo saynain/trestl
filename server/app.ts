@@ -4,6 +4,7 @@ import {
   registerCliApproval,
 } from './cli-login.ts';
 import { compareProjectUpdates } from '../shared/project-updates.ts';
+import { activityHeatmap } from '../shared/activity-heatmap.ts';
 import { addMentionRelations } from './mentions.ts';
 import { extractMentions } from '../shared/mentions.ts';
 import { authSettings, configuredProxy, registerAuthSettings } from './auth-settings.ts';
@@ -20,7 +21,7 @@ import { registerProjectTransfer } from './project-transfer.ts';
 import { registerCanvases } from './canvases.ts';
 import { registerCanvasCollaboration } from './canvas-collaboration.ts';
 import websocket from '@fastify/websocket';
-import { roadmapUpdate } from './roadmap.ts';
+import { filterRoadmapReferences, roadmapUpdate, validateRoadmapReferences } from './roadmap.ts';
 import Fastify, { type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
 import { registerDesktopGateway } from './desktop-gateway.ts';
@@ -842,9 +843,22 @@ export async function createApp(
       return { ...updated, workspaceId: u.workspaceId, role: u.role };
     });
   });
-  const visibleData = async (user: User) => {
+  const visibleData = async (user: User, source = store) => {
     // Fetch each collection once. Bootstrap may contain years of platform work;
     // walking parent chains through SQL would turn a single read into N+1 queries.
+    const workspaceId = workspaceOf(user);
+    // Reference collections predate workspaceId. Restrict them in SQL through
+    // their owning project/item instead of loading every installation's data.
+    const relatedCollection = async <T>(collection: string, kind: 'project' | 'item' | 'link') => {
+      const ownsProject = `EXISTS (SELECT 1 FROM entities owner WHERE owner.collection='projects' AND owner.id=e.data->>'projectId' AND COALESCE(owner.data->>'workspaceId','default')=$2)`;
+      const ownsItem = `EXISTS (SELECT 1 FROM entities owner WHERE owner.collection='items' AND owner.id=e.data->>'itemId' AND COALESCE(owner.data->>'workspaceId','default')=$2)`;
+      return (
+        await source.query<{ data: T }>(
+          `SELECT e.data FROM entities e WHERE e.collection=$1 AND (${kind === 'project' ? ownsProject : kind === 'item' ? ownsItem : `${ownsProject} OR ${ownsItem}`}) ORDER BY e.id`,
+          [collection, workspaceId],
+        )
+      ).rows.map((row) => row.data);
+    };
     const [
       allProjects,
       allItems,
@@ -858,19 +872,20 @@ export async function createApp(
       allNotifications,
       allCanvases,
     ] = await Promise.all([
-      store.list<Project>('projects'),
-      store.list<WorkItem>('items'),
-      workspaceMembers(store, workspaceOf(user)),
-      store.list<SavedView>('views'),
-      store.list<ResourceLink>('links'),
-      store.list<Milestone>('milestones'),
-      store.list<Relation>('relations'),
-      store.list<ProjectUpdate>('projectUpdates'),
-      store.list<ProjectRelation>('projectRelations'),
-      store.list<MentionNotification>('notifications'),
-      db
+      source.listWorkspace<Project>('projects', workspaceId),
+      source.listWorkspace<WorkItem>('items', workspaceId),
+      workspaceMembers(source, workspaceId),
+      source.listWorkspace<SavedView>('views', workspaceId),
+      relatedCollection<ResourceLink>('links', 'link'),
+      relatedCollection<Milestone>('milestones', 'project'),
+      relatedCollection<Relation>('relations', 'item'),
+      relatedCollection<ProjectUpdate>('projectUpdates', 'project'),
+      relatedCollection<ProjectRelation>('projectRelations', 'item'),
+      source.listWorkspace<MentionNotification>('notifications', workspaceId),
+      source
         .query<{ data: CanvasSummary }>(
-          "SELECT data - 'scene' AS data FROM entities WHERE collection='canvases'",
+          "SELECT data - 'scene' AS data FROM entities WHERE collection='canvases' AND COALESCE(data->>'workspaceId','default')=$1",
+          [workspaceId],
         )
         .then((result) => result.rows.map((row) => row.data)),
     ]);
@@ -916,16 +931,28 @@ export async function createApp(
       linked.push(item);
       milestoneItems.set(item.milestoneId, linked);
     }
+    const visibleMilestones = allMilestones.filter((milestone) =>
+      projectVisible(milestone.projectId),
+    );
+    const referenceAccess = {
+      projectIds: new Set(projects.map((project) => project.id)),
+      itemIds: new Set(items.map((item) => item.id)),
+      milestoneIds: new Set(visibleMilestones.map((milestone) => milestone.id)),
+    };
     return {
       user,
       authMode:
-        (await authSettings(store))?.mode ??
+        (await authSettings(source))?.mode ??
         (environmentProxy ? ('proxy' as const) : ('local' as const)),
       installation: true,
-      workspace: await store.get<Workspace>('workspaces', workspaceOf(user)),
-      workspaces: (await userWorkspaces(store, user.id)).filter((w) => w.id === workspaceOf(user)),
+      workspace: await source.get<Workspace>('workspaces', workspaceOf(user)),
+      workspaces: (await userWorkspaces(source, user.id)).filter((w) => w.id === workspaceOf(user)),
       users: users.filter((member) => sameWorkspace(user, member)),
-      projects,
+      projects: projects.map((project) =>
+        project.roadmap
+          ? { ...project, roadmap: filterRoadmapReferences(project.roadmap, referenceAccess) }
+          : project,
+      ),
       canvases: allCanvases.filter(
         (canvas) => sameWorkspace(user, canvas) && projectVisible(canvas.projectId),
       ),
@@ -947,24 +974,114 @@ export async function createApp(
       notifications: allNotifications
         .filter((n) => n.recipientId === user.id && sameWorkspace(n, user) && itemVisible(n.itemId))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)),
-      milestones: allMilestones
-        .filter((milestone) => projectVisible(milestone.projectId))
-        .map((milestone) => {
-          const linked = (milestoneItems.get(milestone.id) ?? []).filter(
-            (item) => item.projectId === milestone.projectId,
-          );
-          return {
-            ...milestone,
-            itemIds: linked.map((item) => item.id),
-            progress: {
-              total: linked.length,
-              done: linked.filter((item) => item.status === 'done').length,
-            },
-          };
-        }),
+      milestones: visibleMilestones.map((milestone) => {
+        const linked = (milestoneItems.get(milestone.id) ?? []).filter(
+          (item) => item.projectId === milestone.projectId,
+        );
+        return {
+          ...milestone,
+          itemIds: linked.map((item) => item.id),
+          progress: {
+            total: linked.length,
+            done: linked.filter((item) => item.status === 'done').length,
+          },
+        };
+      }),
     };
   };
-  app.get('/api/v1/bootstrap', async (request) => visibleData(requireUser(request)));
+  app.get('/api/v1/bootstrap', async (request, reply) => {
+    const user = requireUser(request);
+    const { revision } = (
+      await db.query<{ revision: string }>('SELECT revision FROM bootstrap_revision WHERE id=1')
+    ).rows[0];
+    const etag = `"${hash(JSON.stringify([revision, user, request.authMode]))}"`;
+    reply
+      .header('ETag', etag)
+      .header('Cache-Control', 'private, no-cache')
+      .header('Vary', 'Cookie, Authorization');
+    const condition = request.headers['if-none-match'];
+    if (
+      condition &&
+      condition.split(',').some((value) => value.trim().replace(/^W\//, '') === etag)
+    )
+      return reply.code(304).send();
+    return visibleData(user);
+  });
+  app.get('/api/v1/activity/heatmap', async (request, reply) => {
+    const caller = requireUser(request);
+    const current = new Date(now());
+    const input = z
+      .object({
+        projectId: z.uuid().optional(),
+        userId: z.uuid().optional(),
+        year: z.coerce
+          .number()
+          .int()
+          .min(1970)
+          .max(current.getUTCFullYear())
+          .default(current.getUTCFullYear()),
+      })
+      .strict()
+      .parse(request.query);
+    const visible = await visibleData(caller);
+    const userId = input.userId ?? (input.projectId ? undefined : caller.id);
+    if (userId && !visible.users.some((user) => user.id === userId)) fail(404, 'User not found');
+    let projects = visible.projects;
+    let items = visible.items;
+    if (input.projectId) {
+      if (!projects.some((project) => project.id === input.projectId))
+        fail(404, 'Project not found');
+      const children = new Map<string, string[]>();
+      for (const project of projects) {
+        if (!project.parentId) continue;
+        const siblings = children.get(project.parentId) ?? [];
+        siblings.push(project.id);
+        children.set(project.parentId, siblings);
+      }
+      const projectIds = new Set<string>();
+      const pending = [input.projectId];
+      for (let index = 0; index < pending.length; index++) {
+        const projectId = pending[index];
+        if (projectIds.has(projectId)) continue;
+        projectIds.add(projectId);
+        pending.push(...(children.get(projectId) ?? []));
+      }
+      const linkedItems = new Set(
+        visible.projectRelations
+          .filter((relation) => projectIds.has(relation.projectId))
+          .map((relation) => relation.itemId),
+      );
+      projects = projects.filter((project) => projectIds.has(project.id));
+      items = items.filter(
+        (item) => (item.projectId && projectIds.has(item.projectId)) || linkedItems.has(item.id),
+      );
+    }
+    // Only fetch activity owned by visible scoped items, within a bounded date
+    // window. A one-day margin allows offset timestamps crossing UTC year/day
+    // boundaries; the shared aggregator performs the exact UTC/time cutoff.
+    const lower = new Date(Date.UTC(input.year, 0, 0)).toISOString().slice(0, 10);
+    const upper = new Date(
+      Math.min(Date.UTC(input.year + 1, 0, 2), current.getTime() + 2 * 86400000),
+    )
+      .toISOString()
+      .slice(0, 10);
+    const activity = items.length
+      ? (
+          await store.query<{ data: Activity }>(
+            `SELECT data FROM entities WHERE collection='activity'
+       AND data->>'itemId'=ANY($1::text[]) AND data->>'createdAt'>=$2 AND data->>'createdAt'<$3
+       AND ($4::text IS NULL OR data->>'userId'=$4)
+       AND data->>'source' IS NULL AND data->>'importedFrom' IS NULL`,
+            [items.map((item) => item.id), lower, upper, userId ?? null],
+          )
+        ).rows.map((row) => row.data)
+      : [];
+    reply.header('Cache-Control', 'private, no-cache').header('Vary', 'Cookie, Authorization');
+    return activityHeatmap({ ...visible, projects, items, activity }, input.year, {
+      userId,
+      now: current,
+    });
+  });
   app.get('/api/v1/notifications', async (request) => ({
     data: (await visibleData(requireUser(request))).notifications,
   }));
@@ -1076,6 +1193,7 @@ export async function createApp(
         dueDate: null,
         visibility: 'workspace',
         ownerId: u.id,
+        creationActorId: u.id,
         workspaceId: workspaceOf(u),
         createdAt: now(),
         ...input,
@@ -1087,9 +1205,12 @@ export async function createApp(
     });
     return reply.code(201).send(result);
   });
-  app.get<{ Params: { id: string } }>('/api/v1/projects/:id', async (request) =>
-    checkedProject(store, requireUser(request), request.params.id),
-  );
+  app.get<{ Params: { id: string } }>('/api/v1/projects/:id', async (request) => {
+    const user = requireUser(request);
+    const project = await checkedProject(store, user, request.params.id);
+    if (!project.roadmap) return project;
+    return (await visibleData(user)).projects.find((visible) => visible.id === project.id)!;
+  });
   app.get<{ Params: { id: string } }>('/api/v1/projects/:id/updates', async (request) => {
     const project = await checkedProject(store, requireUser(request), request.params.id);
     const updates = (await store.list<ProjectUpdate>('projectUpdates'))
@@ -1141,7 +1262,10 @@ export async function createApp(
         (await changesAudience(s, 'projects', p))
       )
         fail(403, 'Only the owner can move a project in a way that changes who can access it');
-      return s.put('projects', p);
+      const saved = await s.put('projects', p);
+      return saved.roadmap
+        ? (await visibleData(u, s)).projects.find((project) => project.id === saved.id)!
+        : saved;
     });
   });
   app.patch<{ Params: { id: string } }>('/api/v1/projects/:id/roadmap', async (request) => {
@@ -1154,10 +1278,33 @@ export async function createApp(
           409,
           'This roadmap changed while you were editing. Reload the latest version before saving.',
         );
-      return s.put('projects', {
-        ...project,
-        roadmap: { ...input, revision: expectedRevision + 1 },
+      const visible = await visibleData(u, s);
+      const access = {
+        projectIds: new Set(visible.projects.map((record) => record.id)),
+        milestoneIds: new Set(visible.milestones.map((record) => record.id)),
+        itemIds: new Set(visible.items.map((record) => record.id)),
+      };
+      const invalidReferences = validateRoadmapReferences(input.features, access);
+      if (invalidReferences) fail(400, invalidReferences);
+      const previousFeatures = new Map(
+        project.roadmap?.features.map((feature) => [feature.id, feature]) ?? [],
+      );
+      const features = input.features.map((feature) => {
+        const previous = previousFeatures.get(feature.id);
+        const next = { ...feature };
+        // A collaborator cannot intentionally remove a target they cannot see.
+        // Keep those stored links when saving the visible part of this feature.
+        for (const kind of ['projectIds', 'milestoneIds', 'itemIds'] as const) {
+          const hidden = previous?.[kind]?.filter((target) => !access[kind].has(target)) ?? [];
+          if (hidden.length) next[kind] = [...new Set([...(feature[kind] ?? []), ...hidden])];
+        }
+        return next;
       });
+      const saved = await s.put('projects', {
+        ...project,
+        roadmap: { ...input, features, revision: expectedRevision + 1 },
+      });
+      return { ...saved, roadmap: filterRoadmapReferences(saved.roadmap!, access) };
     });
   });
   app.delete<{ Params: { id: string } }>('/api/v1/projects/:id', async (request, reply) => {
@@ -1334,6 +1481,7 @@ export async function createApp(
         labels: [],
         visibility: 'workspace',
         creatorId: u.id,
+        creationActorId: u.id,
         workspaceId: workspaceOf(u),
         createdAt: stamp,
         updatedAt: stamp,
@@ -1372,163 +1520,266 @@ export async function createApp(
       links: visible.links.filter((l) => l.itemId === item.id),
     };
   });
-  app.patch<{ Params: { id: string } }>('/api/v1/items/:id', async (request) => {
-    const u = requireUser(request),
-      { expectedRevision, ...input } = itemInput
-        .partial()
-        .extend({ expectedRevision: z.number().int().min(0).max(2147483646).optional() })
-        .parse(request.body);
-    return mutate(async (s, tx) => {
-      const old = await checkedItem(s, u, request.params.id);
-      if (expectedRevision !== undefined && expectedRevision !== (old.revision ?? 0))
-        fail(409, 'Work item changed. Read it again before updating.');
-      if (
-        old.source &&
-        ['title', 'description', 'externalUrl'].some(
-          (key) => key in input && input[key as keyof typeof input] !== old[key as keyof WorkItem],
-        )
+  const updateItem = async (
+    s: Store,
+    tx: Database,
+    u: User,
+    itemId: string,
+    input: Partial<z.infer<typeof itemInput>>,
+    expectedRevision?: number,
+    undoCompletion = false,
+  ) => {
+    const old = await checkedItem(s, u, itemId);
+    if (expectedRevision !== undefined && expectedRevision !== (old.revision ?? 0))
+      fail(409, 'Work item changed. Read it again before updating.');
+    if (
+      old.source &&
+      ['title', 'description', 'externalUrl'].some(
+        (key) => key in input && input[key as keyof typeof input] !== old[key as keyof WorkItem],
       )
+    )
+      fail(
+        409,
+        'This linked issue owns its title, description, and original URL in the source repository. Edit it in GitHub or Gitea; planning fields and internal notes remain editable here.',
+      );
+    if (input.visibility && input.visibility !== old.visibility && old.creatorId !== u.id)
+      fail(403, 'Only the creator can change item visibility');
+    const item: WorkItem = { ...old, ...input, updatedAt: now() };
+    if (item.projectId !== old.projectId && input.milestoneId === undefined)
+      item.milestoneId = null;
+    item.completedAt = item.status === 'done' ? (old.completedAt ?? now()) : null;
+    await validateItem(s, u, item, old);
+    if (item.startDate !== old.startDate || item.dueDate !== old.dueDate) {
+      const conflicts = scheduleConflicts(
+        item,
+        await s.list<WorkItem>('items'),
+        await s.list<Relation>('relations'),
+      );
+      if (conflicts.length) {
+        const { blocker, dependent } = conflicts[0];
+        const visible =
+          (await ctx.canItem(u, blocker.id, s)) && (await ctx.canItem(u, dependent.id, s));
         fail(
           409,
-          'This linked issue owns its title, description, and original URL in the source repository. Edit it in GitHub or Gitea; planning fields and internal notes remain editable here.',
+          visible
+            ? `${dependent.identifier} must start after ${blocker.identifier} finishes on ${blocker.dueDate}. Adjust the linked schedule first.`
+            : 'This schedule conflicts with a dependency you cannot access. Ask the project owner to review the linked schedule.',
         );
-      if (input.visibility && input.visibility !== old.visibility && old.creatorId !== u.id)
-        fail(403, 'Only the creator can change item visibility');
-      const item: WorkItem = { ...old, ...input, updatedAt: now() };
-      if (item.projectId !== old.projectId && input.milestoneId === undefined)
-        item.milestoneId = null;
-      item.completedAt = item.status === 'done' ? (old.completedAt ?? now()) : null;
-      await validateItem(s, u, item, old);
-      if (item.startDate !== old.startDate || item.dueDate !== old.dueDate) {
-        const conflicts = scheduleConflicts(
-          item,
-          await s.list<WorkItem>('items'),
-          await s.list<Relation>('relations'),
-        );
-        if (conflicts.length) {
-          const { blocker, dependent } = conflicts[0];
-          const visible =
-            (await ctx.canItem(u, blocker.id, s)) && (await ctx.canItem(u, dependent.id, s));
-          fail(
-            409,
-            visible
-              ? `${dependent.identifier} must start after ${blocker.identifier} finishes on ${blocker.dueDate}. Adjust the linked schedule first.`
-              : 'This schedule conflicts with a dependency you cannot access. Ask the project owner to review the linked schedule.',
-          );
-        }
       }
-      if (
-        old.creatorId !== u.id &&
-        (input.projectId !== undefined || input.parentId !== undefined) &&
-        (await changesAudience(s, 'items', item))
-      )
-        fail(403, 'Only the creator can move an item in a way that changes who can access it');
-      if (item.projectId !== old.projectId)
-        item.identifier = await nextItemIdentifier(tx, item.projectId, workspaceOf(item));
-      const saved = await s.put('items', item, expectedRevision);
-      if (input.description !== undefined) {
-        await bindImages(tx, u, item.id, item.description);
-        await saveMentions(s, u, item, item.description, old.description);
-      }
-      const changes = Object.entries(input)
-        .filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(old[k as keyof WorkItem]))
-        .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : (v ?? 'cleared')}`);
-      if (changes.length)
-        await s.put('activity', {
-          id: id(),
-          itemId: item.id,
-          userId: u.id,
-          kind: 'event',
-          body: changes.join(' · '),
-          createdAt: now(),
-        });
-      if (item.status === 'done' && old.status !== 'done' && item.recurrence) {
-        const recurrenceKey = item.id;
-        const legacy = (await s.list<{ id: string }>('recurrences')).some((record) =>
-          record.id.startsWith(`${item.id}:`),
-        );
-        if (!(await s.get('recurrences', recurrenceKey)) && !legacy) {
-          const storedAnchor = await s.get<{
-            id: string;
-            startDay?: number;
-            dueDay: number;
-            followUpDay: number;
-          }>('recurrenceAnchors', item.id);
-          const day = (value: string | null) => Number((value ?? now().slice(0, 10)).slice(8, 10));
-          const startDay =
-            input.startDate !== undefined
-              ? day(item.startDate || null)
-              : (storedAnchor?.startDay ?? day(item.startDate || null));
-          const dueDay =
-            input.dueDate !== undefined
-              ? day(item.dueDate)
-              : (storedAnchor?.dueDay ?? day(item.dueDate));
-          const followUpDay =
-            input.followUpDate !== undefined
-              ? day(item.followUpDate)
-              : (storedAnchor?.followUpDay ?? day(item.followUpDate));
-          const { source: _source, externalUrl: _externalUrl, ...nativeItem } = item;
-          const next = {
-            ...nativeItem,
-            // Keep historical ownership, but do not assign new recurring work to disabled accounts.
-            assigneeId:
-              item.assigneeId &&
-              !(await workspaceUser(s, item.assigneeId, workspaceOf(u)))?.disabledAt
-                ? item.assigneeId
-                : null,
-            id: id(),
-            identifier: await nextItemIdentifier(tx, item.projectId, workspaceOf(item)),
-            status: 'todo' as const,
-            completedAt: null,
-            startDate: item.startDate
-              ? nextRecurrence(item.startDate, item.recurrence, startDay)
-              : null,
-            dueDate: nextRecurrence(item.dueDate, item.recurrence, dueDay),
-            followUpDate: item.followUpDate
-              ? nextRecurrence(item.followUpDate, item.recurrence, followUpDay)
-              : null,
-            createdAt: now(),
-            updatedAt: now(),
-          };
-          await s.put('items', next);
-          await s.put('recurrenceAnchors', { id: next.id, startDay, dueDay, followUpDay });
-          await s.put('recurrences', { id: recurrenceKey, itemId: next.id });
+    }
+    if (
+      old.creatorId !== u.id &&
+      (input.projectId !== undefined || input.parentId !== undefined) &&
+      (await changesAudience(s, 'items', item))
+    )
+      fail(403, 'Only the creator can move an item in a way that changes who can access it');
+    if (item.projectId !== old.projectId)
+      item.identifier = await nextItemIdentifier(tx, item.projectId, workspaceOf(item));
+    const saved = await s.put('items', item, expectedRevision);
+    if (input.description !== undefined) {
+      await bindImages(tx, u, item.id, item.description);
+      await saveMentions(s, u, item, item.description, old.description);
+    }
+    const changes = Object.entries(input)
+      .filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(old[k as keyof WorkItem]))
+      .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : (v ?? 'cleared')}`);
+    if (changes.length)
+      await s.put('activity', {
+        id: id(),
+        itemId: item.id,
+        userId: u.id,
+        kind: 'event',
+        body: changes.join(' · '),
+        createdAt: now(),
+      });
+    if (undoCompletion && old.status === 'done' && item.status !== 'done') {
+      const occurrence = await s.get<{ id: string; itemId: string }>('recurrences', item.id);
+      const next = occurrence && (await s.get<WorkItem>('items', occurrence.itemId));
+      if (next?.status === 'todo' && next.revision === 1) {
+        const referenced = (
+          await s.query<{ referenced: boolean }>(
+            `SELECT EXISTS (
+              SELECT 1 FROM entities e WHERE
+                (e.collection IN ('activity','links','relations','projectRelations') AND (e.data->>'itemId'=$1 OR e.data->>'targetId'=$1))
+                OR (e.collection='items' AND e.data->>'parentId'=$1)
+                OR (e.collection='projects' AND EXISTS (
+                  SELECT 1 FROM jsonb_array_elements(COALESCE(e.data->'roadmap'->'features','[]'::jsonb)) feature
+                  WHERE feature->'itemIds' ? $1
+                ))
+              UNION ALL SELECT 1 FROM item_images WHERE item_id=$1
+            ) AS referenced`,
+            [next.id],
+          )
+        ).rows[0].referenced;
+        // Undo completion cancels only its untouched generated follow-up.
+        // Independently edited, discussed, or linked work always survives.
+        if (!referenced) {
+          await s.remove('items', next.id);
+          await s.remove('recurrenceAnchors', next.id);
+          await s.remove('recurrences', item.id);
           await s.put('activity', {
             id: id(),
             itemId: item.id,
             userId: u.id,
             kind: 'event',
-            body: `Created recurring follow-up ${next.identifier}`,
+            body: `Cancelled untouched recurring follow-up ${next.identifier}`,
             createdAt: now(),
           });
         }
-      } else if (
-        input.startDate !== undefined ||
-        input.dueDate !== undefined ||
-        input.followUpDate !== undefined
-      ) {
-        const anchor = await s.get<{
+      }
+    }
+    if (item.status === 'done' && old.status !== 'done' && item.recurrence) {
+      const recurrenceKey = item.id;
+      const legacy = (await s.list<{ id: string }>('recurrences')).some((record) =>
+        record.id.startsWith(`${item.id}:`),
+      );
+      if (!(await s.get('recurrences', recurrenceKey)) && !legacy) {
+        const storedAnchor = await s.get<{
           id: string;
           startDay?: number;
           dueDay: number;
           followUpDay: number;
         }>('recurrenceAnchors', item.id);
-        if (anchor)
-          await s.put('recurrenceAnchors', {
-            ...anchor,
-            ...(input.startDate !== undefined
-              ? { startDay: Number((item.startDate ?? now().slice(0, 10)).slice(8, 10)) }
-              : {}),
-            ...(input.dueDate !== undefined
-              ? { dueDay: Number((item.dueDate ?? now().slice(0, 10)).slice(8, 10)) }
-              : {}),
-            ...(input.followUpDate !== undefined
-              ? { followUpDay: Number((item.followUpDate ?? now().slice(0, 10)).slice(8, 10)) }
-              : {}),
-          });
+        const day = (value: string | null) => Number((value ?? now().slice(0, 10)).slice(8, 10));
+        const startDay =
+          input.startDate !== undefined
+            ? day(item.startDate || null)
+            : (storedAnchor?.startDay ?? day(item.startDate || null));
+        const dueDay =
+          input.dueDate !== undefined
+            ? day(item.dueDate)
+            : (storedAnchor?.dueDay ?? day(item.dueDate));
+        const followUpDay =
+          input.followUpDate !== undefined
+            ? day(item.followUpDate)
+            : (storedAnchor?.followUpDay ?? day(item.followUpDate));
+        const { source: _source, externalUrl: _externalUrl, ...nativeItem } = item;
+        const next = {
+          ...nativeItem,
+          creationActorId: null,
+          // Keep historical ownership, but do not assign new recurring work to disabled accounts.
+          assigneeId:
+            item.assigneeId &&
+            !(await workspaceUser(s, item.assigneeId, workspaceOf(u)))?.disabledAt
+              ? item.assigneeId
+              : null,
+          id: id(),
+          identifier: await nextItemIdentifier(tx, item.projectId, workspaceOf(item)),
+          status: 'todo' as const,
+          completedAt: null,
+          startDate: item.startDate
+            ? nextRecurrence(item.startDate, item.recurrence, startDay)
+            : null,
+          dueDate: nextRecurrence(item.dueDate, item.recurrence, dueDay),
+          followUpDate: item.followUpDate
+            ? nextRecurrence(item.followUpDate, item.recurrence, followUpDay)
+            : null,
+          createdAt: now(),
+          updatedAt: now(),
+        };
+        await s.put('items', next);
+        await s.put('recurrenceAnchors', { id: next.id, startDay, dueDay, followUpDay });
+        await s.put('recurrences', { id: recurrenceKey, itemId: next.id });
+        await s.put('activity', {
+          id: id(),
+          itemId: item.id,
+          userId: u.id,
+          kind: 'event',
+          body: `Created recurring follow-up ${next.identifier}`,
+          createdAt: now(),
+        });
       }
-      return { item: saved };
+    } else if (
+      input.startDate !== undefined ||
+      input.dueDate !== undefined ||
+      input.followUpDate !== undefined
+    ) {
+      const anchor = await s.get<{
+        id: string;
+        startDay?: number;
+        dueDay: number;
+        followUpDay: number;
+      }>('recurrenceAnchors', item.id);
+      if (anchor)
+        await s.put('recurrenceAnchors', {
+          ...anchor,
+          ...(input.startDate !== undefined
+            ? { startDay: Number((item.startDate ?? now().slice(0, 10)).slice(8, 10)) }
+            : {}),
+          ...(input.dueDate !== undefined
+            ? { dueDay: Number((item.dueDate ?? now().slice(0, 10)).slice(8, 10)) }
+            : {}),
+          ...(input.followUpDate !== undefined
+            ? { followUpDay: Number((item.followUpDate ?? now().slice(0, 10)).slice(8, 10)) }
+            : {}),
+        });
+    }
+    return { item: saved };
+  };
+  app.post('/api/v1/items/batch', async (request) => {
+    const u = requireUser(request);
+    const { updates } = z
+      .object({
+        updates: z
+          .array(
+            z
+              .object({
+                id: z.uuid(),
+                expectedRevision: z.number().int().min(0).max(2147483646),
+                status: itemInput.shape.status.optional(),
+                position: itemInput.shape.position.optional(),
+                parentId: reference.optional(),
+              })
+              .strict()
+              .refine(
+                (update) =>
+                  update.status !== undefined ||
+                  update.position !== undefined ||
+                  update.parentId !== undefined,
+                'Choose a status, position, or parent to update',
+              ),
+          )
+          .min(1)
+          .max(1000),
+      })
+      .strict()
+      .parse(request.body);
+    if (new Set(updates.map((update) => update.id)).size !== updates.length)
+      fail(400, 'Each work item can appear only once in a batch');
+    return mutate(async (s, tx) => {
+      // Check every item before writing anything; the transaction protects both
+      // the reorder and completion side effects from a later stale revision.
+      for (const update of updates) {
+        const item = await checkedItem(s, u, update.id);
+        if ((item.revision ?? 0) !== update.expectedRevision)
+          fail(409, 'Work items changed. Reload the board before moving them.');
+      }
+      const data: WorkItem[] = [];
+      for (const { id: itemId, expectedRevision, ...input } of updates)
+        data.push((await updateItem(s, tx, u, itemId, input, expectedRevision)).item);
+      return { data };
     });
+  });
+  app.patch<{ Params: { id: string } }>('/api/v1/items/:id', async (request) => {
+    const u = requireUser(request);
+    const { expectedRevision, undoCompletion, ...input } = itemInput
+      .partial()
+      .extend({
+        expectedRevision: z.number().int().min(0).max(2147483646).optional(),
+        undoCompletion: z.boolean().optional(),
+      })
+      .refine(
+        (input) =>
+          !input.undoCompletion ||
+          (input.expectedRevision !== undefined &&
+            input.status !== undefined &&
+            input.status !== 'done'),
+        'Undo completion requires the current revision and a status to restore',
+      )
+      .parse(request.body);
+    return mutate((s, tx) =>
+      updateItem(s, tx, u, request.params.id, input, expectedRevision, undoCompletion),
+    );
   });
   app.delete<{ Params: { id: string } }>('/api/v1/items/:id', async (request, reply) => {
     const { expectedRevision } = z

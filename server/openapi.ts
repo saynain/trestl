@@ -61,6 +61,9 @@ const schemas: Record<string, unknown> = {
       scope: { ...string, maxLength: 10000 },
       rationale: { ...string, maxLength: 500 },
       targetDate: date,
+      projectIds: { type: 'array', items: uuid, maxItems: 100, uniqueItems: true },
+      milestoneIds: { type: 'array', items: uuid, maxItems: 100, uniqueItems: true },
+      itemIds: { type: 'array', items: uuid, maxItems: 100, uniqueItems: true },
     },
   },
   Roadmap: {
@@ -80,6 +83,12 @@ const schemas: Record<string, unknown> = {
   Project: {
     type: 'object',
     properties: {
+      creationActorId: {
+        ...nullableString,
+        readOnly: true,
+        description:
+          'Immutable verified local creation actor; absent/null creation is not attributed.',
+      },
       id: uuid,
       workspaceId: { ...string, readOnly: true },
       roadmap: { $ref: '#/components/schemas/Roadmap', readOnly: true },
@@ -129,6 +138,12 @@ const schemas: Record<string, unknown> = {
         minimum: 0,
         readOnly: true,
         description: 'Monotonic revision. Older records without this field have revision 0.',
+      },
+      creationActorId: {
+        ...nullableString,
+        readOnly: true,
+        description:
+          'Immutable verified local creation actor; automatic, imported, or unrecorded creation is not attributed.',
       },
       id: uuid,
       workspaceId: { ...string, readOnly: true },
@@ -272,6 +287,27 @@ schemas.ItemDetail = {
     links: { type: 'array', items: ref('ResourceLink') },
   },
 };
+schemas.ActivityHeatmap = {
+  type: 'object',
+  required: ['year', 'days', 'total'],
+  properties: {
+    year: { type: 'integer', minimum: 1970 },
+    total: { type: 'integer', minimum: 0 },
+    days: {
+      type: 'array',
+      minItems: 365,
+      maxItems: 366,
+      items: {
+        type: 'object',
+        required: ['date', 'count'],
+        properties: {
+          date: { type: 'string', format: 'date' },
+          count: { type: 'integer', minimum: 0 },
+        },
+      },
+    },
+  },
+};
 schemas.ProjectUpdate = {
   type: 'object',
   required: ['id', 'projectId', 'authorId', 'health', 'body', 'createdAt'],
@@ -375,6 +411,7 @@ function operation(
     created?: boolean;
     noContent?: boolean;
     optionalBody?: boolean;
+    notModified?: boolean;
     parameters?: unknown[];
     description?: string;
   } = {},
@@ -417,8 +454,26 @@ function operation(
     responses: {
       [code]: {
         description: 'Success',
+        ...(options.notModified
+          ? {
+              headers: {
+                ETag: {
+                  schema: string,
+                  description: 'Opaque bootstrap revision for a subsequent conditional read.',
+                },
+              },
+            }
+          : {}),
         ...(!options.noContent ? { content: { 'application/json': { schema: response } } } : {}),
       },
+      ...(options.notModified
+        ? {
+            304: {
+              description: 'Authenticated data is unchanged; no response body.',
+              headers: { ETag: { schema: string } },
+            },
+          }
+        : {}),
       ...errorResponses,
     },
   };
@@ -507,8 +562,38 @@ operation(
 operation(
   '/bootstrap',
   'get',
-  'Load the current user and all accessible planning data',
+  'Load accessible planning data; send the returned ETag as If-None-Match for a bodyless 304 when unchanged',
   ref('Bootstrap'),
+  undefined,
+  {
+    notModified: true,
+    parameters: [{ name: 'If-None-Match', in: 'header', required: false, schema: string }],
+  },
+);
+operation(
+  '/activity/heatmap',
+  'get',
+  'Count visible local activity by UTC calendar day',
+  ref('ActivityHeatmap'),
+  undefined,
+  {
+    description:
+      'Counts project/work item creation with an explicitly recorded immutable local actor, internal item comments/events, and project updates attributed to verified workspace users. Older creation actors are not reconstructed. Automatic recurring creation is excluded. Imported/source actions and future timestamps are excluded. Project scope includes accessible descendants and explicitly linked visible work. User and project filters intersect; with neither filter, the current user is selected. Every date in the requested year is returned, including zero-count future days. Hidden and unknown project/user IDs return 404.',
+    parameters: [
+      { name: 'projectId', in: 'query', required: false, schema: uuid },
+      { name: 'userId', in: 'query', required: false, schema: uuid },
+      {
+        name: 'year',
+        in: 'query',
+        required: false,
+        schema: {
+          type: 'integer',
+          minimum: 1970,
+          description: 'Defaults to the current UTC year; future years are invalid.',
+        },
+      },
+    ],
+  },
 );
 operation(
   '/projects/{id}/roadmap',
@@ -557,7 +642,12 @@ const idempotencyParameter = {
     'Reuse for retries of the same request. Scoped to user and operation; different input returns 409. Records persist with the database. Replay requires current access to the original item.',
 };
 const resources = [
-  ['projects', 'Project', ['id', 'ownerId', 'createdAt', 'roadmap'], ['key', 'name']],
+  [
+    'projects',
+    'Project',
+    ['id', 'ownerId', 'creationActorId', 'createdAt', 'roadmap'],
+    ['key', 'name'],
+  ],
   [
     'items',
     'WorkItem',
@@ -565,6 +655,7 @@ const resources = [
       'id',
       'identifier',
       'creatorId',
+      'creationActorId',
       'createdAt',
       'updatedAt',
       'completedAt',
@@ -629,6 +720,15 @@ for (const [path, schema, omit, required] of resources) {
               maximum: 2147483646,
               description: 'Optional compare-and-set revision; stale updates return 409.',
             },
+            ...(path === 'items'
+              ? {
+                  undoCompletion: {
+                    type: 'boolean',
+                    description:
+                      'Explicit completion Undo. Requires expectedRevision and a status other than done. Cancels only an untouched, unreferenced recurring successor; ordinary reopening preserves it. This command flag is never stored on the item.',
+                  },
+                }
+              : {}),
           },
         }
       : writable(schema, [...omit]),
@@ -651,6 +751,34 @@ for (const [path, schema, omit, required] of resources) {
     { noContent: true, ...(path === 'items' ? { optionalBody: true } : {}) },
   );
 }
+operation(
+  '/items/batch',
+  'post',
+  'Atomically reorder, change statuses, or reparent work items; stale revisions return 409 without applying any updates',
+  list('WorkItem'),
+  object(
+    {
+      updates: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 1000,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            id: uuid,
+            expectedRevision: { type: 'integer', minimum: 0, maximum: 2147483646 },
+            status,
+            position: { type: 'number' },
+            parentId: { ...uuid, nullable: true },
+          },
+          required: ['id', 'expectedRevision'],
+        },
+      },
+    },
+    ['updates'],
+  ),
+);
 operation(
   '/items/{id}/comments',
   'post',

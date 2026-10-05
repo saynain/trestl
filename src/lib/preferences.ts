@@ -1,21 +1,44 @@
 import type { User } from '../../shared/types';
 
 type Profile = Pick<User, 'id' | 'workspaceId' | 'role'>;
+export interface Favorite {
+  kind: 'project' | 'view';
+  id: string;
+}
 export interface UiPreferences {
   itemLayout: 'side-panel' | 'centered';
   zenMode: boolean;
+  favorites: Favorite[];
 }
-export const defaultUiPreferences: UiPreferences = { itemLayout: 'side-panel', zenMode: false };
+export const defaultUiPreferences: UiPreferences = {
+  itemLayout: 'side-panel',
+  zenMode: false,
+  favorites: [],
+};
 const uiKey = (user: Profile) => `trestl.ui.v1.${user.id}`;
 export function readUiPreferences(user: Profile): UiPreferences {
   try {
     const saved = JSON.parse(localStorage.getItem(uiKey(user)) || 'null');
+    const favorites: Favorite[] = [];
+    if (Array.isArray(saved?.favorites)) {
+      for (const entry of saved.favorites) {
+        if (
+          entry &&
+          (entry.kind === 'project' || entry.kind === 'view') &&
+          typeof entry.id === 'string' &&
+          entry.id.length > 0 &&
+          !favorites.some((favorite) => favorite.kind === entry.kind && favorite.id === entry.id)
+        )
+          favorites.push({ kind: entry.kind, id: entry.id });
+      }
+    }
     return {
       itemLayout: saved?.itemLayout === 'centered' ? 'centered' : 'side-panel',
       zenMode: saved?.zenMode === true,
+      favorites,
     };
   } catch {
-    return { ...defaultUiPreferences };
+    return { ...defaultUiPreferences, favorites: [] };
   }
 }
 export function saveUiPreferences(user: Profile, preferences: UiPreferences) {

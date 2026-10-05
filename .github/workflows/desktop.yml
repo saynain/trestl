@@ -241,11 +241,14 @@ jobs:
           pnpm test:desktop-package
           if ($LASTEXITCODE -ne 0) { throw 'Packaged Windows runtime smoke test failed' }
       - uses: actions/upload-artifact@v4
+        # PR installers aid inspection, but upload quota must not invalidate
+        # successful build, integrity and runtime checks. Release uploads stay required.
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
         with:
           name: trestl-desktop-${{ matrix.target }}
           if-no-files-found: error
           path: dist/desktop-release/*
-          retention-days: 14
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 14 }}
 
   publish:
     if: github.ref_type == 'tag' && needs.verify.outputs.signing_ready == 'true'

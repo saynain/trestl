@@ -63,6 +63,7 @@ export function createDemoState() {
     dueDate: date(21),
     visibility: 'workspace',
     ownerId: user.id,
+    creationActorId: user.id,
     createdAt: now,
   });
   const projects = [
@@ -200,6 +201,7 @@ export function createDemoState() {
       labels: [label],
       visibility: projectId === 'personal' ? 'private' : 'workspace',
       creatorId: user.id,
+      creationActorId: user.id,
       createdAt: now,
       updatedAt: now,
       completedAt: status === 'done' ? now : null,
@@ -328,6 +330,31 @@ export function createDemoState() {
       createdAt: now,
     },
   ];
+  // Sample history for the activity calendar, with creation preceding every event.
+  const stamp = (daysAgo: number) => new Date(Date.now() - daysAgo * 86400000).toISOString();
+  data.projects.forEach((project) => {
+    project.createdAt = stamp(220);
+  });
+  data.items.forEach((item, index) => {
+    item.createdAt = stamp(200 - index * 3);
+  });
+  for (let daysAgo = 1; daysAgo <= 120; daysAgo++) {
+    if (daysAgo % 7 === 0 || daysAgo % 5 === 0) continue;
+    for (let entry = 0; entry < 1 + (daysAgo % 3); entry++) {
+      const item = data.items[(daysAgo + entry) % data.items.length];
+      activity.push({
+        id: `demo-history-${daysAgo}-${entry}`,
+        itemId: item.id,
+        userId:
+          item.visibility === 'private'
+            ? item.creatorId
+            : users[(daysAgo + entry) % users.length].id,
+        kind: 'comment',
+        body: 'Reviewed progress with the team and noted the next step.',
+        createdAt: stamp(daysAgo),
+      });
+    }
+  }
   const box = (id: string, x: number, color: string) => ({
     id,
     type: 'rectangle',
