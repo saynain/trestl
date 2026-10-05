@@ -7,13 +7,8 @@ import {
   Inbox,
   CircleCheck,
   FolderOpen,
-  ChevronDown,
-  ChevronRight,
   Plus,
   Settings,
-  CalendarDays,
-  Hourglass,
-  Lightbulb,
   PanelLeftClose,
   Bookmark,
   ChevronsUpDown,
@@ -22,7 +17,8 @@ import {
 } from 'lucide-react';
 import { useApp } from '../lib/context';
 import { navigate, type Route, isDone } from '../lib/model';
-import type { Project } from '../../shared/types';
+import { favoriteEntries } from '../lib/navigation';
+import { FavoritesDialog } from './Favorites';
 import { Avatar, Brand, ProjectIcon } from './ui';
 import { post } from '../lib/api';
 export default function Sidebar({
@@ -36,7 +32,10 @@ export default function Sidebar({
   onDismiss: () => void;
   onShortcuts: () => void;
 }) {
-  const { data, createProject, toast } = useApp();
+  const { data, uiPreferences, toast } = useApp();
+  const [managingFavorites, setManagingFavorites] = useState(false);
+  const favoritesTrigger = useRef<HTMLButtonElement>(null);
+  const favorites = favoriteEntries(data, uiPreferences.favorites);
   const [accountMenu, setAccountMenu] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const accountRoot = useRef<HTMLDivElement>(null);
@@ -76,240 +75,231 @@ export default function Sidebar({
       setSigningOut(false);
     }
   }
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const go = (page: string, id?: string, tab = 'list') => {
     navigate(page, id, tab);
     onDismiss();
   };
-  function tree(project: Project, depth = 0): React.ReactNode {
-    const children = data.projects.filter(
-      (p) => p.parentId === project.id && p.status !== 'archived',
-    );
-    return (
-      <div key={project.id}>
-        <div
-          className={`project-nav nav-item ${route.page === 'project' && route.id === project.id ? 'active' : ''}`}
-          style={{ paddingLeft: 12 + depth * 17 }}
-        >
-          <button className="project-nav-main" onClick={() => go('project', project.id)}>
-            <ProjectIcon project={project} size={17} />
-            <span>{project.name}</span>
-          </button>
-          {children.length > 0 && (
-            <button
-              className="tree-toggle"
-              aria-label={`${collapsed.has(project.id) ? 'Expand' : 'Collapse'} ${project.name}`}
-              onClick={() =>
-                setCollapsed((prev) => {
-                  const next = new Set(prev);
-                  next.has(project.id) ? next.delete(project.id) : next.add(project.id);
-                  return next;
-                })
-              }
-            >
-              {collapsed.has(project.id) ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
-            </button>
-          )}
-        </div>
-        {!collapsed.has(project.id) && children.map((p) => tree(p, depth + 1))}
-      </div>
-    );
-  }
   return (
-    <aside className="sidebar">
-      {import.meta.env.VITE_TRESTL_DESKTOP === 'true' && (
-        <div className="desktop-sidebar-drag-area" data-tauri-drag-region aria-hidden="true" />
-      )}
-      <div className="workspace-brand">
-        <button className="brand-home" aria-label="Trestl Home" onClick={() => go('home')}>
-          <Brand />
-        </button>
-        <button
-          className="icon-button mobile-only"
-          aria-label="Close navigation"
-          onClick={onDismiss}
-        >
-          <PanelLeftClose size={17} />
-        </button>
-      </div>
-      <div className="workspace-trigger">
-        <span className="workspace-trigger-text">{data.workspace?.name}</span>
-      </div>
-      <button className="sidebar-search" onClick={command}>
-        <Search size={15} />
-        <span>Search anything</span>
-        <kbd>⌘ K</kbd>
-      </button>
-      <nav className="main-nav">
-        <button
-          className={`nav-item ${route.page === 'home' ? 'active' : ''}`}
-          onClick={() => go('home')}
-        >
-          <Home size={18} />
-          <span>Home</span>
-        </button>
-        <button
-          className={`nav-item ${route.page === 'inbox' ? 'active' : ''}`}
-          onClick={() => go('inbox')}
-          title="Inbox (G then I)"
-        >
-          <Inbox size={18} />
-          <span>Inbox</span>
-          {data.items.filter((i) => !i.projectId && i.creatorId === data.user.id && !isDone(i))
-            .length > 0 && (
-            <span className="nav-count">
-              {
-                data.items.filter((i) => !i.projectId && i.creatorId === data.user.id && !isDone(i))
-                  .length
-              }
-            </span>
-          )}
-        </button>
-        <button
-          className={`nav-item ${route.page === 'notifications' ? 'active' : ''}`}
-          onClick={() => go('notifications')}
-        >
-          <Bell size={18} />
-          <span>Notifications</span>
-          {!!data.notifications?.some((n) => !n.readAt) && (
-            <span className="nav-count">{data.notifications.filter((n) => !n.readAt).length}</span>
-          )}
-        </button>
-        <button
-          className={`nav-item ${route.page === 'my-work' ? 'active' : ''}`}
-          onClick={() => go('my-work')}
-          title="My work (G then M)"
-        >
-          <CircleCheck size={18} />
-          <span>My work</span>
-        </button>
-        <button
-          className={`nav-item ${route.page === 'projects' ? 'active' : ''}`}
-          onClick={() => go('projects')}
-          title="All projects (G then P)"
-        >
-          <FolderOpen size={18} />
-          <span>All projects</span>
-        </button>
-      </nav>
-      <div className="sidebar-scroll">
-        <div className="nav-section-title">
-          <span>Projects</span>
+    <>
+      <aside className="sidebar">
+        {import.meta.env.VITE_TRESTL_DESKTOP === 'true' && (
+          <div className="desktop-sidebar-drag-area" data-tauri-drag-region aria-hidden="true" />
+        )}
+        <div className="workspace-brand">
+          <a href="#/home" aria-label="Trestl home" onClick={onDismiss}>
+            <Brand />
+          </a>
           <button
-            className="icon-button"
-            onClick={() => createProject()}
-            aria-label="Create project"
+            className="icon-button mobile-only"
+            aria-label="Close navigation"
+            onClick={onDismiss}
           >
-            <Plus size={14} />
+            <PanelLeftClose size={17} />
           </button>
         </div>
-        <nav className="project-tree">
-          {data.projects.filter((p) => !p.parentId && p.status !== 'archived').map((p) => tree(p))}
-          {!data.projects.length && (
-            <button className="nav-item subtle" onClick={() => createProject()}>
-              <Plus size={16} />
-              Create your first project
-            </button>
-          )}
-        </nav>
-        <div className="nav-section-title views-title">
-          <span>Views</span>
-          <Bookmark size={12} />
+        <div className="workspace-trigger">
+          <span className="workspace-trigger-text">{data.workspace?.name}</span>
         </div>
-        <nav>
-          {data.views.map((view) => {
-            const Icon = view.filters.due
-              ? CalendarDays
-              : view.filters.followUp
-                ? Hourglass
-                : view.filters.type === 'idea'
-                  ? Lightbulb
-                  : Bookmark;
-            return (
-              <button
-                key={view.id}
-                className={`nav-item ${route.page === 'view' && route.id === view.id ? 'active' : ''}`}
-                onClick={() => go('view', view.id, view.layout === 'board' ? 'board' : 'list')}
-              >
-                <Icon size={17} />
-                <span>{view.name}</span>
-              </button>
-            );
-          })}
-          {!data.views.length && (
-            <p className="sidebar-help">Save a filtered work list to keep it here.</p>
-          )}
+        <button className="sidebar-search" onClick={command}>
+          <Search size={15} />
+          <span>Search anything</span>
+          <kbd>⌘ K</kbd>
+        </button>
+        <nav className="main-nav" aria-label="Workspace navigation">
+          <button
+            className={`nav-item ${route.page === 'home' ? 'active' : ''}`}
+            aria-current={route.page === 'home' ? 'page' : undefined}
+            onClick={() => go('home')}
+          >
+            <Home size={18} />
+            <span>Home</span>
+          </button>
+          <button
+            className={`nav-item ${route.page === 'inbox' ? 'active' : ''}`}
+            aria-current={route.page === 'inbox' ? 'page' : undefined}
+            onClick={() => go('inbox')}
+            title="Inbox (G then I)"
+          >
+            <Inbox size={18} />
+            <span>Inbox</span>
+            {data.items.filter((i) => !i.projectId && i.creatorId === data.user.id && !isDone(i))
+              .length > 0 && (
+              <span className="nav-count">
+                {
+                  data.items.filter(
+                    (i) => !i.projectId && i.creatorId === data.user.id && !isDone(i),
+                  ).length
+                }
+              </span>
+            )}
+          </button>
+          <button
+            className={`nav-item ${route.page === 'notifications' ? 'active' : ''}`}
+            aria-current={route.page === 'notifications' ? 'page' : undefined}
+            onClick={() => go('notifications')}
+          >
+            <Bell size={18} />
+            <span>Notifications</span>
+            {!!data.notifications?.some((n) => !n.readAt) && (
+              <span className="nav-count">
+                {data.notifications.filter((n) => !n.readAt).length}
+              </span>
+            )}
+          </button>
+          <button
+            className={`nav-item ${route.page === 'my-work' ? 'active' : ''}`}
+            aria-current={route.page === 'my-work' ? 'page' : undefined}
+            onClick={() => go('my-work')}
+            title="My work (G then M)"
+          >
+            <CircleCheck size={18} />
+            <span>My work</span>
+          </button>
+          <button
+            className={`nav-item ${route.page === 'projects' || (route.page === 'project' && !favorites.some((favorite) => favorite.kind === 'project' && favorite.id === route.id)) ? 'active' : ''}`}
+            aria-current={
+              route.page === 'projects' ||
+              (route.page === 'project' &&
+                !favorites.some(
+                  (favorite) => favorite.kind === 'project' && favorite.id === route.id,
+                ))
+                ? 'page'
+                : undefined
+            }
+            onClick={() => go('projects')}
+            title="All projects (G then P)"
+          >
+            <FolderOpen size={18} />
+            <span>Projects</span>
+          </button>
         </nav>
-      </div>
-      <div className="sidebar-bottom">
-        <button
-          className="nav-item sidebar-shortcuts"
-          onClick={onShortcuts}
-          title="Keyboard shortcuts (?)"
-        >
-          <Keyboard size={17} />
-          <span>Keyboard shortcuts</span>
-          <kbd>?</kbd>
-        </button>
-        <button
-          className={`nav-item ${route.page === 'settings' ? 'active' : ''}`}
-          onClick={() => go('settings', undefined, 'general')}
-        >
-          <Settings size={18} />
-          <span>Administration</span>
-        </button>
-        <div
-          className="sidebar-account"
-          ref={accountRoot}
-          onBlur={(event) => {
-            // WebKit blurs buttons to the page before a mouse click; the outside
-            // pointer handler covers that case. Keep the menu alive for its click.
-            if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget))
-              setAccountMenu(false);
-          }}
-        >
-          {accountMenu && (
-            <div className="sidebar-account-popover" id="sidebar-account-options">
-              <div className="sidebar-account-info">
-                <strong>{data.user.name}</strong>
-                <span>{data.user.email}</span>
-              </div>
+        <div className="sidebar-scroll">
+          <div className="nav-section-title">
+            <span>Favorites</span>
+            <button
+              ref={favoritesTrigger}
+              className="icon-button"
+              onClick={() => setManagingFavorites(true)}
+              aria-label="Manage favorites"
+              title="Manage favorites"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+          <nav aria-label="Favorites">
+            {favorites.map((favorite) => (
               <button
-                ref={accountSettings}
-                className="nav-item"
-                onClick={() => {
-                  setAccountMenu(false);
-                  go('account-settings', undefined, 'profile');
-                }}
+                key={`${favorite.kind}:${favorite.id}`}
+                className={`nav-item ${route.page === favorite.kind && route.id === favorite.id ? 'active' : ''}`}
+                title={favorite.name}
+                aria-current={
+                  route.page === favorite.kind && route.id === favorite.id ? 'page' : undefined
+                }
+                onClick={() => go(favorite.kind, favorite.id, favorite.view?.layout || 'overview')}
               >
-                <UserRound size={16} />
-                Account settings
+                {favorite.project ? (
+                  <ProjectIcon project={favorite.project} size={17} />
+                ) : (
+                  <Bookmark size={17} />
+                )}
+                <span>{favorite.name}</span>
               </button>
-              <button className="nav-item" disabled={signingOut} onClick={() => void signOut()}>
-                <LogOut size={16} />
-                {signingOut ? 'Signing out…' : 'Sign out'}
+            ))}
+          </nav>
+          {!favorites.length && (
+            <div className="sidebar-favorites-empty">
+              <p>A little space for the work you return to.</p>
+              <button className="text-button" onClick={() => setManagingFavorites(true)}>
+                <Plus size={14} />
+                Choose favorites
               </button>
             </div>
           )}
+          {!!favorites.length && (
+            <button className="sidebar-manage-favorites" onClick={() => setManagingFavorites(true)}>
+              Edit favorites
+            </button>
+          )}
+        </div>
+        <div className="sidebar-bottom">
           <button
-            ref={accountTrigger}
-            className={`sidebar-user ${route.page === 'account-settings' ? 'active' : ''}`}
-            aria-label={`Account menu for ${data.user.name}`}
-            aria-expanded={accountMenu}
-            aria-controls="sidebar-account-options"
-            onClick={() => {
-              setAccountMenu((open) => !open);
+            className="nav-item sidebar-shortcuts"
+            onClick={onShortcuts}
+            title="Keyboard shortcuts (?)"
+          >
+            <Keyboard size={17} />
+            <span>Keyboard shortcuts</span>
+            <kbd>?</kbd>
+          </button>
+          <button
+            className={`nav-item ${route.page === 'settings' ? 'active' : ''}`}
+            aria-current={route.page === 'settings' ? 'page' : undefined}
+            onClick={() => go('settings', undefined, 'general')}
+          >
+            <Settings size={18} />
+            <span>Administration</span>
+          </button>
+          <div
+            className="sidebar-account"
+            ref={accountRoot}
+            onBlur={(event) => {
+              // WebKit blurs buttons to the page before a mouse click; the outside
+              // pointer handler covers that case. Keep the menu alive for its click.
+              if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget))
+                setAccountMenu(false);
             }}
           >
-            <Avatar user={data.user} size={30} />
-            <div>
-              <strong>{data.user.name}</strong>
-              <small>{data.user.email}</small>
-            </div>
-            <ChevronsUpDown size={14} />
-          </button>
+            {accountMenu && (
+              <div className="sidebar-account-popover" id="sidebar-account-options">
+                <div className="sidebar-account-info">
+                  <strong>{data.user.name}</strong>
+                  <span>{data.user.email}</span>
+                </div>
+                <button
+                  ref={accountSettings}
+                  className="nav-item"
+                  onClick={() => {
+                    setAccountMenu(false);
+                    go('account-settings', undefined, 'profile');
+                  }}
+                >
+                  <UserRound size={16} />
+                  Account settings
+                </button>
+                <button className="nav-item" disabled={signingOut} onClick={() => void signOut()}>
+                  <LogOut size={16} />
+                  {signingOut ? 'Signing out…' : 'Sign out'}
+                </button>
+              </div>
+            )}
+            <button
+              ref={accountTrigger}
+              className={`sidebar-user ${route.page === 'account-settings' ? 'active' : ''}`}
+              aria-label={`Account menu for ${data.user.name}`}
+              aria-expanded={accountMenu}
+              aria-controls="sidebar-account-options"
+              onClick={() => {
+                setAccountMenu((open) => !open);
+              }}
+            >
+              <Avatar user={data.user} size={30} />
+              <div>
+                <strong>{data.user.name}</strong>
+                <small>{data.user.email}</small>
+              </div>
+              <ChevronsUpDown size={14} />
+            </button>
+          </div>
         </div>
-      </div>
-    </aside>
+      </aside>
+      {managingFavorites && (
+        <FavoritesDialog
+          onClose={() => {
+            setManagingFavorites(false);
+            window.requestAnimationFrame(() => favoritesTrigger.current?.focus());
+          }}
+        />
+      )}
+    </>
   );
 }

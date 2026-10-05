@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import type { Priority, Status, WorkItem } from '../../shared/types';
 import { useApp } from '../lib/context';
-import { patch, post } from '../lib/api';
+import { ApiError, patch, post } from '../lib/api';
 import {
   navigate,
   readRoute,
@@ -69,7 +69,7 @@ export default function WorkList({
   initialFilters = {},
   baseFilters = {},
 }: Props) {
-  const { data, refresh, toast, openItem, createItem } = useApp();
+  const { data, refresh, applyItems, toast, openItem, createItem } = useApp();
   const [search, setSearch] = useState(initialFilters.search || '');
   const [filterOpen, setFilterOpen] = useState(false);
   const [displayOpen, setDisplayOpen] = useState(false);
@@ -136,6 +136,34 @@ export default function WorkList({
   const [expandedItems, setExpandedItems] = useState(new Set<string>());
   const appliedTreeFilter = useRef<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const writePending = useRef(false);
+  function beginWrite() {
+    if (writePending.current) return false;
+    writePending.current = true;
+    setSaving(true);
+    return true;
+  }
+  function finishWrite() {
+    writePending.current = false;
+    setSaving(false);
+  }
+  function isRevisionConflict(error: unknown) {
+    return (
+      error instanceof ApiError &&
+      error.status === 409 &&
+      /work items? changed|revision/i.test(error.message)
+    );
+  }
+  async function reportWriteError(error: unknown) {
+    if (isRevisionConflict(error)) {
+      try {
+        await refresh();
+        toast('Changed elsewhere. Latest work loaded; review it before trying again.', 'error');
+      } catch {
+        toast('Changed elsewhere. Refresh the page before trying again.', 'error');
+      }
+    } else toast(error instanceof Error ? error.message : 'Could not save the change.', 'error');
+  }
   const [saveOpen, setSaveOpen] = useState(false);
   const [viewName, setViewName] = useState('');
   const [dragging, setDragging] = useState<string | null>(null);
@@ -312,19 +340,30 @@ export default function WorkList({
   }
   async function moveCard(item: WorkItem, status: Status, beforeId: string | null) {
     const updates = boardMoveUpdates(items, item, status, beforeId);
-    if (!updates.length || saving) return;
-    setSaving(true);
+    if (!updates.length || !beginWrite()) return;
     try {
-      for (const entry of updates)
-        await patch(`/items/${entry.item.id}`, { status: entry.status, position: entry.position });
+      const result = await post<{ data: WorkItem[] }>('/items/batch', {
+        updates: updates.map((entry) => ({
+          id: entry.item.id,
+          expectedRevision: entry.item.revision ?? 0,
+          status: entry.status,
+          position: entry.position,
+        })),
+      });
+      applyItems(result.data);
+      if (
+        updates.some(
+          (entry) =>
+            entry.item.recurrence && entry.status === 'done' && entry.item.status !== 'done',
+        )
+      )
+        void refresh().catch(() =>
+          toast('Saved. Refresh to see the next recurring item.', 'error'),
+        );
     } catch (error) {
-      toast((error as Error).message, 'error');
+      await reportWriteError(error);
     } finally {
-      try {
-        await refresh();
-      } finally {
-        setSaving(false);
-      }
+      finishWrite();
     }
   }
   useEffect(() => {
@@ -517,48 +556,48 @@ export default function WorkList({
       filterPanel.current?.querySelector<HTMLButtonElement>('.picker-trigger')?.focus();
   }, [filterOpen]);
   async function update(item: WorkItem, fields: Partial<WorkItem>) {
-    setSaving(true);
+    if (!beginWrite()) return;
     try {
-      await patch(`/items/${item.id}`, fields);
-      await refresh();
-    } catch (e) {
-      toast((e as Error).message, 'error');
+      const result = await patch<{ item: WorkItem }>(`/items/${item.id}`, {
+        ...fields,
+        expectedRevision: item.revision ?? 0,
+      });
+      applyItems([result.item]);
+      if (item.recurrence && fields.status !== undefined && fields.status !== item.status)
+        void refresh().catch(() =>
+          toast('Saved. Refresh to see the next recurring item.', 'error'),
+        );
+    } catch (error) {
+      await reportWriteError(error);
     } finally {
-      setSaving(false);
+      finishWrite();
     }
   }
   async function setParentForItems(targets: WorkItem[], parentId: string | null) {
-    if (saving) return false;
-    setSaving(true);
-    const completed = new Set<string>();
-    let failure = '';
+    if (!targets.length || !beginWrite()) return false;
     try {
-      for (const item of targets) {
-        try {
-          await patch(`/items/${item.id}`, { parentId, expectedRevision: item.revision ?? 0 });
-          completed.add(item.id);
-        } catch (error) {
-          failure = (error as Error).message;
-          break;
-        }
-      }
-      await refresh();
+      const result = await post<{ data: WorkItem[] }>('/items/batch', {
+        updates: targets.map((item) => ({
+          id: item.id,
+          expectedRevision: item.revision ?? 0,
+          parentId,
+        })),
+      });
+      applyItems(result.data);
+      const completed = new Set(result.data.map((item) => item.id));
       setSelected((previous) => new Set([...previous].filter((id) => !completed.has(id))));
-      if (failure) {
-        toast(`${completed.size} of ${targets.length} updated. ${failure}`, 'error');
-        // Close the dialog so another attempt uses fresh revisions from bootstrap.
-      } else
-        toast(
-          parentId
-            ? `Parent set for ${completed.size} work items`
-            : `Moved ${completed.size} work items to top level`,
-        );
+      toast(
+        parentId
+          ? `Parent set for ${completed.size} work items`
+          : `Moved ${completed.size} work items to top level`,
+      );
       return true;
     } catch (error) {
-      toast((error as Error).message, 'error');
-      return false;
+      await reportWriteError(error);
+      // Close the dialog after a conflict so its next attempt uses refreshed revisions.
+      return isRevisionConflict(error);
     } finally {
-      setSaving(false);
+      finishWrite();
     }
   }
   async function saveView() {
@@ -621,6 +660,7 @@ export default function WorkList({
       <span className="inline-control status-control" onClick={(e) => e.stopPropagation()}>
         <StatusIcon status={item.status} />
         <Select
+          disabled={saving}
           shortcut="s"
           value={item.status}
           aria-label={`Status of ${item.identifier}`}
@@ -765,6 +805,7 @@ export default function WorkList({
             {priorities.find((p) => p.id === item.priority)?.name}
           </span>
           <Select
+            disabled={saving}
             shortcut="p"
             aria-label={`Priority of ${item.identifier}`}
             value={item.priority}
@@ -780,6 +821,7 @@ export default function WorkList({
         <span className="inline-control assignee-cell" onClick={(e) => e.stopPropagation()}>
           <Avatar user={data.users.find((u) => u.id === item.assigneeId)} />
           <Select
+            disabled={saving}
             shortcut="a"
             aria-label={`Assignee of ${item.identifier}`}
             value={item.assigneeId || ''}
@@ -1063,14 +1105,17 @@ export default function WorkList({
         <div className="toolbar-spacer" />
         {!board && (
           <button
-            className="button"
+            className="button selection-toggle"
+            title={selecting ? 'Done selecting' : 'Select items'}
+            aria-label={selecting ? 'Done selecting' : 'Select items'}
             aria-pressed={selecting}
             onClick={() => {
               setSelecting(!selecting);
               setSelected(new Set());
             }}
           >
-            {selecting ? 'Done selecting' : 'Select items'}
+            <ListFilter size={14} aria-hidden="true" />
+            <span>{selecting ? 'Done selecting' : 'Select items'}</span>
           </button>
         )}
         <button
@@ -1099,9 +1144,14 @@ export default function WorkList({
           </label>
         )}
         {board && (
-          <button className="button" onClick={() => setBoardSettingsOpen(true)}>
+          <button
+            className="button board-customize-button"
+            title="Customize board"
+            aria-label="Customize board"
+            onClick={() => setBoardSettingsOpen(true)}
+          >
             <SlidersHorizontal size={14} />
-            Customize board
+            <span>Customize board</span>
           </button>
         )}
         <div className="popover-parent">

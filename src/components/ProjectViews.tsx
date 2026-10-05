@@ -50,7 +50,7 @@ export function AllProjects() {
       <div className="projects-table">
         <div className="projects-table-head">
           <span>Project</span>
-          <span>Lifecycle</span>
+          <span>Status / lifecycle</span>
           <span>Work</span>
           <span>Target date</span>
           <span>Owner</span>
@@ -80,12 +80,11 @@ export function AllProjects() {
                   </span>
                 </span>
                 <span className="lifecycle-badge">
-                  <span className={`tiny-dot ${project.status}`} />
-                  {project.lifecycle === 'ongoing'
-                    ? 'Ongoing'
-                    : project.status === 'completed'
-                      ? 'Completed'
-                      : 'Time-bound'}
+                  <span className={`tiny-dot ${project.status}`} aria-hidden="true" />
+                  <strong>
+                    {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
+                  </strong>
+                  <small>{project.lifecycle === 'ongoing' ? 'Ongoing' : 'Time-bound'}</small>
                 </span>
                 <span className="project-progress">
                   <span className="progress-track">

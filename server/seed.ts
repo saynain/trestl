@@ -114,7 +114,10 @@ export async function seedDemo(store: Store, user: User, db: Database) {
   projects[2].parentId = projects[0].id;
   projects[3].parentId = projects[0].id;
   projects[0].roadmap = demoRoadmap(date(0));
-  for (const project of projects) await store.put('projects', project);
+  for (const project of projects) {
+    project.workspaceId = workspaceOf(user);
+    await store.put('projects', project);
+  }
   const entries: Array<
     [
       number,
@@ -144,7 +147,7 @@ export async function seedDemo(store: Store, user: User, db: Database) {
       0,
       ['networking'],
     ],
-    [0, 'Document the incident response playbook', 'todo', 'medium', 'task', 5, ['documentation']],
+    [0, 'Document the incident response playbook', 'todo', 'medium', 'task', -2, ['documentation']],
     [
       0,
       'Review cluster autoscaling thresholds',
@@ -206,6 +209,7 @@ export async function seedDemo(store: Store, user: User, db: Database) {
     'Choose a production maintenance window after staging validation is complete. Record owners, prerequisites, and the point at which we stop or roll back.\n\n- [ ] Confirm availability with service owners\n- [ ] Check the change calendar\n- [ ] Link the runbook and verification checklist',
   ];
   let sequence = 0;
+  const seededItems: WorkItem[] = [];
   for (const [projectIndex, title, status, priority, type, days, labels] of entries) {
     const project = projects[projectIndex];
     sequence++;
@@ -214,12 +218,14 @@ export async function seedDemo(store: Store, user: User, db: Database) {
       identifier: await nextItemIdentifier(db, project.id, workspaceOf(user)),
       title,
       description: descriptions[sequence - 1],
+      workspaceId: workspaceOf(user),
       projectId: project.id,
       parentId: null,
       type,
       status,
       priority,
       assigneeId: sequence % 4 === 0 ? null : user.id,
+      startDate: days === null ? null : date(sequence === 18 ? 5 : Math.min(-1, days - 5)),
       dueDate: days === null ? null : date(days),
       followUpDate: type === 'followup' ? date(1) : null,
       recurrence: null,
@@ -231,7 +237,7 @@ export async function seedDemo(store: Store, user: User, db: Database) {
       completedAt: status === 'done' ? today.toISOString() : null,
       position: sequence,
     };
-    await store.put('items', item);
+    seededItems.push(await store.put('items', item));
     if (sequence === 1)
       await store.put('activity', {
         id: randomUUID(),
@@ -248,6 +254,7 @@ export async function seedDemo(store: Store, user: User, db: Database) {
     icon: 'calendar',
     filters: { due: 'upcoming' },
     layout: 'list',
+    workspaceId: workspaceOf(user),
     userId: user.id,
   });
   await store.put('views', {
@@ -256,6 +263,7 @@ export async function seedDemo(store: Store, user: User, db: Database) {
     icon: 'clock',
     filters: { followUp: 'true' },
     layout: 'list',
+    workspaceId: workspaceOf(user),
     userId: user.id,
   });
   await store.put('views', {
@@ -264,21 +272,105 @@ export async function seedDemo(store: Store, user: User, db: Database) {
     icon: 'lightbulb',
     filters: { type: 'idea' },
     layout: 'list',
+    workspaceId: workspaceOf(user),
     userId: user.id,
   });
   await store.put('views', {
     id: randomUUID(),
     name: 'High priority',
     icon: 'flag',
-    filters: { priority: 'high' },
+    filters: { priority: 'high,urgent' },
     layout: 'list',
+    workspaceId: workspaceOf(user),
     userId: user.id,
   });
+  const rolloutMilestone = randomUUID();
   await store.put('milestones', {
-    id: randomUUID(),
+    id: rolloutMilestone,
     projectId: projects[3].id,
     title: 'Production rollout',
     dueDate: date(14),
     completed: false,
   });
+  for (const item of seededItems.filter((item) => item.projectId === projects[3].id))
+    await store.put('items', { ...item, milestoneId: rolloutMilestone });
+  await store.put('milestones', {
+    id: randomUUID(),
+    projectId: projects[2].id,
+    title: 'Golden path pilot',
+    dueDate: date(-1),
+    completed: false,
+  });
+  await store.put('relations', {
+    id: randomUUID(),
+    itemId: seededItems[16].id,
+    targetId: seededItems[17].id,
+    kind: 'blocks',
+  });
+  for (const [index, health, age, body] of [
+    [
+      0,
+      'at_risk',
+      2,
+      'DNS reliability needs a decision this week. Resource limits are progressing; the incident playbook is overdue.',
+    ],
+    [
+      2,
+      'on_track',
+      1,
+      'The golden path is being tested with service teams. Collect feedback before widening the pilot.',
+    ],
+    [
+      3,
+      'off_track',
+      10,
+      'Staging validation remains the prerequisite for production rollout. Confirm the recovery plan before scheduling.',
+    ],
+  ] as const)
+    await store.put('projectUpdates', {
+      id: randomUUID(),
+      projectId: projects[index].id,
+      authorId: user.id,
+      health,
+      body,
+      createdAt: new Date(today.getTime() - age * 86400000).toISOString(),
+    });
+  for (const [title, type, reviewDays] of [
+    ['Ask the service team about DNS impact', 'followup', 0],
+    ['Consider a lightweight platform office hour', 'idea', 7],
+  ] as const)
+    await store.put('items', {
+      id: randomUUID(),
+      identifier: await nextItemIdentifier(db, null, workspaceOf(user)),
+      workspaceId: workspaceOf(user),
+      title,
+      description: 'Private capture for the next planning session.',
+      projectId: null,
+      parentId: null,
+      type,
+      status: 'todo',
+      priority: 'medium',
+      assigneeId: user.id,
+      startDate: null,
+      dueDate: null,
+      followUpDate: date(reviewDays),
+      recurrence: null,
+      labels: [],
+      visibility: 'private',
+      creatorId: user.id,
+      createdAt: today.toISOString(),
+      updatedAt: today.toISOString(),
+      completedAt: null,
+      position: sequence++,
+    });
+  if (projects[0].roadmap) {
+    projects[0].roadmap.features[0] = {
+      ...projects[0].roadmap.features[0],
+      projectIds: [projects[3].id],
+      milestoneIds: [rolloutMilestone],
+      itemIds: [seededItems[16].id],
+      targetDate: date(14),
+    };
+    await store.put('projects', projects[0]);
+  }
 }

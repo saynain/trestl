@@ -189,9 +189,10 @@ test('portable project transfer preserves content, isolates access, validates re
     const other = (
       await src('POST', '/users', { name: 'Colleague', email: 'colleague@transfer.test', password })
     ).json();
+    const hiddenItemId = randomUUID();
     await sourceContext.store.put('items', {
       ...childItem,
-      id: randomUUID(),
+      id: hiddenItemId,
       title: 'Hidden personal note',
       visibility: 'private',
       creatorId: other.id,
@@ -262,11 +263,24 @@ test('portable project transfer preserves content, isolates access, validates re
       body: 'Private update must not export',
       createdAt: project.createdAt,
     });
+    const linkedProject = (await sourceContext.store.get<Project>('projects', project.id))!;
+    linkedProject.roadmap!.features[0] = {
+      ...linkedProject.roadmap!.features[0],
+      projectIds: [child.id, outside.id, hidden.id],
+      milestoneIds: [milestoneId],
+      itemIds: [item.id, childItem.id, outsideItem.id, hiddenItemId],
+    };
+    await sourceContext.store.put('projects', linkedProject);
     const sourceUpdates = (await src('GET', `/projects/${project.id}/updates`)).json().data;
     const exported = await src('GET', `/projects/${project.id}/export`);
     assert.equal(exported.statusCode, 200, exported.body);
     assert.match(String(exported.headers['content-disposition']), /trestl-project.json/);
     const pack = exported.json();
+    const linkedFeature = pack.projects.find((p: Project) => p.id === project.id).roadmap
+      .features[0];
+    assert.deepEqual(linkedFeature.projectIds, [child.id]);
+    assert.deepEqual(linkedFeature.milestoneIds, [milestoneId]);
+    assert.deepEqual(linkedFeature.itemIds, [item.id, childItem.id]);
     assert.equal(pack.projects.length, 2);
     assert.equal(pack.items.length, 3);
     assert.equal(pack.projectUpdates.length, 3);
@@ -375,6 +389,9 @@ test('portable project transfer preserves content, isolates access, validates re
       'Launch',
     );
     const newChildItem = newItems.find((i) => i.title === childItem.title)!;
+    assert.deepEqual(newRoot.roadmap?.features[0].projectIds, [newChild.id]);
+    assert.deepEqual(newRoot.roadmap?.features[0].milestoneIds, [linkedMilestone.id]);
+    assert.deepEqual(newRoot.roadmap?.features[0].itemIds, [newItem.id, newChildItem.id]);
     assert.equal(newChildItem.description, importedReference);
     assert(
       (await destContext.store.list<Activity>('activity')).some(
@@ -468,6 +485,24 @@ test('portable project transfer preserves content, isolates access, validates re
       badPackages.push(p);
     };
     change((p) => (p.items[0].milestoneId = randomUUID()));
+    change(
+      (p) =>
+        (p.projects.find((project: Project) => project.roadmap).roadmap.features[0].projectIds = [
+          randomUUID(),
+        ]),
+    );
+    change(
+      (p) =>
+        (p.projects.find((project: Project) => project.roadmap).roadmap.features[0].milestoneIds = [
+          randomUUID(),
+        ]),
+    );
+    change(
+      (p) =>
+        (p.projects.find((project: Project) => project.roadmap).roadmap.features[0].itemIds = [
+          randomUUID(),
+        ]),
+    );
     change(
       (p) => (p.items.find((i: WorkItem) => i.projectId === project.id).milestoneId = milestoneId),
     );

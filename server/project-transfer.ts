@@ -19,6 +19,7 @@ import type {
 import type { ProjectImportPreview, ProjectImportResult } from '../shared/project-transfer.ts';
 import { sameWorkspace, workspaceOf, workspaceMembers } from './workspaces.ts';
 import { nextItemIdentifier } from './item-identifiers.ts';
+import { filterRoadmapReferences } from './roadmap.ts';
 import {
   projectPackage,
   importOptions,
@@ -97,6 +98,14 @@ export function registerProjectTransfer(
       const milestones = (await s.list<Milestone>('milestones')).filter((m) =>
         selected.has(m.projectId),
       );
+      const exportedAccess = {
+        projectIds: selected,
+        itemIds,
+        milestoneIds: new Set(milestones.map((m) => m.id)),
+      };
+      for (const project of projects)
+        if (project.roadmap)
+          project.roadmap = filterRoadmapReferences(project.roadmap, exportedAccess);
       const members = await workspaceMembers(s, workspaceOf(user));
       const names = new Map(members.map((m) => [m.id, m.name]));
       const name = (userId: string) => names.get(userId) ?? 'Former member';
@@ -335,7 +344,17 @@ export function registerProjectTransfer(
                   roadmap: {
                     ...p.roadmap,
                     revision: 1,
-                    features: p.roadmap.features.map((f) => ({ ...f, id: id() })),
+                    features: p.roadmap.features.map((f) => ({
+                      ...f,
+                      id: id(),
+                      ...(f.projectIds
+                        ? { projectIds: f.projectIds.map((id) => projectIds.get(id)!) }
+                        : {}),
+                      ...(f.milestoneIds
+                        ? { milestoneIds: f.milestoneIds.map((id) => milestoneIds.get(id)!) }
+                        : {}),
+                      ...(f.itemIds ? { itemIds: f.itemIds.map((id) => itemIds.get(id)!) } : {}),
+                    })),
                   },
                 }
               : {}),

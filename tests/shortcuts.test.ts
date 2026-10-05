@@ -33,6 +33,13 @@ test('navigation sequences win over item actions and expire after one second', (
   matcher.match(key('g'), ids, true, 1000);
   assert.deepEqual(matcher.match(key('i'), ids, true, 2001), { id: 'assignMe' });
 });
+
+test('Home has a navigation chord alongside Inbox and My work', () => {
+  const matcher = new ShortcutMatcher();
+  const ids: ShortcutId[] = ['home', 'inbox', 'myWork'];
+  assert.deepEqual(matcher.match(key('g'), ids, true, 0), { prefix: 'g' });
+  assert.deepEqual(matcher.match(key('h'), ids, true, 100), { id: 'home' });
+});
 test('canceling or changing context cannot carry a navigation prefix into an item action', () => {
   const matcher = new ShortcutMatcher();
   matcher.match(key('g'), ['inbox'], true, 0);

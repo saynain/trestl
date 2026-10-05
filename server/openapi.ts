@@ -61,6 +61,9 @@ const schemas: Record<string, unknown> = {
       scope: { ...string, maxLength: 10000 },
       rationale: { ...string, maxLength: 500 },
       targetDate: date,
+      projectIds: { type: 'array', items: uuid, maxItems: 100, uniqueItems: true },
+      milestoneIds: { type: 'array', items: uuid, maxItems: 100, uniqueItems: true },
+      itemIds: { type: 'array', items: uuid, maxItems: 100, uniqueItems: true },
     },
   },
   Roadmap: {
@@ -375,6 +378,7 @@ function operation(
     created?: boolean;
     noContent?: boolean;
     optionalBody?: boolean;
+    notModified?: boolean;
     parameters?: unknown[];
     description?: string;
   } = {},
@@ -417,8 +421,26 @@ function operation(
     responses: {
       [code]: {
         description: 'Success',
+        ...(options.notModified
+          ? {
+              headers: {
+                ETag: {
+                  schema: string,
+                  description: 'Opaque bootstrap revision for a subsequent conditional read.',
+                },
+              },
+            }
+          : {}),
         ...(!options.noContent ? { content: { 'application/json': { schema: response } } } : {}),
       },
+      ...(options.notModified
+        ? {
+            304: {
+              description: 'Authenticated data is unchanged; no response body.',
+              headers: { ETag: { schema: string } },
+            },
+          }
+        : {}),
       ...errorResponses,
     },
   };
@@ -507,8 +529,13 @@ operation(
 operation(
   '/bootstrap',
   'get',
-  'Load the current user and all accessible planning data',
+  'Load accessible planning data; send the returned ETag as If-None-Match for a bodyless 304 when unchanged',
   ref('Bootstrap'),
+  undefined,
+  {
+    notModified: true,
+    parameters: [{ name: 'If-None-Match', in: 'header', required: false, schema: string }],
+  },
 );
 operation(
   '/projects/{id}/roadmap',
@@ -629,6 +656,15 @@ for (const [path, schema, omit, required] of resources) {
               maximum: 2147483646,
               description: 'Optional compare-and-set revision; stale updates return 409.',
             },
+            ...(path === 'items'
+              ? {
+                  undoCompletion: {
+                    type: 'boolean',
+                    description:
+                      'Explicit completion Undo. Requires expectedRevision and a status other than done. Cancels only an untouched, unreferenced recurring successor; ordinary reopening preserves it. This command flag is never stored on the item.',
+                  },
+                }
+              : {}),
           },
         }
       : writable(schema, [...omit]),
@@ -651,6 +687,34 @@ for (const [path, schema, omit, required] of resources) {
     { noContent: true, ...(path === 'items' ? { optionalBody: true } : {}) },
   );
 }
+operation(
+  '/items/batch',
+  'post',
+  'Atomically reorder, change statuses, or reparent work items; stale revisions return 409 without applying any updates',
+  list('WorkItem'),
+  object(
+    {
+      updates: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 1000,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            id: uuid,
+            expectedRevision: { type: 'integer', minimum: 0, maximum: 2147483646 },
+            status,
+            position: { type: 'number' },
+            parentId: { ...uuid, nullable: true },
+          },
+          required: ['id', 'expectedRevision'],
+        },
+      },
+    },
+    ['updates'],
+  ),
+);
 operation(
   '/items/{id}/comments',
   'post',

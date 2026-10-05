@@ -140,11 +140,15 @@ export function filterWorkItems(
 ) {
   const parents = new Set(hierarchyItems.map((item) => item.parentId).filter(Boolean));
   const search = (filters.search || '').trim().toLowerCase();
+  const priorityFilter = (filters.priority || '').split(',').map((value) => value.trim());
+  const validPriorities = priorityFilter.every((value) =>
+    priorities.some((priority) => priority.id === value),
+  );
   return items.filter(
     (item) =>
       (showDone || !!filters.status || !isDone(item)) &&
       (!filters.status || item.status === filters.status) &&
-      (!filters.priority || item.priority === filters.priority) &&
+      (!filters.priority || (validPriorities && priorityFilter.includes(item.priority))) &&
       (!filters.assigneeId ||
         item.assigneeId === (filters.assigneeId === 'me' ? userId : filters.assigneeId)) &&
       (!filters.type || item.type === filters.type) &&

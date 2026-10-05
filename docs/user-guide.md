@@ -166,3 +166,16 @@ An administrator sets `CONFLUENCE_ALLOWED_ORIGINS` to a comma-separated list of 
 - **Data Center:** application URL including any context path such as `/confluence`, and a personal access token.
 
 Search and page previews call Confluence using that user's credentials, so the provider enforces their page permissions. Credentials are not shared between workspace members, and page content is not stored as a shared cache. Search returns up to 25 results; previews show up to 3,000 characters of plain text and a link to the original page. Refine the search to narrow larger result sets. These connections support reading and linking pages; Confluence editing, OAuth/SSO connections, and paginated search are not implemented. See Atlassian's [Cloud search API](https://developer.atlassian.com/cloud/confluence/rest/v1/api-group-search/) and [Data Center access tokens](https://confluence.atlassian.com/enterprise/using-personal-access-tokens-1026032365.html).
+
+
+## Daily planning and reliable saves
+
+Home separates deadlines and review dates that need attention from continuing work. Add a few items to Today for your personal plan; the selection is scoped to your account, installation, and day. Tasks use a due date, while follow-ups and someday captures use a review date. Completion and postponement offer Undo. Capture feedback provides Open and Undo so you can immediately find or retract the new item. Use `g h` to return Home and `j`/`k` to move between its items.
+
+New-item, item-edit, and comment drafts recover when you reopen the form in the same browser. Item saves check the revision you edited. If someone changed the item, load the latest version, compare it with your retained draft, and explicitly reapply or discard the draft. Board moves and bulk parent changes commit together.
+
+## Review evidence and roadmap delivery
+
+Weekly review shows visible work completed since the latest update (or the last seven days), overdue and upcoming work, unresolved dependencies, and overdue milestones. Expand the evidence to open the underlying work. Draft from evidence prepares editable update text; project health remains your explicit choice.
+
+Roadmap features can link projects, milestones, and individual work items. Delivery progress and risks are calculated from the linked work you can access. These links do not replace the feature's editorial status. Export/import preserves links within the exported project tree; links to work outside the package are omitted.

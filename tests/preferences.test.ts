@@ -7,7 +7,7 @@ test('UI preferences persist independently for each profile and tolerate unavail
   const values = new Map<string, string>();
   const user = { id: 'one', role: 'admin' as const };
   const other = { id: 'two', role: 'admin' as const };
-  const defaults = { itemLayout: 'side-panel', zenMode: false };
+  const defaults = { itemLayout: 'side-panel', zenMode: false, favorites: [] };
   try {
     Object.defineProperty(globalThis, 'localStorage', {
       configurable: true,
@@ -17,8 +17,12 @@ test('UI preferences persist independently for each profile and tolerate unavail
       },
     });
     assert.deepEqual(readUiPreferences(user), defaults);
-    saveUiPreferences(user, { itemLayout: 'centered', zenMode: true });
-    assert.deepEqual(readUiPreferences(user), { itemLayout: 'centered', zenMode: true });
+    saveUiPreferences(user, { itemLayout: 'centered', zenMode: true, favorites: [] });
+    assert.deepEqual(readUiPreferences(user), {
+      itemLayout: 'centered',
+      zenMode: true,
+      favorites: [],
+    });
     assert.deepEqual(readUiPreferences(other), defaults);
     values.set('trestl.ui.v1.one', '{broken');
     assert.deepEqual(readUiPreferences(user), defaults);
@@ -30,7 +34,9 @@ test('UI preferences persist independently for each profile and tolerate unavail
         throw new Error('Storage blocked');
       },
     });
-    assert.doesNotThrow(() => saveUiPreferences(user, { itemLayout: 'centered', zenMode: true }));
+    assert.doesNotThrow(() =>
+      saveUiPreferences(user, { itemLayout: 'centered', zenMode: true, favorites: [] }),
+    );
     assert.deepEqual(readUiPreferences(user), defaults);
   } finally {
     if (original) Object.defineProperty(globalThis, 'localStorage', original);

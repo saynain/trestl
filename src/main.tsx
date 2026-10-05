@@ -6,6 +6,7 @@ import { KeyboardProvider } from './lib/keyboard';
 import '@fontsource-variable/inter';
 import '@fontsource-variable/inter/wght-italic.css';
 import './styles.css';
+import './components/navigation.css';
 import './lib/themes/themes.css';
 import './desktop.css';
 (window as Window & { EXCALIDRAW_ASSET_PATH?: string }).EXCALIDRAW_ASSET_PATH =

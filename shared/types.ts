@@ -61,6 +61,10 @@ export interface ProjectUpdate {
 }
 export type RoadmapHorizon = 'current' | 'next' | 'future' | 'deferred';
 export interface RoadmapFeature {
+  /** Optional delivery references; omitted for editorial-only and older roadmaps. */
+  projectIds?: string[];
+  milestoneIds?: string[];
+  itemIds?: string[];
   id: string;
   title: string;
   summary: string;

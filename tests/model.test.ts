@@ -66,6 +66,27 @@ test('saved editable filters can be changed and cleared without retaining an ups
   assert.equal(filterWorkItems(scoped, user.id, {}).length, 2);
 });
 
+test('combined high-priority views include urgent while exact filters retain their meaning', () => {
+  const items = [
+    item('urgent', { priority: 'urgent' }),
+    item('high', { priority: 'high' }),
+    item('low', { priority: 'low' }),
+  ];
+  assert.deepEqual(
+    filterWorkItems(items, user.id, { priority: 'high,urgent' }).map((item) => item.id),
+    ['urgent', 'high'],
+  );
+  assert.deepEqual(
+    filterWorkItems(items, user.id, { priority: 'high' }).map((item) => item.id),
+    ['high'],
+  );
+  assert.deepEqual(
+    filterWorkItems(items, user.id, { priority: 'urgent' }).map((item) => item.id),
+    ['urgent'],
+  );
+  assert.deepEqual(filterWorkItems(items, user.id, { priority: 'high,unknown' }), []);
+});
+
 test('My work and Inbox retain completed records for the display toggle and explicit status filter', () => {
   const data = workspace([
     item('active'),

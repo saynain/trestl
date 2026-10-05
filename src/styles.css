@@ -1764,6 +1764,18 @@ textarea::placeholder {
   font-size: var(--text-sm);
   white-space: nowrap;
   color: var(--muted);
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  column-gap: 5px;
+  align-items: center;
+}
+.lifecycle-badge strong {
+  font-weight: 500;
+  color: var(--text);
+}
+.lifecycle-badge small {
+  grid-column: 2;
+  font-size: inherit;
 }
 .lifecycle-badge .tiny-dot {
   height: 5px;
@@ -2557,8 +2569,8 @@ textarea::placeholder {
     gap: 5px;
   }
   .page-heading {
-    padding: 25px 20px 22px;
-    gap: 12px;
+    padding: 18px 16px 16px;
+    gap: 10px;
   }
   .page-title-block h1 {
     font-size: 22px;
@@ -2566,7 +2578,7 @@ textarea::placeholder {
   }
   .page-title-block > p {
     font-size: var(--text-ui);
-    line-height: 1.8;
+    line-height: 1.55;
     max-width: 100%;
   }
   .page-project-icon {
@@ -2621,6 +2633,15 @@ textarea::placeholder {
   .work-toolbar .button {
     font-size: var(--text-ui);
     padding: 5px 8px;
+  }
+  .selection-toggle > span,
+  .board-customize-button > span {
+    display: none;
+  }
+  .work-toolbar .selection-toggle,
+  .work-toolbar .board-customize-button {
+    padding: 5px 7px;
+    min-width: 29px;
   }
   .group-select {
     font-size: var(--text-ui);
