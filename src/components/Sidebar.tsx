@@ -14,6 +14,8 @@ import {
   ChevronsUpDown,
   LogOut,
   UserRound,
+  Users,
+  Activity,
 } from 'lucide-react';
 import { useApp } from '../lib/context';
 import { navigate, type Route, isDone } from '../lib/model';
@@ -172,6 +174,14 @@ export default function Sidebar({
             <FolderOpen size={18} />
             <span>Projects</span>
           </button>
+          <button
+            className={`nav-item ${route.page === 'people' ? 'active' : ''}`}
+            aria-current={route.page === 'people' ? 'page' : undefined}
+            onClick={() => go('people')}
+          >
+            <Users size={18} />
+            <span>People</span>
+          </button>
         </nav>
         <div className="sidebar-scroll">
           <div className="nav-section-title">
@@ -265,6 +275,16 @@ export default function Sidebar({
                 >
                   <UserRound size={16} />
                   Account settings
+                </button>
+                <button
+                  className="nav-item"
+                  onClick={() => {
+                    setAccountMenu(false);
+                    go('people', data.user.id);
+                  }}
+                >
+                  <Activity size={16} />
+                  My activity
                 </button>
                 <button className="nav-item" disabled={signingOut} onClick={() => void signOut()}>
                   <LogOut size={16} />

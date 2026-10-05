@@ -338,6 +338,7 @@ export function registerProjectTransfer(
             workspaceId,
             parentId: p.parentId ? projectIds.get(p.parentId)! : null,
             ownerId: user.id,
+            creationActorId: null,
             memberIds: [],
             ...(p.roadmap
               ? {
@@ -374,6 +375,7 @@ export function registerProjectTransfer(
             parentId: item.parentId ? itemIds.get(item.parentId)! : null,
             milestoneId: item.milestoneId ? milestoneIds.get(item.milestoneId)! : null,
             creatorId: user.id,
+            creationActorId: null,
             assigneeId: item.assigneeId ? (body.options.assignees[item.assigneeId] ?? null) : null,
             importedFrom: item.importedFrom ?? {
               authorName: namesById.get(item.creatorId)!,

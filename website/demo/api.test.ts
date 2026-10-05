@@ -8,8 +8,37 @@ import type {
   ProjectCanvas,
   Project,
   CanvasCollection,
+  ActivityHeatmap,
 } from '../../shared/types';
 const write = (method: string, body: unknown) => ({ method, body: JSON.stringify(body) });
+
+test('activity heatmaps aggregate scoped demo history and respond to new comments', async () => {
+  const api = createDemoApi();
+  const year = new Date().getUTCFullYear();
+  const before = await api<ActivityHeatmap>(`/activity/heatmap?year=${year}`);
+  assert.ok(before.total > 0);
+  assert.equal(
+    before.total,
+    before.days.reduce((sum, day) => sum + day.count, 0),
+  );
+  await api('/items/task-1/comments', write('POST', { body: 'Heatmap update' }));
+  const after = await api<ActivityHeatmap>(`/activity/heatmap?year=${year}`);
+  assert.equal(after.total, before.total + 1);
+  const allProject = await api<ActivityHeatmap>(`/activity/heatmap?projectId=studio&year=${year}`);
+  const personalProject = await api<ActivityHeatmap>(
+    `/activity/heatmap?projectId=studio&userId=demo-you&year=${year}`,
+  );
+  assert.ok(allProject.total >= personalProject.total);
+  assert.ok(allProject.total > 0);
+  await assert.rejects(
+    api('/activity/heatmap?userId=missing'),
+    (e: unknown) => e instanceof ApiError && e.status === 404,
+  );
+  await assert.rejects(
+    api('/activity/heatmap?year=bad'),
+    (e: unknown) => e instanceof ApiError && e.status === 400,
+  );
+});
 
 test('the real application gets an authenticated sample workspace and isolated state', async () => {
   const first = createDemoApi(),

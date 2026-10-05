@@ -1,4 +1,6 @@
 import { MilestoneItems, MilestoneProgress } from './MilestoneItems';
+import ActivityHeatmap from './ActivityHeatmap';
+import './people.css';
 import { ProjectUpdates } from './ProjectUpdates';
 import { Select } from './Select';
 import { useState, type FormEvent } from 'react';
@@ -179,6 +181,9 @@ export function Overview({
           <MilestoneItems milestone={milestones.find((m) => m.id === selectedMilestone)!} />
         </Modal>
       )}
+      <div className="overview-activity">
+        <ActivityHeatmap key={project.id} projectId={project.id} />
+      </div>
       <div className="overview-main">
         <ProjectUpdates key={project.id} project={project} />
         <section className="overview-section">

@@ -11,6 +11,7 @@ import type {
   ProjectUpdate,
 } from '../../shared/types';
 import { createDemoState } from './seed';
+import { activityHeatmap } from '../../shared/activity-heatmap';
 
 export class ApiError extends Error {
   constructor(
@@ -50,6 +51,7 @@ export function createDemoApi() {
       undoCompletion: ignoredUndo,
       id: ignoredId,
       workspaceId: ignoredWorkspace,
+      creationActorId: ignoredCreationActor,
       ...changes
     } = body;
     Object.assign(record, changes, { revision: (record.revision ?? 0) + 1 });
@@ -121,6 +123,58 @@ export function createDemoApi() {
         installationName: data.workspace!.name,
       };
     if (url.pathname === '/bootstrap' && method === 'GET') return data;
+    if (url.pathname === '/activity/heatmap' && method === 'GET') {
+      const rawYear = url.searchParams.get('year') || String(new Date().getUTCFullYear());
+      const year = Number(rawYear);
+      if (!/^\d{4}$/.test(rawYear) || year < 1970 || year > new Date().getUTCFullYear())
+        throw new ApiError('Choose a valid activity year.', 400);
+      const projectId = url.searchParams.get('projectId');
+      const userId = url.searchParams.get('userId') || (projectId ? undefined : data.user.id);
+      if (userId) find(data.users, userId);
+      const projectIds = new Set<string>();
+      if (projectId) {
+        find(data.projects, projectId);
+        projectIds.add(projectId);
+        let changed = true;
+        while (changed) {
+          changed = false;
+          for (const project of data.projects)
+            if (
+              project.parentId &&
+              projectIds.has(project.parentId) &&
+              !projectIds.has(project.id)
+            ) {
+              projectIds.add(project.id);
+              changed = true;
+            }
+        }
+      }
+      const linkedItems = new Set(
+        data.projectRelations
+          ?.filter((relation) => projectIds.has(relation.projectId))
+          .map((relation) => relation.itemId),
+      );
+      const items = data.items.filter(
+        (item) =>
+          !projectId ||
+          (!!item.projectId && projectIds.has(item.projectId)) ||
+          linkedItems.has(item.id),
+      );
+      const itemIds = new Set(items.map((item) => item.id));
+      return activityHeatmap(
+        {
+          items,
+          projects: data.projects.filter((project) => !projectId || projectIds.has(project.id)),
+          projectUpdates: (data.projectUpdates || []).filter(
+            (update) => !projectId || projectIds.has(update.projectId),
+          ),
+          activity: state.activity.filter((activity) => itemIds.has(activity.itemId)),
+          users: data.users,
+        },
+        year,
+        { userId },
+      );
+    }
     if (url.pathname === '/export' && method === 'GET')
       return {
         ...data,
@@ -254,6 +308,7 @@ export function createDemoApi() {
           completedAt: null,
           position: data.items.length,
           ...body,
+          creationActorId: data.user.id,
         };
         data.items.push(item);
         if (captureKey) captures.set(captureKey, { body: submittedBody, item: clone(item) });
@@ -341,6 +396,7 @@ export function createDemoApi() {
           ownerId: data.user.id,
           createdAt: now(),
           ...body,
+          creationActorId: data.user.id,
         };
         data.projects.push(project);
         return project;

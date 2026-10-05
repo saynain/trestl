@@ -81,6 +81,9 @@ export async function openDatabase(
   await db.query(
     `CREATE INDEX IF NOT EXISTS entities_workspace ON entities(collection, (COALESCE(data->>'workspaceId','default')))`,
   );
+  await db.query(
+    `CREATE INDEX IF NOT EXISTS activity_item_date ON entities((data->>'itemId'),(data->>'createdAt')) WHERE collection='activity'`,
+  );
   // A database trigger also observes integration writes and direct SQL updates.
   // The counter changes in the writer's transaction, so rolled-back changes
   // never invalidate a successful bootstrap response.

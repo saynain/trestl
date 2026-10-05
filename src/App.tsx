@@ -82,6 +82,7 @@ const ProjectForm = lazy(() => import('./components/ProjectForm'));
 import ProjectAccess from './components/ProjectAccess';
 import { ExportProject, ImportProject } from './components/ProjectTransfer';
 const Settings = lazy(() => import('./components/Settings'));
+const People = lazy(() => import('./components/People'));
 export default function App() {
   const [auth, setAuth] = useState<{
     needsSetup: boolean;
@@ -397,21 +398,23 @@ export default function App() {
   const title =
     project?.name ||
     view?.name ||
-    (route.page === 'notifications'
-      ? 'Notifications'
-      : route.page === 'home'
-        ? 'Home'
-        : route.page === 'projects'
-          ? 'All projects'
-          : route.page === 'my-work'
-            ? 'My work'
-            : route.page === 'settings'
-              ? 'Administration'
-              : route.page === 'account-settings'
-                ? 'Account settings'
-                : route.page === 'inbox'
-                  ? 'Inbox'
-                  : 'Work items');
+    (route.page === 'people'
+      ? 'People'
+      : route.page === 'notifications'
+        ? 'Notifications'
+        : route.page === 'home'
+          ? 'Home'
+          : route.page === 'projects'
+            ? 'All projects'
+            : route.page === 'my-work'
+              ? 'My work'
+              : route.page === 'settings'
+                ? 'Administration'
+                : route.page === 'account-settings'
+                  ? 'Account settings'
+                  : route.page === 'inbox'
+                    ? 'Inbox'
+                    : 'Work items');
   const description =
     route.page === 'projects'
       ? 'A little structure for everything you’re moving forward.'
@@ -568,6 +571,8 @@ export default function App() {
                   section={route.tab}
                   scope={route.page === 'account-settings' ? 'account' : 'workspace'}
                 />
+              ) : route.page === 'people' ? (
+                <People userId={route.id} />
               ) : route.page === 'notifications' ? (
                 <Notifications key={`${data.user.id}:${data.workspace?.id}`} tab={route.tab} />
               ) : route.page === 'home' ? (

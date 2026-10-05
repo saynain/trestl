@@ -83,6 +83,12 @@ const schemas: Record<string, unknown> = {
   Project: {
     type: 'object',
     properties: {
+      creationActorId: {
+        ...nullableString,
+        readOnly: true,
+        description:
+          'Immutable verified local creation actor; absent/null creation is not attributed.',
+      },
       id: uuid,
       workspaceId: { ...string, readOnly: true },
       roadmap: { $ref: '#/components/schemas/Roadmap', readOnly: true },
@@ -132,6 +138,12 @@ const schemas: Record<string, unknown> = {
         minimum: 0,
         readOnly: true,
         description: 'Monotonic revision. Older records without this field have revision 0.',
+      },
+      creationActorId: {
+        ...nullableString,
+        readOnly: true,
+        description:
+          'Immutable verified local creation actor; automatic, imported, or unrecorded creation is not attributed.',
       },
       id: uuid,
       workspaceId: { ...string, readOnly: true },
@@ -273,6 +285,27 @@ schemas.ItemDetail = {
     relations: { type: 'array', items: ref('Relation') },
     projectRelations: { type: 'array', items: ref('ProjectRelation') },
     links: { type: 'array', items: ref('ResourceLink') },
+  },
+};
+schemas.ActivityHeatmap = {
+  type: 'object',
+  required: ['year', 'days', 'total'],
+  properties: {
+    year: { type: 'integer', minimum: 1970 },
+    total: { type: 'integer', minimum: 0 },
+    days: {
+      type: 'array',
+      minItems: 365,
+      maxItems: 366,
+      items: {
+        type: 'object',
+        required: ['date', 'count'],
+        properties: {
+          date: { type: 'string', format: 'date' },
+          count: { type: 'integer', minimum: 0 },
+        },
+      },
+    },
   },
 };
 schemas.ProjectUpdate = {
@@ -538,6 +571,31 @@ operation(
   },
 );
 operation(
+  '/activity/heatmap',
+  'get',
+  'Count visible local activity by UTC calendar day',
+  ref('ActivityHeatmap'),
+  undefined,
+  {
+    description:
+      'Counts project/work item creation with an explicitly recorded immutable local actor, internal item comments/events, and project updates attributed to verified workspace users. Older creation actors are not reconstructed. Automatic recurring creation is excluded. Imported/source actions and future timestamps are excluded. Project scope includes accessible descendants and explicitly linked visible work. User and project filters intersect; with neither filter, the current user is selected. Every date in the requested year is returned, including zero-count future days. Hidden and unknown project/user IDs return 404.',
+    parameters: [
+      { name: 'projectId', in: 'query', required: false, schema: uuid },
+      { name: 'userId', in: 'query', required: false, schema: uuid },
+      {
+        name: 'year',
+        in: 'query',
+        required: false,
+        schema: {
+          type: 'integer',
+          minimum: 1970,
+          description: 'Defaults to the current UTC year; future years are invalid.',
+        },
+      },
+    ],
+  },
+);
+operation(
   '/projects/{id}/roadmap',
   'patch',
   'Replace a project roadmap; stale revisions return 409',
@@ -584,7 +642,12 @@ const idempotencyParameter = {
     'Reuse for retries of the same request. Scoped to user and operation; different input returns 409. Records persist with the database. Replay requires current access to the original item.',
 };
 const resources = [
-  ['projects', 'Project', ['id', 'ownerId', 'createdAt', 'roadmap'], ['key', 'name']],
+  [
+    'projects',
+    'Project',
+    ['id', 'ownerId', 'creationActorId', 'createdAt', 'roadmap'],
+    ['key', 'name'],
+  ],
   [
     'items',
     'WorkItem',
@@ -592,6 +655,7 @@ const resources = [
       'id',
       'identifier',
       'creatorId',
+      'creationActorId',
       'createdAt',
       'updatedAt',
       'completedAt',

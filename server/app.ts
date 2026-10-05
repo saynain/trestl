@@ -4,6 +4,7 @@ import {
   registerCliApproval,
 } from './cli-login.ts';
 import { compareProjectUpdates } from '../shared/project-updates.ts';
+import { activityHeatmap } from '../shared/activity-heatmap.ts';
 import { addMentionRelations } from './mentions.ts';
 import { extractMentions } from '../shared/mentions.ts';
 import { authSettings, configuredProxy, registerAuthSettings } from './auth-settings.ts';
@@ -1006,6 +1007,81 @@ export async function createApp(
       return reply.code(304).send();
     return visibleData(user);
   });
+  app.get('/api/v1/activity/heatmap', async (request, reply) => {
+    const caller = requireUser(request);
+    const current = new Date(now());
+    const input = z
+      .object({
+        projectId: z.uuid().optional(),
+        userId: z.uuid().optional(),
+        year: z.coerce
+          .number()
+          .int()
+          .min(1970)
+          .max(current.getUTCFullYear())
+          .default(current.getUTCFullYear()),
+      })
+      .strict()
+      .parse(request.query);
+    const visible = await visibleData(caller);
+    const userId = input.userId ?? (input.projectId ? undefined : caller.id);
+    if (userId && !visible.users.some((user) => user.id === userId)) fail(404, 'User not found');
+    let projects = visible.projects;
+    let items = visible.items;
+    if (input.projectId) {
+      if (!projects.some((project) => project.id === input.projectId))
+        fail(404, 'Project not found');
+      const children = new Map<string, string[]>();
+      for (const project of projects) {
+        if (!project.parentId) continue;
+        const siblings = children.get(project.parentId) ?? [];
+        siblings.push(project.id);
+        children.set(project.parentId, siblings);
+      }
+      const projectIds = new Set<string>();
+      const pending = [input.projectId];
+      for (let index = 0; index < pending.length; index++) {
+        const projectId = pending[index];
+        if (projectIds.has(projectId)) continue;
+        projectIds.add(projectId);
+        pending.push(...(children.get(projectId) ?? []));
+      }
+      const linkedItems = new Set(
+        visible.projectRelations
+          .filter((relation) => projectIds.has(relation.projectId))
+          .map((relation) => relation.itemId),
+      );
+      projects = projects.filter((project) => projectIds.has(project.id));
+      items = items.filter(
+        (item) => (item.projectId && projectIds.has(item.projectId)) || linkedItems.has(item.id),
+      );
+    }
+    // Only fetch activity owned by visible scoped items, within a bounded date
+    // window. A one-day margin allows offset timestamps crossing UTC year/day
+    // boundaries; the shared aggregator performs the exact UTC/time cutoff.
+    const lower = new Date(Date.UTC(input.year, 0, 0)).toISOString().slice(0, 10);
+    const upper = new Date(
+      Math.min(Date.UTC(input.year + 1, 0, 2), current.getTime() + 2 * 86400000),
+    )
+      .toISOString()
+      .slice(0, 10);
+    const activity = items.length
+      ? (
+          await store.query<{ data: Activity }>(
+            `SELECT data FROM entities WHERE collection='activity'
+       AND data->>'itemId'=ANY($1::text[]) AND data->>'createdAt'>=$2 AND data->>'createdAt'<$3
+       AND ($4::text IS NULL OR data->>'userId'=$4)
+       AND data->>'source' IS NULL AND data->>'importedFrom' IS NULL`,
+            [items.map((item) => item.id), lower, upper, userId ?? null],
+          )
+        ).rows.map((row) => row.data)
+      : [];
+    reply.header('Cache-Control', 'private, no-cache').header('Vary', 'Cookie, Authorization');
+    return activityHeatmap({ ...visible, projects, items, activity }, input.year, {
+      userId,
+      now: current,
+    });
+  });
   app.get('/api/v1/notifications', async (request) => ({
     data: (await visibleData(requireUser(request))).notifications,
   }));
@@ -1117,6 +1193,7 @@ export async function createApp(
         dueDate: null,
         visibility: 'workspace',
         ownerId: u.id,
+        creationActorId: u.id,
         workspaceId: workspaceOf(u),
         createdAt: now(),
         ...input,
@@ -1404,6 +1481,7 @@ export async function createApp(
         labels: [],
         visibility: 'workspace',
         creatorId: u.id,
+        creationActorId: u.id,
         workspaceId: workspaceOf(u),
         createdAt: stamp,
         updatedAt: stamp,
@@ -1578,6 +1656,7 @@ export async function createApp(
         const { source: _source, externalUrl: _externalUrl, ...nativeItem } = item;
         const next = {
           ...nativeItem,
+          creationActorId: null,
           // Keep historical ownership, but do not assign new recurring work to disabled accounts.
           assigneeId:
             item.assigneeId &&

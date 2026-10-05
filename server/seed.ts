@@ -114,8 +114,10 @@ export async function seedDemo(store: Store, user: User, db: Database) {
   projects[2].parentId = projects[0].id;
   projects[3].parentId = projects[0].id;
   projects[0].roadmap = demoRoadmap(date(0));
-  for (const project of projects) {
+  for (const [index, project] of projects.entries()) {
     project.workspaceId = workspaceOf(user);
+    project.creationActorId = user.id;
+    project.createdAt = new Date(today.getTime() - (330 - index * 15) * 86400000).toISOString();
     await store.put('projects', project);
   }
   const entries: Array<
@@ -213,6 +215,7 @@ export async function seedDemo(store: Store, user: User, db: Database) {
   for (const [projectIndex, title, status, priority, type, days, labels] of entries) {
     const project = projects[projectIndex];
     sequence++;
+    const creationAge = 245 - sequence * 11;
     const item: WorkItem = {
       id: randomUUID(),
       identifier: await nextItemIdentifier(db, project.id, workspaceOf(user)),
@@ -232,12 +235,40 @@ export async function seedDemo(store: Store, user: User, db: Database) {
       labels,
       visibility: 'workspace',
       creatorId: user.id,
-      createdAt: new Date(today.getTime() - sequence * 3600000).toISOString(),
+      creationActorId: user.id,
+      createdAt: new Date(today.getTime() - creationAge * 86400000).toISOString(),
       updatedAt: today.toISOString(),
       completedAt: status === 'done' ? today.toISOString() : null,
       position: sequence,
     };
     seededItems.push(await store.put('items', item));
+    const notes = [
+      'Reviewed scope and confirmed the next delivery steps.',
+      'Added validation notes and questions for the next planning session.',
+      'Checked the delivery checklist with the service owners.',
+      'Recorded feedback before the next review.',
+    ];
+    // Deterministic example history spans recent months. Every comment follows
+    // this item's creation and precedes the current snapshot shown in the demo.
+    for (let review = 0; review < 7; review++) {
+      const age = Math.round((creationAge * (7 - review)) / 8);
+      await store.put('activity', {
+        id: randomUUID(),
+        itemId: item.id,
+        userId: user.id,
+        kind: 'comment',
+        body: notes[(sequence + review) % notes.length],
+        createdAt: new Date(today.getTime() - age * 86400000).toISOString(),
+      });
+    }
+    await store.put('activity', {
+      id: randomUUID(),
+      itemId: item.id,
+      userId: user.id,
+      kind: 'event',
+      body: `status: ${status}`,
+      createdAt: today.toISOString(),
+    });
     if (sequence === 1)
       await store.put('activity', {
         id: randomUUID(),
@@ -358,6 +389,7 @@ export async function seedDemo(store: Store, user: User, db: Database) {
       labels: [],
       visibility: 'private',
       creatorId: user.id,
+      creationActorId: user.id,
       createdAt: today.toISOString(),
       updatedAt: today.toISOString(),
       completedAt: null,

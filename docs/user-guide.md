@@ -8,6 +8,12 @@ Open the workspace picker below the Trestl logo in the top-left corner and choos
 
 Projects, tasks, workspace members, exports, and repository connections are isolated between workspaces, including through the API. **Settings → Members** still adds collaborators to the current workspace. Existing installations retain their original workspace and data; creating a new profile does not seed or copy example projects.
 
+## Activity calendars
+
+Each project's **Overview** includes a GitHub-style activity calendar. **People** in the sidebar shows the same calendar for a workspace member; **My activity** in the account menu opens your own. Choose a year, then hover, focus, or select a day to see its count. On small screens, scroll the calendar horizontally.
+
+Activity counts verified work-item and project creation, work-item changes and comments, and project updates. Dates use UTC. Project totals include accessible subprojects and explicitly linked work; user totals cover the current workspace. Counts include only work the viewer can access, so different people may see different totals. Imported history, external-service authors, and automatically generated task creations are excluded from local user attribution. The calendar reflects retained records: deleting work removes its activity, and older creations without a verified actor or project/canvas edits without recorded events are not reconstructed.
+
 ## Gantt schedules and dependencies
 
 Open a project's **Gantt** tab to plan work with start and due dates, drag or resize bars, inspect milestones, and schedule undated items. **Fit** brings the schedule into view; **Completed** includes finished work. Click a bar or dependency badge to edit dates and inspect linked tasks. **Manage relationships** opens the task detail, where **Relationships → Blocks** adds a dependency.

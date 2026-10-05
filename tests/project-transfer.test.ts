@@ -347,6 +347,12 @@ test('portable project transfer preserves content, isolates access, validates re
     const newRoot = projects.find((p) => p.id === imported.projectId)!;
     const newChild = projects.find((p) => p.parentId === newRoot.id)!;
     assert.equal(newRoot.ownerId, dstUser.id);
+    assert.equal(
+      newRoot.creationActorId,
+      null,
+      'Import ownership must not claim historical creation credit',
+    );
+    assert.equal(newChild.creationActorId, null);
     assert.deepEqual(newRoot.memberIds, []);
     assert.equal(newRoot.roadmap?.features[0].title, 'Release');
     assert.notEqual(
@@ -376,6 +382,14 @@ test('portable project transfer preserves content, isolates access, validates re
     assert.notEqual(newRoot.id, project.id);
     const newItems = await destContext.store.list<WorkItem>('items');
     assert.equal(newItems.length, 3);
+    assert.ok(newItems.every((item) => item.creationActorId === null));
+    const importedHeatmap = await dst('GET', `/activity/heatmap?projectId=${newRoot.id}`);
+    assert.equal(importedHeatmap.statusCode, 200, importedHeatmap.body);
+    assert.equal(
+      importedHeatmap.json().total,
+      0,
+      'Imported history is provenance, never verified importer activity',
+    );
     const newItem = newItems.find((i) => i.title === item.title)!;
     const linkedMilestone = (await dst('GET', '/milestones')).json().data[0];
     assert.notEqual(linkedMilestone.id, milestoneId);
