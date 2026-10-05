@@ -42,6 +42,7 @@ import { useApp } from '../lib/context';
 import {
   clearDraft,
   draftKey,
+  draftTextChanges,
   isRetryIntent,
   hasDraftChanges,
   type DraftText,
@@ -476,17 +477,30 @@ export default function ItemDetail({
   }
   function finishEditing() {
     clearDraft(editKey);
+    setConflict(null);
+    setError('');
     setEditing(false);
+  }
+  async function saveTextEdit() {
+    if (!title.trim() || descriptionUploading || saving) return;
+    const changes = draftTextChanges({ title, description }, editBase.current);
+    if (!Object.keys(changes).length || (await update(changes, editRevision))) finishEditing();
   }
   async function reapplyChanges() {
     if (!conflict || saving) return;
     const textConflict =
       editing && (conflict.title !== undefined || conflict.description !== undefined);
-    const changes = textConflict ? { ...conflict, title: title.trim(), description } : conflict;
+    const changes = textConflict
+      ? draftTextChanges({ title, description }, editBase.current)
+      : conflict;
     if (textConflict && (!title.trim() || descriptionUploading)) return;
     try {
       const latest = await reload();
       applyItems([latest.item]);
+      if (textConflict && !Object.keys(changes).length) {
+        finishEditing();
+        return;
+      }
       if (await update(changes, latest.item.revision ?? 0)) {
         if (textConflict) finishEditing();
       }
@@ -711,12 +725,7 @@ export default function ItemDetail({
                 }}
                 onSubmit={async (e) => {
                   e.preventDefault();
-                  if (
-                    title.trim() &&
-                    !descriptionUploading &&
-                    (await update({ title: title.trim(), description }, editRevision))
-                  )
-                    finishEditing();
+                  await saveTextEdit();
                 }}
               >
                 <fieldset

@@ -65,3 +65,11 @@ export interface DraftText {
 export function hasDraftChanges(current: DraftText, base: DraftText): boolean {
   return current.title !== base.title || current.description !== base.description;
 }
+
+/** Preserve other writers' fields when saving or reapplying a text draft. */
+export function draftTextChanges(current: DraftText, base: DraftText): Partial<DraftText> {
+  const changes: Partial<DraftText> = {};
+  if (current.title.trim() !== base.title) changes.title = current.title.trim();
+  if (current.description !== base.description) changes.description = current.description;
+  return changes;
+}

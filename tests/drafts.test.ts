@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   clearDraft,
   draftKey,
+  draftTextChanges,
   hasDraftChanges,
   isRetryIntent,
   readDraft,
@@ -101,4 +102,21 @@ test('disabled browser storage does not prevent editing or saving', () => {
     if (original) Object.defineProperty(globalThis, 'localStorage', original);
     else Reflect.deleteProperty(globalThis, 'localStorage');
   }
+});
+
+test('reapplying a draft preserves independently updated fields and uses current editor text', () => {
+  const base = { title: 'Rollout', description: 'Original plan' };
+  const latest = { title: 'Rollout', description: 'Another writer’s plan' };
+  const changes = draftTextChanges(
+    { title: ' Revised rollout ', description: base.description },
+    base,
+  );
+  assert.deepEqual(
+    { ...latest, ...changes },
+    { title: 'Revised rollout', description: latest.description },
+  );
+  assert.deepEqual(draftTextChanges({ ...base, description: 'My plan' }, base), {
+    description: 'My plan',
+  });
+  assert.deepEqual(draftTextChanges(base, base), {});
 });
