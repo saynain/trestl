@@ -13,9 +13,22 @@ export interface BoardPreferences {
   showDone: boolean;
   collapseSubtasks: boolean;
 }
+/** Board columns follow the workflow left to right, unlike the shared status order. */
+export const boardStatusOrder: Status[] = [
+  'backlog',
+  'todo',
+  'in_progress',
+  'in_review',
+  'done',
+  'canceled',
+];
 export function defaultBoardPreferences(showDone = false): BoardPreferences {
   return {
-    columns: statuses.map(({ id, name }) => ({ id, name, hidden: false })),
+    columns: boardStatusOrder.map((id) => ({
+      id,
+      name: statuses.find((status) => status.id === id)!.name,
+      hidden: false,
+    })),
     compact: false,
     showLabels: true,
     showDone,

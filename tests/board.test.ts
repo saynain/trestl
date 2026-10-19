@@ -35,16 +35,55 @@ test('board settings validate saved views and recover missing, duplicate, and un
   assert.equal(new Set(parsed.columns.map((entry) => entry.id)).size, 6);
 });
 
+test('board columns default to workflow order and keep saved orders', () => {
+  const workflow = ['backlog', 'todo', 'in_progress', 'in_review', 'done', 'canceled'];
+  assert.deepEqual(
+    defaultBoardPreferences().columns.map((column) => column.id),
+    workflow,
+  );
+  assert.deepEqual(
+    defaultBoardPreferences().columns.map((column) => column.name),
+    ['Backlog', 'Todo', 'In progress', 'In review', 'Done', 'Canceled'],
+  );
+  assert.deepEqual(
+    parseBoardPreferences(null).columns.map((column) => column.id),
+    workflow,
+  );
+  const saved = parseBoardPreferences(
+    JSON.stringify({
+      columns: [
+        { id: 'in_progress', name: 'In progress' },
+        { id: 'todo', name: 'Todo' },
+        { id: 'in_review', name: 'In review' },
+        { id: 'backlog', name: 'Backlog' },
+        { id: 'done', name: 'Done' },
+        { id: 'canceled', name: 'Canceled' },
+      ],
+    }),
+  );
+  assert.deepEqual(
+    saved.columns.map((column) => column.id),
+    ['in_progress', 'todo', 'in_review', 'backlog', 'done', 'canceled'],
+  );
+  const partial = parseBoardPreferences(
+    JSON.stringify({ columns: [{ id: 'done', name: 'Shipped' }, { id: 'todo' }] }),
+  );
+  assert.deepEqual(
+    partial.columns.map((column) => column.id),
+    ['done', 'todo', 'backlog', 'in_progress', 'in_review', 'canceled'],
+  );
+});
+
 test('column ordering moves both directions without losing names or visibility', () => {
   const columns = defaultBoardPreferences().columns;
   columns[0].name = 'Working';
   columns[0].hidden = true;
-  const moved = moveColumn(columns, 'in_progress', 'backlog');
+  const moved = moveColumn(columns, 'backlog', 'in_review');
   assert.deepEqual(
     moved.map((column) => column.id),
-    ['todo', 'in_review', 'backlog', 'in_progress', 'done', 'canceled'],
+    ['todo', 'in_progress', 'in_review', 'backlog', 'done', 'canceled'],
   );
-  assert.deepEqual(moveColumn(moved, 'in_progress', 'todo'), columns);
+  assert.deepEqual(moveColumn(moved, 'backlog', 'todo'), columns);
   assert.equal(moveColumn(columns, 'missing', 'todo'), columns);
 });
 
