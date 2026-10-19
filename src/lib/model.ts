@@ -96,6 +96,19 @@ export function readRoute(): Route {
     itemId: page === 'item' ? id : query.get('item') || undefined,
   };
 }
+/** A work item's own page, used when items open as a full page. */
+export function itemPageHash(itemId: string, activityId?: string) {
+  return `#/item/${itemId}${activityId ? `?${new URLSearchParams({ activity: activityId })}` : ''}`;
+}
+/** The location to return to from a full-page item: the hash without its open item, or null on an item page. */
+export function hashWithoutItem(hash: string) {
+  const [path, search] = hash.replace(/^#\/?/, '').split('?');
+  if (path.split('/')[0] === 'item') return null;
+  const query = new URLSearchParams(search || '');
+  query.delete('item');
+  query.delete('activity');
+  return `#/${path}${query.size ? `?${query}` : ''}`;
+}
 export function navigate(page: string, id?: string, tab = 'list', itemId?: string) {
   const params = new URLSearchParams();
   if (tab !== 'list' || page === 'view') params.set('tab', tab);

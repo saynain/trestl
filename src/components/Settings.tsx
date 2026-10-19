@@ -25,6 +25,7 @@ import { useApp } from '../lib/context';
 import { api, patch, post, remove } from '../lib/api';
 import { Avatar } from './ui';
 import { navigate } from '../lib/model';
+import type { ItemLayout } from '../lib/preferences';
 import './settings.css';
 import GitSettings, { type GitConnection } from './GitSettings';
 import AppearanceSettings from './AppearanceSettings';
@@ -186,15 +187,18 @@ export default function Settings({
                       label: 'Centered box',
                       description: 'Open in the middle of the screen.',
                     },
+                    {
+                      id: 'page',
+                      label: 'Full page',
+                      description: 'Open as its own page, with a link back.',
+                    },
                   ].map(({ id, label, description }) => (
                     <button
                       key={id}
                       type="button"
                       aria-pressed={uiPreferences.itemLayout === id}
                       className={`settings-layout-option ${uiPreferences.itemLayout === id ? 'selected' : ''}`}
-                      onClick={() =>
-                        updateUiPreferences({ itemLayout: id as 'side-panel' | 'centered' })
-                      }
+                      onClick={() => updateUiPreferences({ itemLayout: id as ItemLayout })}
                     >
                       <strong>{label}</strong>
                       <span>{description}</span>

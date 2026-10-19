@@ -5,6 +5,8 @@ import {
   filteredItems,
   filterWorkItems,
   groupWorkItemsByTag,
+  hashWithoutItem,
+  itemPageHash,
   sortWorkItems,
   today,
   type Route,
@@ -324,4 +326,16 @@ test('milestone filters include legacy unassigned items and compose with existin
     filterWorkItems(items, user.id, { milestoneId: 'm', status: 'done' }).map((i) => i.id),
     ['done'],
   );
+});
+
+test('full-page items get their own hash and return to the list they were opened from', () => {
+  assert.equal(itemPageHash('abc'), '#/item/abc');
+  assert.equal(itemPageHash('abc', 'act-1'), '#/item/abc?activity=act-1');
+  assert.equal(hashWithoutItem('#/project/p1?tab=board&item=abc'), '#/project/p1?tab=board');
+  assert.equal(hashWithoutItem('#/view/v1?tab=list&item=abc&activity=act-1'), '#/view/v1?tab=list');
+  assert.equal(hashWithoutItem('#/my-work?item=abc'), '#/my-work');
+  assert.equal(hashWithoutItem('#/inbox'), '#/inbox');
+  assert.equal(hashWithoutItem(''), '#/');
+  assert.equal(hashWithoutItem('#/item/abc'), null);
+  assert.equal(hashWithoutItem('#/item/abc?activity=act-1'), null);
 });

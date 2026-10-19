@@ -20,6 +20,9 @@ test('UI preferences persist independently for each profile and tolerate unavail
     saveUiPreferences(user, { itemLayout: 'centered', zenMode: true });
     assert.deepEqual(readUiPreferences(user), { itemLayout: 'centered', zenMode: true });
     assert.deepEqual(readUiPreferences(other), defaults);
+    saveUiPreferences(other, { itemLayout: 'page', zenMode: false });
+    assert.deepEqual(readUiPreferences(other), { itemLayout: 'page', zenMode: false });
+    assert.deepEqual(readUiPreferences(user), { itemLayout: 'centered', zenMode: true });
     values.set('trestl.ui.v1.one', '{broken');
     assert.deepEqual(readUiPreferences(user), defaults);
     values.set('trestl.ui.v1.one', '{"itemLayout":"unknown","zenMode":"false"}');

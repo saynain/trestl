@@ -49,7 +49,9 @@ import { AppContext } from './lib/context';
 import {
   filterWorkItems,
   filteredItems,
+  hashWithoutItem,
   isDone,
+  itemPageHash,
   navigate,
   readRoute,
   shortDate,
@@ -232,9 +234,21 @@ export default function App() {
   );
   const createProject = useCallback((parentId?: string) => setNewProject({ parentId }), []);
   const editProject = useCallback((project: Project) => setNewProject({ project }), []);
+  // Where a full-page work item returns to: the list or view it was opened from.
+  const itemReturn = useRef<string | null>(null);
+  useEffect(() => {
+    if (uiPreferences.itemLayout !== 'page' || !route.itemId || route.page === 'item') return;
+    itemReturn.current = hashWithoutItem(location.hash);
+    location.replace(itemPageHash(route.itemId, route.activityId));
+  }, [uiPreferences.itemLayout, route.page, route.itemId, route.activityId]);
   const openItem = useCallback(
     (id: string, action?: ItemAction) => {
       setItemAction(action);
+      if (uiPreferences.itemLayout === 'page') {
+        itemReturn.current = hashWithoutItem(location.hash) ?? itemReturn.current;
+        location.hash = itemPageHash(id);
+        return;
+      }
       const current = readRoute();
       const saved = data?.views.find((v) => v.id === current.id);
       const effectiveTab =
@@ -250,7 +264,7 @@ export default function App() {
         id,
       );
     },
-    [data?.views],
+    [data?.views, uiPreferences.itemLayout],
   );
   const showCommands = (mode: 'all' | 'items' | 'projects' = 'all') => {
     setCommandMode(mode);
@@ -335,11 +349,17 @@ export default function App() {
   const project =
     route.page === 'project' ? data.projects.find((p) => p.id === route.id) : undefined;
   const view = route.page === 'view' ? data.views.find((v) => v.id === route.id) : undefined;
+  const itemPage = uiPreferences.itemLayout === 'page' && route.page === 'item' && !!route.itemId;
+  const pageItem = itemPage ? data.items.find((i) => i.id === route.itemId) : undefined;
+  const itemProject = pageItem?.projectId
+    ? data.projects.find((p) => p.id === pageItem.projectId)
+    : undefined;
   const items = filteredItems(data, route);
   const headingItems = view ? filterWorkItems(items, data.user.id, view.filters) : items;
   const title =
     project?.name ||
     view?.name ||
+    (itemPage && (pageItem?.identifier ?? 'Work item')) ||
     (route.page === 'notifications'
       ? 'Notifications'
       : route.page === 'home'
@@ -367,13 +387,21 @@ export default function App() {
             : '';
   const parent = project?.parentId
     ? data.projects.find((p) => p.id === project.parentId)
-    : undefined;
-  const closeItem = () =>
+    : itemProject;
+  const closeItem = () => {
+    if (itemPage) {
+      const back = itemReturn.current;
+      itemReturn.current = null;
+      if (back) location.hash = back;
+      else navigate('my-work');
+      return;
+    }
     navigate(
       route.page === 'item' ? 'my-work' : route.page,
       route.page === 'item' ? undefined : route.id,
       isBoard ? 'board' : route.tab,
     );
+  };
   const presentingRoadmap = !!project && route.tab === 'roadmap-present';
   const isBoard =
     route.tab === 'board' ||
@@ -508,6 +536,16 @@ export default function App() {
             <Notifications key={`${data.user.id}:${data.workspace?.id}`} tab={route.tab} />
           ) : route.page === 'home' ? (
             <Home tab={route.tab} />
+          ) : itemPage ? (
+            <ItemDetail
+              key={route.itemId}
+              id={route.itemId!}
+              activityId={route.activityId}
+              presentation="page"
+              onClose={closeItem}
+              initialAction={itemAction}
+              onActionHandled={() => setItemAction(undefined)}
+            />
           ) : (
             <>
               <div className="page-heading">
@@ -799,7 +837,7 @@ export default function App() {
           )}
         </main>
       </div>
-      {route.itemId && (
+      {route.itemId && uiPreferences.itemLayout !== 'page' && (
         <ItemDetail
           key={route.itemId}
           id={route.itemId}
