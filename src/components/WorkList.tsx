@@ -38,6 +38,7 @@ import {
   readRoute,
   filterWorkItems,
   groupWorkItemsByTag,
+  groupedStatuses,
   sortWorkItems,
   isDone,
   isOverdue,
@@ -256,7 +257,7 @@ export default function WorkList({
   const groupOptions = board
     ? boardPreferences.columns.filter((column) => !column.hidden || column.id === statusFilter)
     : groupBy === 'status'
-      ? statuses.map((s) => ({ id: s.id, name: s.name }))
+      ? groupedStatuses.map((s) => ({ id: s.id, name: s.name }))
       : groupBy === 'priority'
         ? priorities.map((p) => ({ id: p.id, name: p.name }))
         : groupBy === 'project'
