@@ -219,6 +219,12 @@ const milestoneInput = z
     completed: z.boolean().optional(),
   })
   .strict();
+/** Default milestone order: due date ascending with undated last, then title, then id. */
+const compareMilestones = (a: Milestone, b: Milestone) =>
+  Number(!a.dueDate) - Number(!b.dueDate) ||
+  (a.dueDate ?? '').localeCompare(b.dueDate ?? '') ||
+  a.title.localeCompare(b.title) ||
+  a.id.localeCompare(b.id);
 function nextRecurrence(
   value: string | null,
   recurrence: NonNullable<WorkItem['recurrence']>,
@@ -949,6 +955,7 @@ export async function createApp(
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)),
       milestones: allMilestones
         .filter((milestone) => projectVisible(milestone.projectId))
+        .sort(compareMilestones)
         .map((milestone) => {
           const linked = (milestoneItems.get(milestone.id) ?? []).filter(
             (item) => item.projectId === milestone.projectId,

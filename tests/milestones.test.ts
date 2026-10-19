@@ -223,3 +223,57 @@ test('linked work drives visible milestone progress, validates scope, clears ass
     await app.close();
   }
 });
+
+test('milestones list by due date with undated last, then title, then id', async () => {
+  const app = await createApp({ dataDir: ':memory:', integrations: false });
+  try {
+    const setup = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/setup',
+      payload: {
+        name: 'Planner',
+        email: 'planner@example.test',
+        password: 'milestone-test-password',
+        seedDemo: false,
+      },
+    });
+    const cookie = setup.cookies.find((c) => c.name === 'trestl_session')!;
+    const api = (method: 'GET' | 'POST', path: string, payload?: object) =>
+      app.inject({
+        method,
+        url: '/api/v1' + path,
+        headers: { cookie: `${cookie.name}=${cookie.value}` },
+        ...(payload ? { payload } : {}),
+      });
+    const project = (await api('POST', '/projects', { key: 'ORD', name: 'Ordering' })).json();
+    // Created out of date order so the result cannot match insertion order.
+    for (const [title, dueDate] of [
+      ['Someday', undefined],
+      ['GA', '2026-12-01'],
+      ['Beta', '2026-10-15'],
+      ['Alpha', '2026-10-15'],
+      ['Kickoff', '2026-09-01'],
+      ['Backlog', undefined],
+    ] as const) {
+      const created = await api('POST', '/milestones', {
+        projectId: project.id,
+        title,
+        ...(dueDate ? { dueDate } : {}),
+      });
+      assert.equal(created.statusCode, 201, created.body);
+    }
+    const expected = ['Kickoff', 'Alpha', 'Beta', 'GA', 'Backlog', 'Someday'];
+    const listed = (await api('GET', '/milestones')).json().data;
+    assert.deepEqual(
+      listed.map((m: { title: string }) => m.title),
+      expected,
+    );
+    const bootstrap = (await api('GET', '/bootstrap')).json();
+    assert.deepEqual(
+      bootstrap.milestones.map((m: { title: string }) => m.title),
+      expected,
+    );
+  } finally {
+    await app.close();
+  }
+});
