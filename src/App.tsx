@@ -1,15 +1,22 @@
 import { watchAppearance } from './lib/themes';
 import CliLoginApproval from './components/CliLoginApproval';
-import { WeeklyReview } from './components/ProjectUpdates';
+const WeeklyReview = lazy(() =>
+  import('./components/ProjectUpdates').then((module) => ({ default: module.WeeklyReview })),
+);
 import Notifications, { NotificationBell } from './components/Notifications';
-import Canvases from './components/Canvases';
-import GanttView from './components/GanttView';
+const Canvases = lazy(() => import('./components/Canvases'));
+const GanttView = lazy(() => import('./components/GanttView'));
 import ShortcutHelp from './components/ShortcutHelp';
 import Home from './components/Home';
 import { useShortcuts } from './lib/keyboard';
 import { formatShortcut, shortcuts, type ItemAction } from './lib/shortcuts';
-import RoadmapView from './components/Roadmap';
-import { useCallback, useEffect, useRef, useState } from 'react';
+const RoadmapView = lazy(() => import('./components/Roadmap'));
+import ErrorBoundary from './components/ErrorBoundary';
+import { FavoriteButton } from './components/Favorites';
+import { ProjectSwitcher, SubprojectNavigation } from './components/ProjectNavigation';
+import { projectAncestors } from './lib/navigation';
+import { applyBootstrapItems } from './lib/bootstrap';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowRight,
   Box,
@@ -37,15 +44,15 @@ import {
   Archive,
   RefreshCw,
 } from 'lucide-react';
-import type { Bootstrap, Project, Status, User } from '../shared/types';
-import { api, ApiError, patch, remove } from './lib/api';
+import type { Bootstrap, Project, Status, User, WorkItem } from '../shared/types';
+import { api, ApiError, fetchBootstrap, patch, remove } from './lib/api';
 import {
   readUiPreferences,
   saveUiPreferences,
   defaultUiPreferences,
   type UiPreferences,
 } from './lib/preferences';
-import { AppContext } from './lib/context';
+import { AppContext, type ToastAction } from './lib/context';
 import {
   filterWorkItems,
   filteredItems,
@@ -62,13 +69,22 @@ import Auth from './components/Auth';
 import Sidebar from './components/Sidebar';
 import CommandPalette from './components/CommandPalette';
 import WorkList from './components/WorkList';
-import { AllProjects, Overview, Resources } from './components/ProjectViews';
-import ItemDetail from './components/ItemDetail';
-import ItemForm from './components/ItemForm';
-import ProjectForm from './components/ProjectForm';
+const AllProjects = lazy(() =>
+  import('./components/ProjectViews').then((module) => ({ default: module.AllProjects })),
+);
+const Overview = lazy(() =>
+  import('./components/ProjectViews').then((module) => ({ default: module.Overview })),
+);
+const Resources = lazy(() =>
+  import('./components/ProjectViews').then((module) => ({ default: module.Resources })),
+);
+const ItemDetail = lazy(() => import('./components/ItemDetail'));
+const ItemForm = lazy(() => import('./components/ItemForm'));
+const ProjectForm = lazy(() => import('./components/ProjectForm'));
 import ProjectAccess from './components/ProjectAccess';
 import { ExportProject, ImportProject } from './components/ProjectTransfer';
-import Settings from './components/Settings';
+const Settings = lazy(() => import('./components/Settings'));
+const People = lazy(() => import('./components/People'));
 export default function App() {
   const [auth, setAuth] = useState<{
     needsSetup: boolean;
@@ -116,13 +132,26 @@ export default function App() {
   const [newProject, setNewProject] = useState<{ parentId?: string; project?: Project } | null>(
     null,
   );
-  const [message, setMessage] = useState<{ text: string; kind: string } | null>(null);
+  const [message, setMessage] = useState<{
+    text: string;
+    kind: string;
+    action?: ToastAction;
+  } | null>(null);
   const [projectMenu, setProjectMenu] = useState(false);
   const [exportProject, setExportProject] = useState<Project | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const toastTimer = useRef<number | undefined>(undefined);
   const loadSequence = useRef(0);
+  const bootstrapEtag = useRef<string>(undefined);
+  const applyItems = useCallback((items: WorkItem[]) => {
+    loadSequence.current++;
+    setData((current) => current && applyBootstrapItems(current, items));
+  }, []);
+  const removeItems = useCallback((ids: string[]) => {
+    loadSequence.current++;
+    setData((current) => current && applyBootstrapItems(current, [], ids));
+  }, []);
   useEffect(() => {
     if (data?.user) return watchAppearance(data.user);
   }, [data?.user.id]);
@@ -131,10 +160,22 @@ export default function App() {
     clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setMessage(null), 5000);
   }, []);
+  const toastAction = useCallback(
+    (text: string, action: ToastAction, kind: 'success' | 'error' = 'success') => {
+      setMessage({ text, kind, action });
+      clearTimeout(toastTimer.current);
+      toastTimer.current = window.setTimeout(() => setMessage(null), 10000);
+    },
+    [],
+  );
   const refresh = useCallback(async () => {
     const sequence = ++loadSequence.current;
     try {
-      const next = await api<Bootstrap>('/bootstrap');
+      const response = await fetchBootstrap(bootstrapEtag.current);
+      if (sequence !== loadSequence.current) return;
+      bootstrapEtag.current = response.etag;
+      const next = response.data;
+      if (!next) return;
       if (sequence === loadSequence.current) {
         setProfilePreferences((current) =>
           current?.userId === next.user.id
@@ -146,6 +187,7 @@ export default function App() {
       }
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
+        bootstrapEtag.current = undefined;
         setData(null);
         setAuth((current) => ({
           needsSetup: false,
@@ -226,6 +268,18 @@ export default function App() {
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   }, [route.page, route.id, route.tab]);
+  useEffect(() => {
+    const active = document.querySelector<HTMLElement>('.page-tabs .active');
+    if (active?.parentElement) {
+      const parent = active.parentElement;
+      const left = active.offsetLeft - parent.offsetLeft;
+      if (
+        left < parent.scrollLeft ||
+        left + active.offsetWidth > parent.scrollLeft + parent.clientWidth
+      )
+        parent.scrollTo({ left: Math.max(0, left - 16), behavior: 'smooth' });
+    }
+  }, [route.page, route.id, route.tab]);
   const createItem = useCallback(
     (projectId?: string | null, status?: Status, parentId?: string) => {
       setNewItem({ projectId, status, parentId });
@@ -294,6 +348,10 @@ export default function App() {
       },
       help: () => setHelp((value) => !value),
       create: () => createItem(route.page === 'project' ? route.id : undefined),
+      home: () => {
+        setMobileNav(false);
+        navigate('home');
+      },
       inbox: () => {
         setMobileNav(false);
         navigate('inbox');
@@ -360,21 +418,23 @@ export default function App() {
     project?.name ||
     view?.name ||
     (itemPage && (pageItem?.identifier ?? 'Work item')) ||
-    (route.page === 'notifications'
-      ? 'Notifications'
-      : route.page === 'home'
-        ? 'Home'
-        : route.page === 'projects'
-          ? 'All projects'
-          : route.page === 'my-work'
-            ? 'My work'
-            : route.page === 'settings'
-              ? 'Administration'
-              : route.page === 'account-settings'
-                ? 'Account settings'
-                : route.page === 'inbox'
-                  ? 'Inbox'
-                  : 'Work items');
+    (route.page === 'people'
+      ? 'People'
+      : route.page === 'notifications'
+        ? 'Notifications'
+        : route.page === 'home'
+          ? 'Home'
+          : route.page === 'projects'
+            ? 'All projects'
+            : route.page === 'my-work'
+              ? 'My work'
+              : route.page === 'settings'
+                ? 'Administration'
+                : route.page === 'account-settings'
+                  ? 'Account settings'
+                  : route.page === 'inbox'
+                    ? 'Inbox'
+                    : 'Work items');
   const description =
     route.page === 'projects'
       ? 'A little structure for everything you’re moving forward.'
@@ -385,9 +445,11 @@ export default function App() {
           : view
             ? 'A saved perspective on your work.'
             : '';
-  const parent = project?.parentId
-    ? data.projects.find((p) => p.id === project.parentId)
-    : itemProject;
+  const ancestors = project
+    ? projectAncestors(data.projects, project)
+    : itemProject
+      ? [...projectAncestors(data.projects, itemProject), itemProject]
+      : [];
   const closeItem = () => {
     if (itemPage) {
       const back = itemReturn.current;
@@ -428,6 +490,9 @@ export default function App() {
         data,
         refresh,
         toast,
+        toastAction,
+        applyItems,
+        removeItems,
         openItem,
         createItem,
         createProject,
@@ -484,12 +549,12 @@ export default function App() {
                 </button>
               )}
               <ChevronRight size={12} />
-              {parent && (
-                <>
+              {ancestors.map((parent) => (
+                <span className="breadcrumb-ancestor" key={parent.id}>
                   <button onClick={() => navigate('project', parent.id)}>{parent.name}</button>
                   <ChevronRight size={12} />
-                </>
-              )}
+                </span>
+              ))}
               <span>{title}</span>
             </div>
             <div className="topbar-actions">
@@ -526,359 +591,403 @@ export default function App() {
               )}
             </div>
           </header>
-          {route.page === 'settings' || route.page === 'account-settings' ? (
-            <Settings
-              key={`${data.user.id}:${route.page}`}
-              section={route.tab}
-              scope={route.page === 'account-settings' ? 'account' : 'workspace'}
-            />
-          ) : route.page === 'notifications' ? (
-            <Notifications key={`${data.user.id}:${data.workspace?.id}`} tab={route.tab} />
-          ) : route.page === 'home' ? (
-            <Home tab={route.tab} />
-          ) : itemPage ? (
+          <ErrorBoundary
+            key={`${route.page}:${route.id}`}
+            resetKey={route.tab}
+            onRecover={() => void refresh().catch((e: Error) => toast(e.message, 'error'))}
+          >
+            <Suspense fallback={<div className="empty-state">Opening view…</div>}>
+              {route.page === 'settings' || route.page === 'account-settings' ? (
+                <Settings
+                  key={`${data.user.id}:${route.page}`}
+                  section={route.tab}
+                  scope={route.page === 'account-settings' ? 'account' : 'workspace'}
+                />
+              ) : route.page === 'people' ? (
+                <People userId={route.id} />
+              ) : route.page === 'notifications' ? (
+                <Notifications key={`${data.user.id}:${data.workspace?.id}`} tab={route.tab} />
+              ) : route.page === 'home' ? (
+                <Home tab={route.tab} />
+              ) : itemPage ? (
+                <ItemDetail
+                  key={route.itemId}
+                  id={route.itemId!}
+                  activityId={route.activityId}
+                  presentation="page"
+                  onClose={closeItem}
+                  initialAction={itemAction}
+                  onActionHandled={() => setItemAction(undefined)}
+                />
+              ) : (
+                <>
+                  <div className="page-heading">
+                    <div
+                      className={`page-project-icon ${!project ? 'generic-icon' : ''}`}
+                      style={project ? { background: project.color } : undefined}
+                    >
+                      {project ? (
+                        <ProjectIcon project={project} size={29} />
+                      ) : route.page === 'inbox' ? (
+                        <Inbox size={28} />
+                      ) : route.page === 'projects' ? (
+                        <FolderOpen size={28} />
+                      ) : view?.filters.type === 'idea' ? (
+                        <Lightbulb size={28} />
+                      ) : view?.filters.followUp ? (
+                        <Hourglass size={28} />
+                      ) : (
+                        <Layers size={28} />
+                      )}
+                    </div>
+                    <div className="page-title-block">
+                      <h1>
+                        {project ? <ProjectSwitcher project={project} /> : title}
+                        {project?.visibility === 'private' && <LockKeyhole size={16} />}
+                      </h1>
+                      {description && <p>{description}</p>}
+                      <div className="page-meta">
+                        {project && (
+                          <>
+                            <span className="lifecycle-meta">
+                              <span className="tiny-dot" />
+                              {project.lifecycle === 'ongoing'
+                                ? 'Ongoing'
+                                : project.status === 'completed'
+                                  ? 'Completed'
+                                  : 'Time-bound'}
+                            </span>
+                            <span>·</span>
+                            <ProjectAccess key={project.id} project={project} />
+                            <span>·</span>
+                          </>
+                        )}
+                        <span>
+                          {route.page === 'projects'
+                            ? `${data.projects.filter((p) => p.status === 'active').length} active projects`
+                            : `${headingItems.filter((i) => !isDone(i)).length} active items`}
+                        </span>
+                        {project?.dueDate && (
+                          <>
+                            <span>·</span>
+                            <span>
+                              <CalendarDays size={12} />
+                              {shortDate(project.dueDate)}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    {((project && project.status !== 'archived') || view) && (
+                      <div className="page-favorite">
+                        <FavoriteButton
+                          entry={{ kind: project ? 'project' : 'view', id: (project || view)!.id }}
+                          name={title}
+                        />
+                      </div>
+                    )}
+                    {project && (
+                      <div className="popover-parent project-menu">
+                        <button
+                          className="icon-button"
+                          aria-label="Project options"
+                          onClick={() => setProjectMenu(!projectMenu)}
+                        >
+                          <MoreHorizontal size={20} />
+                        </button>
+                        {projectMenu && (
+                          <>
+                            <button
+                              className="popover-dismiss"
+                              aria-label="Close project options"
+                              onClick={() => setProjectMenu(false)}
+                            />
+                            <div className="popover menu-popover">
+                              <button
+                                onClick={() => {
+                                  editProject(project);
+                                  setProjectMenu(false);
+                                }}
+                              >
+                                <Pencil size={15} />
+                                Edit project
+                              </button>
+                              <button
+                                onClick={() => {
+                                  createProject(project.id);
+                                  setProjectMenu(false);
+                                }}
+                              >
+                                <Plus size={15} />
+                                Add subproject
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setExportProject(project);
+                                  setProjectMenu(false);
+                                }}
+                              >
+                                <Download size={15} />
+                                Export project
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await patch(`/projects/${project.id}`, {
+                                      status: project.status === 'archived' ? 'active' : 'archived',
+                                    });
+                                    await refresh();
+                                    setProjectMenu(false);
+                                    toast(
+                                      project.status === 'archived'
+                                        ? 'Project restored'
+                                        : 'Project archived',
+                                    );
+                                  } catch (e) {
+                                    toast((e as Error).message, 'error');
+                                  }
+                                }}
+                              >
+                                <Archive size={15} />
+                                {project.status === 'archived'
+                                  ? 'Restore project'
+                                  : 'Archive project'}
+                              </button>
+                              <button
+                                className="danger-text"
+                                onClick={() => {
+                                  setConfirmDelete(true);
+                                  setProjectMenu(false);
+                                }}
+                              >
+                                <Trash2 size={15} />
+                                Delete project
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {project && <SubprojectNavigation project={project} />}
+                  {route.page === 'projects' && (
+                    <nav className="page-tabs" aria-label="Project views">
+                      <button
+                        className={route.tab !== 'weekly' ? 'active' : ''}
+                        aria-current={route.tab !== 'weekly' ? 'page' : undefined}
+                        onClick={() => navigate('projects')}
+                      >
+                        All projects
+                      </button>
+                      <button
+                        className={route.tab === 'weekly' ? 'active' : ''}
+                        aria-current={route.tab === 'weekly' ? 'page' : undefined}
+                        onClick={() => navigate('projects', undefined, 'weekly')}
+                      >
+                        Weekly review
+                      </button>
+                    </nav>
+                  )}
+                  {route.page !== 'projects' && (
+                    <nav className="page-tabs">
+                      {project && (
+                        <button
+                          className={
+                            route.tab === 'overview' || route.tab.startsWith('overview/')
+                              ? 'active'
+                              : ''
+                          }
+                          onClick={() => navigate(route.page, route.id, 'overview')}
+                        >
+                          Overview
+                        </button>
+                      )}
+                      <button
+                        className={route.tab === 'list' && !isBoard ? 'active' : ''}
+                        aria-current={route.tab === 'list' && !isBoard ? 'page' : undefined}
+                        onClick={() => navigate(route.page, route.id, 'list')}
+                      >
+                        Work items
+                      </button>
+                      <button
+                        className={isBoard ? 'active' : ''}
+                        onClick={() => navigate(route.page, route.id, 'board')}
+                      >
+                        Board
+                      </button>
+                      {project && (
+                        <button
+                          className={route.tab === 'gantt' ? 'active' : ''}
+                          aria-current={route.tab === 'gantt' ? 'page' : undefined}
+                          onClick={() => navigate(route.page, route.id, 'gantt')}
+                        >
+                          Gantt
+                        </button>
+                      )}
+                      {project && (
+                        <button
+                          className={route.tab === 'resources' ? 'active' : ''}
+                          aria-current={route.tab === 'resources' ? 'page' : undefined}
+                          onClick={() => navigate(route.page, route.id, 'resources')}
+                        >
+                          Resources
+                        </button>
+                      )}
+                      {project && (
+                        <button
+                          className={route.tab.startsWith('canvases') ? 'active' : ''}
+                          aria-current={route.tab.startsWith('canvases') ? 'page' : undefined}
+                          onClick={() => navigate(route.page, route.id, 'canvases')}
+                        >
+                          Canvases
+                        </button>
+                      )}
+                      {project && (
+                        <button
+                          className={route.tab.startsWith('roadmap') ? 'active' : ''}
+                          aria-current={route.tab.startsWith('roadmap') ? 'page' : undefined}
+                          onClick={() => navigate(route.page, route.id, 'roadmap')}
+                        >
+                          Roadmap
+                        </button>
+                      )}
+                      {view && (
+                        <button
+                          className="delete-view"
+                          title="Remove saved view"
+                          onClick={async () => {
+                            try {
+                              await remove(`/views/${view.id}`);
+                              await refresh();
+                              navigate('my-work');
+                              toast('View removed');
+                            } catch (e) {
+                              toast((e as Error).message, 'error');
+                            }
+                          }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </nav>
+                  )}
+                  <div className="page-body">
+                    {route.page === 'projects' ? (
+                      route.tab === 'weekly' ? (
+                        <WeeklyReview />
+                      ) : (
+                        <AllProjects />
+                      )
+                    ) : project && route.tab === 'gantt' ? (
+                      <GanttView key={project.id} project={project} items={items} />
+                    ) : project &&
+                      (route.tab === 'overview' || route.tab.startsWith('overview/')) ? (
+                      <Overview
+                        key={`${project.id}:${route.tab}`}
+                        project={project}
+                        items={items}
+                        milestoneId={route.tab.split('/')[1]}
+                      />
+                    ) : project && (route.tab === 'roadmap' || presentingRoadmap) ? (
+                      <RoadmapView
+                        key={project.id}
+                        project={project}
+                        presenting={presentingRoadmap}
+                      />
+                    ) : project &&
+                      (route.tab === 'canvases' || route.tab.startsWith('canvases/')) ? (
+                      <Canvases
+                        key={`${data.user.id}:${project.id}`}
+                        project={project}
+                        canvasId={route.tab.split('/')[1]}
+                      />
+                    ) : project && route.tab === 'resources' ? (
+                      <Resources project={project} />
+                    ) : route.page === 'project' && !project ? (
+                      <EmptyState
+                        title="Project not found"
+                        description="It may have been removed, or you may not have access."
+                        action={
+                          <button className="button" onClick={() => navigate('projects')}>
+                            All projects
+                          </button>
+                        }
+                      />
+                    ) : (
+                      <WorkList
+                        key={`${data.user.id}-${data.user.workspaceId}-${route.page}-${route.id}-${isBoard}`}
+                        items={items}
+                        projectId={project?.id}
+                        board={isBoard}
+                        initialFilters={view?.filters}
+                        baseFilters={
+                          route.page === 'my-work'
+                            ? { scope: 'my-work' }
+                            : route.page === 'inbox'
+                              ? { scope: 'inbox' }
+                              : {}
+                        }
+                      />
+                    )}
+                  </div>
+                </>
+              )}
+            </Suspense>
+          </ErrorBoundary>
+        </main>
+      </div>
+      <Suspense
+        fallback={
+          <div className="toast" role="status">
+            Opening editor…
+          </div>
+        }
+      >
+        {route.itemId && uiPreferences.itemLayout !== 'page' && (
+          <ErrorBoundary key={route.itemId} onRecover={closeItem}>
             <ItemDetail
               key={route.itemId}
-              id={route.itemId!}
+              id={route.itemId}
               activityId={route.activityId}
-              presentation="page"
               onClose={closeItem}
               initialAction={itemAction}
               onActionHandled={() => setItemAction(undefined)}
             />
-          ) : (
-            <>
-              <div className="page-heading">
-                <div
-                  className={`page-project-icon ${!project ? 'generic-icon' : ''}`}
-                  style={project ? { background: project.color } : undefined}
-                >
-                  {project ? (
-                    <ProjectIcon project={project} size={29} />
-                  ) : route.page === 'inbox' ? (
-                    <Inbox size={28} />
-                  ) : route.page === 'projects' ? (
-                    <FolderOpen size={28} />
-                  ) : view?.filters.type === 'idea' ? (
-                    <Lightbulb size={28} />
-                  ) : view?.filters.followUp ? (
-                    <Hourglass size={28} />
-                  ) : (
-                    <Layers size={28} />
-                  )}
-                </div>
-                <div className="page-title-block">
-                  <h1>
-                    {title}
-                    {project?.visibility === 'private' && <LockKeyhole size={16} />}
-                  </h1>
-                  {description && <p>{description}</p>}
-                  <div className="page-meta">
-                    {project && (
-                      <>
-                        <span className="lifecycle-meta">
-                          <span className="tiny-dot" />
-                          {project.lifecycle === 'ongoing'
-                            ? 'Ongoing'
-                            : project.status === 'completed'
-                              ? 'Completed'
-                              : 'Time-bound'}
-                        </span>
-                        <span>·</span>
-                        <ProjectAccess key={project.id} project={project} />
-                        <span>·</span>
-                      </>
-                    )}
-                    <span>
-                      {route.page === 'projects'
-                        ? `${data.projects.filter((p) => p.status === 'active').length} active projects`
-                        : `${headingItems.filter((i) => !isDone(i)).length} active items`}
-                    </span>
-                    {project?.dueDate && (
-                      <>
-                        <span>·</span>
-                        <span>
-                          <CalendarDays size={12} />
-                          {shortDate(project.dueDate)}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-                {project && (
-                  <div className="popover-parent project-menu">
-                    <button
-                      className="icon-button"
-                      aria-label="Project options"
-                      onClick={() => setProjectMenu(!projectMenu)}
-                    >
-                      <MoreHorizontal size={20} />
-                    </button>
-                    {projectMenu && (
-                      <>
-                        <button
-                          className="popover-dismiss"
-                          aria-label="Close project options"
-                          onClick={() => setProjectMenu(false)}
-                        />
-                        <div className="popover menu-popover">
-                          <button
-                            onClick={() => {
-                              editProject(project);
-                              setProjectMenu(false);
-                            }}
-                          >
-                            <Pencil size={15} />
-                            Edit project
-                          </button>
-                          <button
-                            onClick={() => {
-                              createProject(project.id);
-                              setProjectMenu(false);
-                            }}
-                          >
-                            <Plus size={15} />
-                            Add subproject
-                          </button>
-                          <button
-                            onClick={() => {
-                              setExportProject(project);
-                              setProjectMenu(false);
-                            }}
-                          >
-                            <Download size={15} />
-                            Export project
-                          </button>
-                          <button
-                            onClick={async () => {
-                              try {
-                                await patch(`/projects/${project.id}`, {
-                                  status: project.status === 'archived' ? 'active' : 'archived',
-                                });
-                                await refresh();
-                                setProjectMenu(false);
-                                toast(
-                                  project.status === 'archived'
-                                    ? 'Project restored'
-                                    : 'Project archived',
-                                );
-                              } catch (e) {
-                                toast((e as Error).message, 'error');
-                              }
-                            }}
-                          >
-                            <Archive size={15} />
-                            {project.status === 'archived' ? 'Restore project' : 'Archive project'}
-                          </button>
-                          <button
-                            className="danger-text"
-                            onClick={() => {
-                              setConfirmDelete(true);
-                              setProjectMenu(false);
-                            }}
-                          >
-                            <Trash2 size={15} />
-                            Delete project
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
+          </ErrorBoundary>
+        )}
+        {exportProject && (
+          <ExportProject project={exportProject} onClose={() => setExportProject(null)} />
+        )}
+        {newItem && <ItemForm {...newItem} onClose={() => setNewItem(null)} />}
+        {newProject && <ProjectForm {...newProject} onClose={() => setNewProject(null)} />}
+        {command && (
+          <CommandPalette
+            mode={commandMode}
+            itemId={commandItemId}
+            onHelp={() => setHelp(true)}
+            onClose={() => setCommand(false)}
+          />
+        )}
+        {help && <ShortcutHelp onClose={() => setHelp(false)} />}
+        {confirmDelete && project && (
+          <Modal title="Delete project?" onClose={() => setConfirmDelete(false)}>
+            <div className="simple-form">
+              <p>
+                This permanently removes <strong>{project.name}</strong>. Move or delete its work
+                items and subprojects first.
+              </p>
+              <div className="form-actions">
+                <button className="button" onClick={() => setConfirmDelete(false)}>
+                  Cancel
+                </button>
+                <button className="button danger" disabled={deleteBusy} onClick={deleteProject}>
+                  Delete project
+                </button>
               </div>
-              {route.page === 'projects' && (
-                <nav className="page-tabs" aria-label="Project views">
-                  <button
-                    className={route.tab !== 'weekly' ? 'active' : ''}
-                    onClick={() => navigate('projects')}
-                  >
-                    All projects
-                  </button>
-                  <button
-                    className={route.tab === 'weekly' ? 'active' : ''}
-                    onClick={() => navigate('projects', undefined, 'weekly')}
-                  >
-                    Weekly review
-                  </button>
-                </nav>
-              )}
-              {route.page !== 'projects' && (
-                <nav className="page-tabs">
-                  {project && (
-                    <button
-                      className={
-                        route.tab === 'overview' || route.tab.startsWith('overview/')
-                          ? 'active'
-                          : ''
-                      }
-                      onClick={() => navigate(route.page, route.id, 'overview')}
-                    >
-                      Overview
-                    </button>
-                  )}
-                  <button
-                    className={route.tab === 'list' && !isBoard ? 'active' : ''}
-                    onClick={() => navigate(route.page, route.id, 'list')}
-                  >
-                    Work items
-                  </button>
-                  <button
-                    className={isBoard ? 'active' : ''}
-                    onClick={() => navigate(route.page, route.id, 'board')}
-                  >
-                    Board
-                  </button>
-                  {project && (
-                    <button
-                      className={route.tab === 'gantt' ? 'active' : ''}
-                      onClick={() => navigate(route.page, route.id, 'gantt')}
-                    >
-                      Gantt
-                    </button>
-                  )}
-                  {project && (
-                    <button
-                      className={route.tab === 'resources' ? 'active' : ''}
-                      onClick={() => navigate(route.page, route.id, 'resources')}
-                    >
-                      Resources
-                    </button>
-                  )}
-                  {project && (
-                    <button
-                      className={route.tab.startsWith('canvases') ? 'active' : ''}
-                      onClick={() => navigate(route.page, route.id, 'canvases')}
-                    >
-                      Canvases
-                    </button>
-                  )}
-                  {project && (
-                    <button
-                      className={route.tab.startsWith('roadmap') ? 'active' : ''}
-                      onClick={() => navigate(route.page, route.id, 'roadmap')}
-                    >
-                      Roadmap
-                    </button>
-                  )}
-                  {view && (
-                    <button
-                      className="delete-view"
-                      title="Remove saved view"
-                      onClick={async () => {
-                        try {
-                          await remove(`/views/${view.id}`);
-                          await refresh();
-                          navigate('my-work');
-                          toast('View removed');
-                        } catch (e) {
-                          toast((e as Error).message, 'error');
-                        }
-                      }}
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  )}
-                </nav>
-              )}
-              <div className="page-body">
-                {route.page === 'projects' ? (
-                  route.tab === 'weekly' ? (
-                    <WeeklyReview />
-                  ) : (
-                    <AllProjects />
-                  )
-                ) : project && route.tab === 'gantt' ? (
-                  <GanttView key={project.id} project={project} items={items} />
-                ) : project && (route.tab === 'overview' || route.tab.startsWith('overview/')) ? (
-                  <Overview
-                    key={`${project.id}:${route.tab}`}
-                    project={project}
-                    items={items}
-                    milestoneId={route.tab.split('/')[1]}
-                  />
-                ) : project && (route.tab === 'roadmap' || presentingRoadmap) ? (
-                  <RoadmapView key={project.id} project={project} presenting={presentingRoadmap} />
-                ) : project && (route.tab === 'canvases' || route.tab.startsWith('canvases/')) ? (
-                  <Canvases
-                    key={`${data.user.id}:${project.id}`}
-                    project={project}
-                    canvasId={route.tab.split('/')[1]}
-                  />
-                ) : project && route.tab === 'resources' ? (
-                  <Resources project={project} />
-                ) : route.page === 'project' && !project ? (
-                  <EmptyState
-                    title="Project not found"
-                    description="It may have been removed, or you may not have access."
-                    action={
-                      <button className="button" onClick={() => navigate('projects')}>
-                        All projects
-                      </button>
-                    }
-                  />
-                ) : (
-                  <WorkList
-                    key={`${data.user.id}-${data.user.workspaceId}-${route.page}-${route.id}-${isBoard}`}
-                    items={items}
-                    projectId={project?.id}
-                    board={isBoard}
-                    initialFilters={view?.filters}
-                    baseFilters={
-                      route.page === 'my-work'
-                        ? { scope: 'my-work' }
-                        : route.page === 'inbox'
-                          ? { scope: 'inbox' }
-                          : {}
-                    }
-                  />
-                )}
-              </div>
-            </>
-          )}
-        </main>
-      </div>
-      {route.itemId && uiPreferences.itemLayout !== 'page' && (
-        <ItemDetail
-          key={route.itemId}
-          id={route.itemId}
-          activityId={route.activityId}
-          onClose={closeItem}
-          initialAction={itemAction}
-          onActionHandled={() => setItemAction(undefined)}
-        />
-      )}
-      {exportProject && (
-        <ExportProject project={exportProject} onClose={() => setExportProject(null)} />
-      )}
-      {newItem && <ItemForm {...newItem} onClose={() => setNewItem(null)} />}
-      {newProject && <ProjectForm {...newProject} onClose={() => setNewProject(null)} />}
-      {command && (
-        <CommandPalette
-          mode={commandMode}
-          itemId={commandItemId}
-          onHelp={() => setHelp(true)}
-          onClose={() => setCommand(false)}
-        />
-      )}
-      {help && <ShortcutHelp onClose={() => setHelp(false)} />}
-      {confirmDelete && project && (
-        <Modal title="Delete project?" onClose={() => setConfirmDelete(false)}>
-          <div className="simple-form">
-            <p>
-              This permanently removes <strong>{project.name}</strong>. Move or delete its work
-              items and subprojects first.
-            </p>
-            <div className="form-actions">
-              <button className="button" onClick={() => setConfirmDelete(false)}>
-                Cancel
-              </button>
-              <button className="button danger" disabled={deleteBusy} onClick={deleteProject}>
-                Delete project
-              </button>
             </div>
-          </div>
-        </Modal>
-      )}
+          </Modal>
+        )}
+      </Suspense>
       {message && (
         <div
           role={message.kind === 'error' ? 'alert' : 'status'}
@@ -886,6 +995,20 @@ export default function App() {
         >
           {message.kind === 'error' ? <AlertCircle size={17} /> : <Check size={17} />}
           <span>{message.text}</span>
+          {message.action && (
+            <button
+              className="button small"
+              onClick={() => {
+                const action = message.action!;
+                setMessage(null);
+                void Promise.resolve()
+                  .then(action.onClick)
+                  .catch((e: Error) => toast(e.message, 'error'));
+              }}
+            >
+              {message.action.label}
+            </button>
+          )}
           <button
             className="icon-button"
             aria-label="Dismiss notification"

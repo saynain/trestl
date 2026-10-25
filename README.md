@@ -91,6 +91,12 @@ are no default credentials. You can start empty or opt into example projects.
 Data persists in `.data/`; no external services are required. The API runs on
 port 4317. Existing local users can continue running `pnpm dev` as before.
 
+### Demo preview
+
+Run `pnpm preview:demo` to build and serve the app with its real API at **http://127.0.0.1:4318**. Sign in as `demo@trestl.local` with password `TrestlDemo2026!`. The isolated demo includes overdue work, blocking dependencies, milestones, project updates, private captures, and a roadmap linked to delivery work.
+
+This command uses a separate database under your temporary directory and does not load `.env`. Set `PREVIEW_PORT` or `PREVIEW_DATA_DIR` to run another isolated preview. The demo database persists across restarts.
+
 The repository currently requires GitHub access while it is private.
 
 ### One installation, your account, and your projects

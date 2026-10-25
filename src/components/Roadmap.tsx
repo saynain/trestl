@@ -17,10 +17,23 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import type { Project, Roadmap, RoadmapFeature, RoadmapHorizon } from '../../shared/types';
-import { patch, ApiError } from '../lib/api';
+import type {
+  Bootstrap,
+  Project,
+  Roadmap,
+  RoadmapFeature,
+  RoadmapHorizon,
+} from '../../shared/types';
+import { api, patch, ApiError } from '../lib/api';
 import { useApp } from '../lib/context';
 import { descendants, navigate, shortDate, today } from '../lib/model';
+import { roadmapDelivery } from '../lib/roadmap-delivery';
+import { clearDraft, draftKey, readDraft, saveDraft } from '../lib/drafts';
+import {
+  isRoadmapDraftDirty,
+  shouldRecoverRoadmapDraft,
+  type RoadmapDraft,
+} from '../lib/roadmap-drafts';
 import { Brand, Modal } from './ui';
 import './roadmap.css';
 
@@ -54,6 +67,76 @@ function AreaIcon({ area }: { area: string }) {
         ? Settings2
         : Users;
   return <Icon size={19} strokeWidth={1.5} aria-hidden="true" />;
+}
+function DeliveryProgress({ feature, data }: { feature: RoadmapFeature; data: Bootstrap }) {
+  const delivery = roadmapDelivery(feature, data);
+  if (!delivery.linked) return null;
+  return (
+    <div className="roadmap-delivery-progress">
+      <span>
+        {delivery.total
+          ? `${delivery.done}/${delivery.total} work items done`
+          : 'Delivery linked · no work items yet'}
+      </span>
+      {delivery.total > 0 && (
+        <progress
+          value={delivery.done}
+          max={delivery.total}
+          aria-label={`${delivery.done} of ${delivery.total} work items done`}
+        />
+      )}
+      {delivery.atRisk && (
+        <span className="roadmap-delivery-risk">
+          Needs attention{delivery.overdue ? ` · ${delivery.overdue} overdue` : ''}
+          {delivery.blocked ? ` · ${delivery.blocked} blocked` : ''}
+          {delivery.slippedMilestones ? ` · ${delivery.slippedMilestones} late milestones` : ''}
+          {delivery.targetAtRisk ? ' · target at risk' : ''}
+        </span>
+      )}
+    </div>
+  );
+}
+function DeliveryLinks({ feature, close }: { feature: RoadmapFeature; close: () => void }) {
+  const { data, openItem } = useApp();
+  const delivery = roadmapDelivery(feature, data);
+  if (!delivery.linked)
+    return <p className="muted">No delivery links. This feature is an editorial priority.</p>;
+  const directItems = delivery.items.filter((item) => feature.itemIds?.includes(item.id));
+  return (
+    <section className="roadmap-delivery-links" aria-label="Linked delivery">
+      <h3>Delivery</h3>
+      <DeliveryProgress feature={feature} data={data} />
+      <p className="muted">Progress uses visible linked work. Editorial status stays as written.</p>
+      <ul>
+        {delivery.projects.map((project) => (
+          <li key={project.id}>
+            <a href={`#/project/${project.id}`}>Project: {project.name}</a>
+          </li>
+        ))}
+        {delivery.milestones.map((milestone) => (
+          <li key={milestone.id}>
+            <a href={`#/project/${milestone.projectId}?tab=overview/${milestone.id}`}>
+              Milestone: {milestone.title}
+            </a>
+          </li>
+        ))}
+        {directItems.map((item) => (
+          <li key={item.id}>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => {
+                close();
+                openItem(item.id);
+              }}
+            >
+              {item.identifier} · {item.title}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 export default function RoadmapView({
   project,
@@ -217,6 +300,7 @@ export default function RoadmapView({
                     <div className="roadmap-card-body">
                       <h4>{f.title}</h4>
                       {f.summary && <p>{f.summary}</p>}
+                      <DeliveryProgress feature={f} data={data} />
                     </div>
                     {(f.area || f.status || f.targetDate) && (
                       <div className="roadmap-card-meta">
@@ -325,6 +409,7 @@ export default function RoadmapView({
                 : 'Priority rationale'}
             </h3>
             <p className="roadmap-prose">{feature.rationale || 'No rationale added yet.'}</p>
+            <DeliveryLinks feature={feature} close={() => setSelected(null)} />
             {!presenting && (
               <div className="form-actions">
                 <button
@@ -346,11 +431,12 @@ export default function RoadmapView({
         <RoadmapEditor
           key={`${editor.base.revision}-${editor.feature?.id ?? 'new'}-${editor.settings}`}
           {...editor}
+          data={data}
+          projectId={project.id}
           save={save}
           reload={async () => {
-            await refresh();
-            setEditor(null);
-            toast('Latest roadmap loaded. Open the editor to reapply your changes.');
+            const latest = await api<Project>(`/projects/${project.id}`);
+            return latest.roadmap ?? emptyRoadmap;
           }}
           close={() => setEditor(null)}
         />
@@ -358,46 +444,112 @@ export default function RoadmapView({
     </section>
   );
 }
+function isRoadmapDraft(value: unknown): value is RoadmapDraft {
+  if (!value || typeof value !== 'object') return false;
+  const saved = value as RoadmapDraft;
+  const validSummary = (summary: RoadmapDraft['summary']) =>
+    !!summary &&
+    typeof summary.headline === 'string' &&
+    typeof summary.reviewNote === 'string' &&
+    (summary.reviewedAt === null || typeof summary.reviewedAt === 'string');
+  const validFeature = (entry: RoadmapFeature) =>
+    !!entry &&
+    ['id', 'title', 'summary', 'area', 'status', 'scope', 'rationale'].every(
+      (key) => typeof entry[key as keyof RoadmapFeature] === 'string',
+    ) &&
+    horizons.some((horizon) => horizon.id === entry.horizon) &&
+    (entry.targetDate === null || typeof entry.targetDate === 'string') &&
+    ['projectIds', 'milestoneIds', 'itemIds'].every((key) => {
+      const refs = entry[key as 'projectIds' | 'milestoneIds' | 'itemIds'];
+      return (
+        refs === undefined || (Array.isArray(refs) && refs.every((ref) => typeof ref === 'string'))
+      );
+    });
+  return (
+    validSummary(saved.base) &&
+    Number.isInteger(saved.base.revision) &&
+    saved.base.revision >= 0 &&
+    Array.isArray(saved.base.features) &&
+    saved.base.features.every(validFeature) &&
+    validFeature(saved.draft) &&
+    validSummary(saved.summary) &&
+    Array.isArray(saved.order) &&
+    saved.order.every((id) => typeof id === 'string')
+  );
+}
 function RoadmapEditor({
-  base,
+  base: initialBase,
   feature,
   settings,
   horizon,
   save,
   reload,
   close,
+  data,
+  projectId,
 }: {
   base: Roadmap;
   feature?: RoadmapFeature;
   settings?: boolean;
   horizon?: RoadmapHorizon;
   save: (next: Roadmap) => Promise<void>;
-  reload: () => Promise<void>;
+  reload: () => Promise<Roadmap>;
   close: () => void;
+  data: Bootstrap;
+  projectId: string;
 }) {
+  const storageKey = draftKey(
+    data.user,
+    `roadmap:${projectId}:${settings ? 'summary' : (feature?.id ?? `new:${horizon ?? 'current'}`)}`,
+  );
+  const [recovered] = useState(() => {
+    const saved = readDraft(storageKey, isRoadmapDraft);
+    if (saved && shouldRecoverRoadmapDraft(saved, initialBase, !!settings, horizon ?? 'current'))
+      return saved;
+    clearDraft(storageKey);
+    return null;
+  });
+  const [base, setBase] = useState(recovered?.base ?? initialBase);
   const [draft, setDraft] = useState<RoadmapFeature>(
-    feature ?? {
-      id: crypto.randomUUID(),
-      title: '',
-      summary: '',
-      area: '',
-      horizon: horizon ?? 'current',
-      status: '',
-      scope: '',
-      rationale: '',
-      targetDate: null,
+    recovered?.draft ??
+      feature ?? {
+        id: crypto.randomUUID(),
+        title: '',
+        summary: '',
+        area: '',
+        horizon: horizon ?? 'current',
+        status: '',
+        scope: '',
+        rationale: '',
+        targetDate: null,
+      },
+  );
+  const [summary, setSummary] = useState(
+    recovered?.summary ?? {
+      headline: base.headline,
+      reviewNote: base.reviewNote,
+      reviewedAt: base.reviewedAt,
     },
   );
-  const [summary, setSummary] = useState({
-    headline: base.headline,
-    reviewNote: base.reviewNote,
-    reviewedAt: base.reviewedAt,
-  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [conflict, setConflict] = useState(false);
   const [removing, setRemoving] = useState(false);
-  const [order, setOrder] = useState(base.features.map((f) => f.id));
+  const [order, setOrder] = useState(recovered?.order ?? base.features.map((f) => f.id));
+  useEffect(() => {
+    const snapshot = { base, draft, summary, order };
+    if (isRoadmapDraftDirty(snapshot, !!settings, horizon ?? 'current'))
+      saveDraft(storageKey, snapshot);
+    else clearDraft(storageKey);
+  }, [storageKey, base, draft, summary, order, settings, horizon]);
+  function closeEditor() {
+    if (busy) return;
+    const snapshot = { base, draft, summary, order };
+    if (isRoadmapDraftDirty(snapshot, !!settings, horizon ?? 'current'))
+      saveDraft(storageKey, snapshot);
+    else clearDraft(storageKey);
+    close();
+  }
   const field = <K extends keyof RoadmapFeature>(key: K, value: RoadmapFeature[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
   async function persist(next: Roadmap) {
@@ -405,6 +557,7 @@ function RoadmapEditor({
     setError('');
     try {
       await save(next);
+      clearDraft(storageKey);
     } catch (e) {
       setError((e as Error).message);
       setConflict(e instanceof ApiError && e.status === 409);
@@ -417,7 +570,7 @@ function RoadmapEditor({
     const features = order
       .map((id) => (id === draft.id ? draft : base.features.find((f) => f.id === id)!))
       .filter(Boolean);
-    if (!feature) features.push(draft);
+    if (!features.some((entry) => entry.id === draft.id)) features.push(draft);
     void persist(settings ? { ...base, ...summary } : { ...base, features });
   }
   const peers = order.filter(
@@ -436,11 +589,10 @@ function RoadmapEditor({
   return (
     <Modal
       title={settings ? 'Roadmap summary' : feature ? 'Edit feature' : 'Add feature'}
-      onClose={() => {
-        if (!busy) close();
-      }}
+      onClose={closeEditor}
     >
       <form className="simple-form roadmap-editor" onSubmit={submit}>
+        {recovered && <p className="muted">Recovered your unfinished roadmap draft.</p>}
         <fieldset disabled={busy || conflict}>
           {settings ? (
             <>
@@ -590,6 +742,85 @@ function RoadmapEditor({
                   onChange={(e) => field('targetDate', e.target.value || null)}
                 />
               </label>
+              <fieldset className="roadmap-reference-picker">
+                <legend>Link delivery (optional)</legend>
+                <p className="muted">
+                  Connect work to show progress and delivery risks. You can keep this feature
+                  editorial only.
+                </p>
+                {(
+                  [
+                    {
+                      key: 'projectIds',
+                      label: 'Projects',
+                      options: data.projects.map((p) => ({ id: p.id, label: p.name })),
+                    },
+                    {
+                      key: 'milestoneIds',
+                      label: 'Milestones',
+                      options: data.milestones.map((m) => ({
+                        id: m.id,
+                        label: `${data.projects.find((p) => p.id === m.projectId)?.name ?? 'Project'} · ${m.title}`,
+                      })),
+                    },
+                    {
+                      key: 'itemIds',
+                      label: 'Work items',
+                      options: data.items.map((i) => ({
+                        id: i.id,
+                        label: `${i.identifier} · ${i.title}`,
+                      })),
+                    },
+                  ] as const
+                ).map(({ key, label, options }) => (
+                  <div key={key}>
+                    <label className="field">
+                      {label}
+                      <Select
+                        className="input"
+                        value=""
+                        disabled={(draft[key]?.length ?? 0) >= 100}
+                        onChange={(e) => {
+                          if (e.target.value && !draft[key]?.includes(e.target.value))
+                            field(key, [...(draft[key] ?? []), e.target.value]);
+                        }}
+                      >
+                        <option value="">Add {label.toLowerCase().replace(/s$/, '')}…</option>
+                        {options
+                          .filter((option) => !draft[key]?.includes(option.id))
+                          .map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.label}
+                            </option>
+                          ))}
+                      </Select>
+                    </label>
+                    <ul className="roadmap-reference-list">
+                      {(draft[key] ?? []).map((id) => (
+                        <li key={id}>
+                          <span>
+                            {options.find((option) => option.id === id)?.label ??
+                              'Unavailable record'}
+                          </span>
+                          <button
+                            type="button"
+                            className="icon-button"
+                            aria-label={`Remove ${options.find((option) => option.id === id)?.label ?? 'unavailable reference'}`}
+                            onClick={() =>
+                              field(
+                                key,
+                                draft[key]!.filter((value) => value !== id),
+                              )
+                            }
+                          >
+                            <X size={14} />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </fieldset>
               {feature && (
                 <div className="roadmap-order">
                   <span>
@@ -623,15 +854,38 @@ function RoadmapEditor({
             {error}
           </p>
         )}
+        <button
+          type="button"
+          className="text-button"
+          disabled={busy}
+          onClick={() => {
+            clearDraft(storageKey);
+            close();
+          }}
+        >
+          Discard draft
+        </button>
         {conflict && (
           <button
             type="button"
             className="button"
             onClick={() => {
-              void reload().catch((e) => setError((e as Error).message));
+              setBusy(true);
+              void reload()
+                .then((latest) => {
+                  setBase(latest);
+                  setOrder(latest.features.map((entry) => entry.id));
+                  setConflict(false);
+                  setError(
+                    'Latest roadmap loaded. Your draft is kept; review it before saving again.',
+                  );
+                })
+                .catch((e) => setError((e as Error).message))
+                .finally(() => setBusy(false));
             }}
+            disabled={busy}
           >
-            Discard draft and load latest
+            Load latest and keep draft
           </button>
         )}
         {removing ? (
@@ -671,7 +925,7 @@ function RoadmapEditor({
                 Remove from roadmap
               </button>
             )}
-            <button className="button" type="button" disabled={busy} onClick={close}>
+            <button className="button" type="button" disabled={busy} onClick={closeEditor}>
               Cancel
             </button>
             <button className="button primary" disabled={busy || conflict}>

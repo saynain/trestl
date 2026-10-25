@@ -1,20 +1,44 @@
-import { useRef, useState, type FormEvent } from 'react';
-import { Check, CircleCheck, Hourglass, Lightbulb, Lock, Plus } from 'lucide-react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Check, CircleCheck, Hourglass, Lightbulb, Lock, Plus, Sun } from 'lucide-react';
 import type { WorkItem } from '../../shared/types';
 import { api, patch, ApiError } from '../lib/api';
 import { useApp } from '../lib/context';
-import { navigate, shortDate, statuses, today, types } from '../lib/model';
-import { homeItems, homeSection, tomorrow, type HomeSection } from '../lib/home';
-import { EmptyState, StatusIcon } from './ui';
+import { useShortcuts } from '../lib/keyboard';
+import { navigate, priorities, shortDate, statuses, today, types } from '../lib/model';
+import {
+  homeItems,
+  homeSection,
+  homeTodayKey,
+  readHomeToday,
+  saveHomeToday,
+  tomorrow,
+  type HomeSection,
+} from '../lib/home';
+import { EmptyState, PriorityIcon, StatusIcon } from './ui';
 import './home.css';
 
 const sections = [
   {
     id: 'attention',
     label: 'Needs attention',
-    description: 'Due or ready to follow up, plus work already in progress.',
+    description: 'Overdue deadlines, work due today, and follow-ups ready for review.',
     empty: 'Nothing needs your attention right now',
-    hint: 'Your dated follow-ups will appear here when it’s time. Next up holds the work you can pick up whenever you’re ready.',
+    hint: 'Dated follow-ups appear here when it’s time. Continuing holds work already in progress.',
+  },
+  {
+    id: 'today',
+    label: 'Today',
+    description:
+      'Your chosen focus for today. Adding here does not change deadlines or notify others.',
+    empty: 'Choose a little focus for today',
+    hint: 'Use the sun beside an item to add it to Today. Your selection starts fresh each day.',
+  },
+  {
+    id: 'continuing',
+    label: 'Continuing',
+    description: 'Work in progress or review without an overdue or immediate date.',
+    empty: 'Room to start something',
+    hint: 'Work you start appears here. Deadlines and dated reviews take precedence.',
   },
   {
     id: 'next',
@@ -46,21 +70,71 @@ const captureKinds = [
   { id: 'someday', label: 'Someday', icon: Lightbulb },
 ] as const;
 
-function QuickCapture() {
-  const { data, refresh, toast } = useApp();
-  const [title, setTitle] = useState('');
-  const [kind, setKind] = useState<CaptureKind>('task');
-  const [date, setDate] = useState('');
+function QuickCapture({ scope }: { scope: string }) {
+  const { data, refresh, toast, toastAction, openItem, applyItems, removeItems } = useApp();
+  const draftKey = `trestl.capture.v1.${scope}`;
+  const [draft, setDraft] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(draftKey) || 'null');
+      return {
+        title: typeof saved?.title === 'string' ? saved.title.slice(0, 240) : '',
+        kind: (captureKinds.some((kind) => kind.id === saved?.kind)
+          ? saved.kind
+          : 'task') as CaptureKind,
+        date: typeof saved?.date === 'string' ? saved.date : '',
+      };
+    } catch {
+      return { title: '', kind: 'task' as CaptureKind, date: '' };
+    }
+  });
+  const { title, kind, date } = draft;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [added, setAdded] = useState<WorkItem | null>(null);
   const input = useRef<HTMLInputElement>(null);
-  const pending = useRef<{ body: string; key: string } | null>(null);
+  const attemptKey = `${draftKey}.attempt`;
+  const [initialAttempt] = useState<{ body: string; key: string; createdAt: number } | null>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(attemptKey) || 'null');
+      return typeof saved?.body === 'string' &&
+        typeof saved?.key === 'string' &&
+        typeof saved.createdAt === 'number' &&
+        Date.now() - saved.createdAt < 30 * 60000
+        ? saved
+        : null;
+    } catch {
+      return null;
+    }
+  });
+  const pending = useRef(initialAttempt);
+  useEffect(() => {
+    try {
+      if (title || date || kind !== 'task') localStorage.setItem(draftKey, JSON.stringify(draft));
+      else localStorage.removeItem(draftKey);
+    } catch {
+      // Capture remains available if browser storage is disabled.
+    }
+  }, [draft, draftKey, title, date, kind]);
+  async function undoCapture(item: WorkItem) {
+    try {
+      await api<void>(`/items/${item.id}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ expectedRevision: item.revision ?? 0 }),
+      });
+      removeItems([item.id]);
+      setAdded((current) => (current?.id === item.id ? null : current));
+      toast('Capture removed');
+    } catch (e) {
+      toast((e as Error).message, 'error');
+      if (e instanceof ApiError && e.status === 409) await refresh().catch(() => {});
+    }
+  }
   async function capture(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saving || !title.trim()) return;
     setSaving(true);
     setError('');
-    const submittedDate = String(new FormData(event.currentTarget).get('followUpDate') || '');
+    const submittedDate = String(new FormData(event.currentTarget).get('captureDate') || '');
     const body = JSON.stringify({
       title: title.trim(),
       projectId: null,
@@ -68,9 +142,16 @@ function QuickCapture() {
       visibility: 'private',
       type: kind === 'someday' ? 'idea' : kind,
       status: kind === 'someday' ? 'backlog' : 'todo',
-      followUpDate: submittedDate || null,
+      dueDate: kind === 'task' ? submittedDate || null : null,
+      followUpDate: kind !== 'task' ? submittedDate || null : null,
     });
-    if (pending.current?.body !== body) pending.current = { body, key: crypto.randomUUID() };
+    if (pending.current?.body !== body || Date.now() - pending.current.createdAt >= 30 * 60000)
+      pending.current = { body, key: crypto.randomUUID(), createdAt: Date.now() };
+    try {
+      localStorage.setItem(attemptKey, JSON.stringify(pending.current));
+    } catch {
+      // The in-memory attempt still prevents duplicate retries during this visit.
+    }
     try {
       const item = await api<WorkItem>('/items', {
         method: 'POST',
@@ -78,17 +159,28 @@ function QuickCapture() {
         headers: { 'Idempotency-Key': pending.current.key },
       });
       pending.current = null;
-      setTitle('');
-      setDate('');
-      navigate('home', undefined, homeSection(item));
-      toast('Added to your personal inbox');
-      input.current?.focus();
       try {
-        await refresh();
+        localStorage.removeItem(draftKey);
+        localStorage.removeItem(attemptKey);
       } catch {
-        toast('Item saved. Refresh the page to see it.', 'error');
+        // Browser storage may be disabled.
       }
+      applyItems([item]);
+      setAdded(item);
+      setDraft({ title: '', kind: 'task', date: '' });
+      navigate('home', undefined, homeSection(item));
+      toastAction('Added to your personal inbox', {
+        label: 'Open',
+        onClick: () => openItem(item.id),
+      });
+      input.current?.focus();
     } catch (e) {
+      if (e instanceof ApiError && e.status === 404) {
+        pending.current = null;
+        try {
+          localStorage.removeItem(attemptKey);
+        } catch {}
+      }
       setError((e as Error).message);
     } finally {
       setSaving(false);
@@ -107,7 +199,7 @@ function QuickCapture() {
         aria-label="What would you like to remember?"
         placeholder="What would you like to remember?"
         value={title}
-        onChange={(e) => setTitle(e.target.value)}
+        onChange={(e) => setDraft({ ...draft, title: e.target.value })}
         maxLength={240}
         required
         disabled={saving}
@@ -120,7 +212,7 @@ function QuickCapture() {
               type="button"
               aria-pressed={kind === id}
               disabled={saving}
-              onClick={() => setKind(id)}
+              onClick={() => setDraft({ ...draft, kind: id })}
             >
               <Icon size={15} />
               {label}
@@ -128,14 +220,14 @@ function QuickCapture() {
           ))}
         </div>
         <label className="home-capture-date">
-          Follow up on
+          {kind === 'task' ? 'Due on' : 'Review on'}
           <input
             className="input"
             type="date"
-            name="followUpDate"
+            name="captureDate"
             value={date}
-            onInput={(e) => setDate(e.currentTarget.value)}
-            onChange={(e) => setDate(e.target.value)}
+            onInput={(e) => setDraft({ ...draft, date: e.currentTarget.value })}
+            onChange={(e) => setDraft({ ...draft, date: e.target.value })}
             required={kind === 'followup'}
             disabled={saving}
           />
@@ -148,7 +240,21 @@ function QuickCapture() {
       <p className="home-capture-hint">
         <Lock size={12} />
         Private · Assigned to you · Personal inbox
+        {kind !== 'task' && ' · Review date is a reminder, not a delivery deadline'}
       </p>
+      {added && (
+        <div className="home-capture-receipt" role="status">
+          <span>
+            Added: <strong>{added.title}</strong>
+          </span>
+          <button className="button" type="button" onClick={() => openItem(added.id)}>
+            Open
+          </button>
+          <button className="button" type="button" onClick={() => void undoCapture(added)}>
+            Undo
+          </button>
+        </div>
+      )}
       {error && (
         <div className="form-error" role="alert">
           {error}
@@ -159,22 +265,133 @@ function QuickCapture() {
 }
 
 export default function Home({ tab }: { tab: string }) {
-  const { data, refresh, toast, openItem } = useApp();
+  const { data } = useApp();
+  const scope = `${data.workspace?.id || data.user.workspaceId || 'default'}.${data.user.id}`;
+  return <HomeWorkspace key={scope} scope={scope} tab={tab} />;
+}
+
+function HomeWorkspace({ tab, scope }: { tab: string; scope: string }) {
+  const { data, refresh, toast, toastAction, openItem, applyItems } = useApp();
   const [busy, setBusy] = useState<string | null>(null);
+  const [focused, setFocused] = useState<string | null>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const tabs = useRef<HTMLElement>(null);
   const section = sections.find((s) => s.id === tab) || sections[0];
   const date = today();
+  const todayKey = homeTodayKey(
+    data.workspace?.id || data.user.workspaceId || 'default',
+    data.user.id,
+    date,
+  );
+  const [todaySelection, setTodaySelection] = useState<{ key: string; ids: string[] }>(() => ({
+    key: todayKey,
+    ids: readHomeToday(todayKey),
+  }));
+  const todayIds = todaySelection.key === todayKey ? todaySelection.ids : readHomeToday(todayKey);
+  const selectedToday = new Set(todayIds);
   const items = homeItems(data.items, data.user.id);
-  const buckets: Record<HomeSection, WorkItem[]> = { attention: [], next: [], someday: [] };
+  const buckets: Record<HomeSection, WorkItem[]> = {
+    attention: [],
+    continuing: [],
+    next: [],
+    someday: [],
+  };
   for (const item of items) buckets[homeSection(item, date)].push(item);
-  const visible = section.id === 'all' ? items : buckets[section.id];
+  const todayItems = items.filter((item) => selectedToday.has(item.id));
+  const visible =
+    section.id === 'all' ? items : section.id === 'today' ? todayItems : buckets[section.id];
   const projects = new Map(data.projects.map((project) => [project.id, project.name]));
+  useEffect(() => {
+    tabs.current
+      ?.querySelector<HTMLElement>('[aria-current="page"]')
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [section.id]);
+  function toggleToday(item: WorkItem) {
+    const ids = selectedToday.has(item.id)
+      ? todayIds.filter((id) => id !== item.id)
+      : [...todayIds, item.id];
+    setTodaySelection({ key: todayKey, ids });
+    saveHomeToday(todayKey, ids);
+    toast(selectedToday.has(item.id) ? 'Removed from Today' : 'Added to Today');
+  }
+  function focusItem(direction: number) {
+    if (!visible.length) return false;
+    const active =
+      document.activeElement?.closest<HTMLElement>('[data-item-id]')?.dataset.itemId || focused;
+    const index = visible.findIndex((item) => item.id === active);
+    const next =
+      visible[
+        Math.max(
+          0,
+          Math.min(
+            visible.length - 1,
+            index < 0 ? (direction > 0 ? 0 : visible.length - 1) : index + direction,
+          ),
+        )
+      ];
+    setFocused(next.id);
+    root.current
+      ?.querySelector<HTMLButtonElement>(`[data-item-id="${next.id}"] .home-item-main`)
+      ?.focus();
+    return true;
+  }
+  useShortcuts(
+    'list',
+    {
+      next: () => focusItem(1),
+      previous: () => focusItem(-1),
+      open: () => {
+        const active = document.activeElement;
+        if (
+          active instanceof HTMLElement &&
+          active.closest('button') &&
+          !active.classList.contains('home-item-main')
+        )
+          return false;
+        const id =
+          document.activeElement?.closest<HTMLElement>('[data-item-id]')?.dataset.itemId || focused;
+        if (!id || !visible.some((item) => item.id === id)) return false;
+        openItem(id);
+        return true;
+      },
+    },
+    { root },
+  );
   async function update(item: WorkItem, changes: Partial<WorkItem>, message: string) {
     if (busy) return;
     setBusy(item.id);
     try {
-      await patch(`/items/${item.id}`, { ...changes, expectedRevision: item.revision ?? 0 });
-      toast(message);
-      await refresh();
+      const { item: saved } = await patch<{ item: WorkItem }>(`/items/${item.id}`, {
+        ...changes,
+        expectedRevision: item.revision ?? 0,
+      });
+      applyItems([saved]);
+      if (item.recurrence && changes.status !== undefined && changes.status !== item.status)
+        void refresh().catch(() => {});
+      const undoChanges = Object.fromEntries(
+        Object.keys(changes).map((key) => [key, item[key as keyof WorkItem]]),
+      );
+      toastAction(message, {
+        label: 'Undo',
+        onClick: () => {
+          void patch<{ item: WorkItem }>(`/items/${saved.id}`, {
+            ...undoChanges,
+            ...(item.recurrence && saved.status === 'done' && item.status !== 'done'
+              ? { undoCompletion: true }
+              : {}),
+            expectedRevision: saved.revision ?? 0,
+          })
+            .then(({ item: restored }) => {
+              applyItems([restored]);
+              if (item.recurrence && changes.status !== undefined) void refresh().catch(() => {});
+              toast('Change undone');
+            })
+            .catch(async (e: unknown) => {
+              toast((e as Error).message, 'error');
+              if (e instanceof ApiError && e.status === 409) await refresh().catch(() => {});
+            });
+        },
+      });
     } catch (e) {
       toast((e as Error).message, 'error');
       if (e instanceof ApiError && e.status === 409) await refresh().catch(() => {});
@@ -183,13 +400,13 @@ export default function Home({ tab }: { tab: string }) {
     }
   }
   return (
-    <div className="home-page">
+    <div className="home-page" ref={root}>
       <header className="home-heading">
         <h1>A little space to get things done.</h1>
         <p>Your tasks and follow-ups, with or without a project.</p>
       </header>
-      <QuickCapture />
-      <nav className="home-tabs" aria-label="Personal work">
+      <QuickCapture scope={scope} />
+      <nav ref={tabs} className="home-tabs" aria-label="Personal work">
         {sections.map((s) => (
           <button
             key={s.id}
@@ -198,7 +415,13 @@ export default function Home({ tab }: { tab: string }) {
             onClick={() => navigate('home', undefined, s.id)}
           >
             {s.label}
-            <span>{s.id === 'all' ? items.length : buckets[s.id].length}</span>
+            <span>
+              {s.id === 'all'
+                ? items.length
+                : s.id === 'today'
+                  ? todayItems.length
+                  : buckets[s.id].length}
+            </span>
           </button>
         ))}
       </nav>
@@ -209,7 +432,12 @@ export default function Home({ tab }: { tab: string }) {
             const due = item.dueDate;
             const followUp = item.followUpDate;
             return (
-              <li key={item.id} className="home-work-row" data-item-id={item.id}>
+              <li
+                key={item.id}
+                className={`home-work-row${focused === item.id ? ' focused' : ''}`}
+                data-item-id={item.id}
+                onFocus={() => setFocused(item.id)}
+              >
                 <button
                   className="home-complete"
                   aria-label={`Complete ${item.title}`}
@@ -229,6 +457,13 @@ export default function Home({ tab }: { tab: string }) {
                     {statuses.find((status) => status.id === item.status)?.name}
                   </span>
                 </button>
+                <span
+                  className="home-item-priority"
+                  title={priorities.find((priority) => priority.id === item.priority)?.name}
+                >
+                  <PriorityIcon priority={item.priority} />
+                  {priorities.find((priority) => priority.id === item.priority)?.name}
+                </span>
                 <div className="home-item-dates">
                   {due && (
                     <span className={due < date ? 'overdue' : ''}>
@@ -237,7 +472,7 @@ export default function Home({ tab }: { tab: string }) {
                   )}
                   {followUp && (
                     <span className={followUp <= date ? 'home-review-ready' : ''}>
-                      Follow up {followUp === date ? 'today' : shortDate(followUp)}
+                      Review {followUp === date ? 'today' : shortDate(followUp)}
                     </span>
                   )}
                 </div>
@@ -245,7 +480,7 @@ export default function Home({ tab }: { tab: string }) {
                   <button
                     className="button home-row-action"
                     disabled={!!busy}
-                    title="Move the follow-up to tomorrow. The due date stays the same."
+                    title="Move the review to tomorrow. The due date stays the same."
                     aria-label={`Follow up tomorrow: ${item.title}`}
                     onClick={() =>
                       void update(
@@ -267,6 +502,15 @@ export default function Home({ tab }: { tab: string }) {
                     Move to Next up
                   </button>
                 ) : null}
+                <button
+                  className="home-today-toggle"
+                  aria-pressed={selectedToday.has(item.id)}
+                  aria-label={`${selectedToday.has(item.id) ? 'Remove from' : 'Add to'} Today: ${item.title}`}
+                  title={selectedToday.has(item.id) ? 'Remove from Today' : 'Add to Today'}
+                  onClick={() => toggleToday(item)}
+                >
+                  <Sun size={16} />
+                </button>
               </li>
             );
           })}
@@ -279,7 +523,8 @@ export default function Home({ tab }: { tab: string }) {
         />
       )}
       <p className="home-scope-note">
-        Assigned to you, plus unassigned items in your personal inbox. This workspace only.
+        Assigned to you, plus unassigned items in your personal inbox. This workspace only. J / K to
+        focus items; Enter to open.
       </p>
     </div>
   );

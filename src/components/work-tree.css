@@ -69,7 +69,8 @@
 }
 @media (max-width: 760px) {
   .work-row.work-tree-row {
-    grid-template-columns: minmax(0, 1fr) 28px;
+    grid-template-columns: minmax(0, 1fr) 24px 90px;
+    gap: 4px;
     padding-left: 4px;
   }
   .work-tree-main {
@@ -97,8 +98,22 @@
   .work-tree-row .item-title-line > span:first-child {
     flex: 1 1 100%;
   }
-  .work-tree-row .priority-cell,
+  .work-row.work-tree-row .priority-cell,
+  .work-row.work-tree-row .due-cell {
+    display: flex;
+  }
+  .work-row.work-tree-row .assignee-cell {
+    display: none;
+  }
+  .work-tree-row .priority-name {
+    display: none;
+  }
   .work-tree-row .due-cell {
+    justify-content: flex-end;
+    gap: 3px;
+    font-size: var(--text-sm);
+  }
+  .work-tree-row .due-cell > svg {
     display: none;
   }
 }

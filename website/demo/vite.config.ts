@@ -67,7 +67,7 @@ export default defineConfig({
     ...productConfig.plugins!,
     {
       name: 'demo-editor-worker-path',
-      closeBundle() {
+      writeBundle() {
         mkdirSync(resolve(here, '../.generated'), { recursive: true });
         renameSync(
           resolve(here, '../public/demo/index.html'),

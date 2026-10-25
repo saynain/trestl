@@ -9,6 +9,10 @@ import {
   latestProjectUpdate,
   latestProjectUpdates,
   projectHealth,
+  projectReviewEvidence,
+  projectEvidenceDraft,
+  projectDraftEvidence,
+  type ProjectReviewEvidence,
   reviewProjects,
   updateIsStale,
 } from '../lib/project-updates';
@@ -48,12 +52,20 @@ function UpdateBody({ update, latest = true }: { update: ProjectUpdate; latest?:
     </>
   );
 }
-export function UpdateComposer({ project, onClose }: { project: Project; onClose: () => void }) {
+export function UpdateComposer({
+  project,
+  onClose,
+  initialBody = '',
+}: {
+  project: Project;
+  onClose: () => void;
+  initialBody?: string;
+}) {
   const { data, refresh, toast } = useApp();
   const [health, setHealth] = useState<ProjectHealth>(
     latestProjectUpdate(data.projectUpdates || [], project.id)?.health || 'on_track',
   );
-  const [body, setBody] = useState('');
+  const [body, setBody] = useState(initialBody);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   async function submit(e: FormEvent) {
@@ -115,6 +127,12 @@ export function UpdateComposer({ project, onClose }: { project: Project; onClose
         <small className="muted">
           Markdown supported. Visible to everyone with access to this project.
         </small>
+        {initialBody && (
+          <small className="muted">
+            Draft includes work shared with everyone who can access this project. Add context and
+            choose the health before posting.
+          </small>
+        )}
         {error && (
           <p role="alert" className="overdue">
             {error}
@@ -172,7 +190,7 @@ export function WeeklyReview() {
   const { data } = useApp();
   const [filter, setFilter] = useState('all');
   const [query, setQuery] = useState('');
-  const [compose, setCompose] = useState<Project | null>(null);
+  const [compose, setCompose] = useState<{ project: Project; body: string } | null>(null);
   const updates = latestProjectUpdates(data.projectUpdates || []);
   const projects = reviewProjects(data.projects, updates);
   const needsUpdate = (p: Project) => {
@@ -223,6 +241,7 @@ export function WeeklyReview() {
         {shown.map((project) => {
           const update = updates.get(project.id);
           const owner = data.users.find((u) => u.id === project.ownerId);
+          const evidence = projectReviewEvidence(data, project.id);
           return (
             <article className="review-project" key={project.id}>
               <div className="review-project-heading">
@@ -241,11 +260,21 @@ export function WeeklyReview() {
                     </small>
                   </span>
                 </button>
-                <button className="button" onClick={() => setCompose(project)}>
+                <button className="button" onClick={() => setCompose({ project, body: '' })}>
                   <Plus size={14} />
                   Update
                 </button>
               </div>
+              <ReviewEvidence
+                project={project}
+                evidence={evidence}
+                omittedRestricted={
+                  projectDraftEvidence(evidence, data, project.id).omittedRestricted
+                }
+                onDraft={() =>
+                  setCompose({ project, body: projectEvidenceDraft(evidence, data, project.id) })
+                }
+              />
               <div className="review-project-facts">
                 <span>Owner: {owner?.name || 'Unassigned'}</span>
                 <span>
@@ -279,8 +308,148 @@ export function WeeklyReview() {
         />
       )}
       {compose && (
-        <UpdateComposer key={compose.id} project={compose} onClose={() => setCompose(null)} />
+        <UpdateComposer
+          key={compose.project.id}
+          project={compose.project}
+          initialBody={compose.body}
+          onClose={() => setCompose(null)}
+        />
       )}
     </div>
+  );
+}
+
+function ReviewEvidence({
+  project,
+  evidence,
+  onDraft,
+  omittedRestricted,
+}: {
+  project: Project;
+  evidence: ProjectReviewEvidence;
+  onDraft: () => void;
+  omittedRestricted: boolean;
+}) {
+  const { openItem } = useApp();
+  const itemGroup = (
+    label: string,
+    items: ProjectReviewEvidence['completed'],
+    date: 'dueDate' | 'completedAt',
+  ) => (
+    <details className="review-evidence-group">
+      <summary>
+        {label}
+        <strong>{items.length}</strong>
+      </summary>
+      {items.length ? (
+        <ul>
+          {items.slice(0, 10).map((item) => (
+            <li key={item.id}>
+              <button className="review-evidence-link" onClick={() => openItem(item.id)}>
+                <span>
+                  <small>{item.identifier}</small> {item.title}
+                </span>
+                <time dateTime={item[date] || undefined}>{shortDate(item[date])}</time>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="muted">None recorded.</p>
+      )}
+      {items.length > 10 && (
+        <button className="text-button" onClick={() => navigate('project', project.id)}>
+          View project work · {items.length - 10} more
+        </button>
+      )}
+    </details>
+  );
+  return (
+    <section className="review-evidence" aria-label={`Delivery evidence for ${project.name}`}>
+      <div className="review-evidence-heading">
+        <small className="muted">
+          Work since {shortDate(evidence.since)}
+          {evidence.includesSubprojects ? ' · includes subprojects' : ''}
+        </small>
+        <button className="text-button" onClick={onDraft}>
+          Draft from evidence
+        </button>
+      </div>
+      <div className="review-evidence-grid">
+        {itemGroup('Completed', evidence.completed, 'completedAt')}
+        {itemGroup('Overdue', evidence.overdue, 'dueDate')}
+        {itemGroup('Next 7 days', evidence.upcoming, 'dueDate')}
+        <details className="review-evidence-group">
+          <summary>
+            Dependencies<strong>{evidence.blockers.length}</strong>
+          </summary>
+          {evidence.blockers.length ? (
+            <ul>
+              {evidence.blockers.slice(0, 10).map(({ relation, blocker, dependent, state }) => (
+                <li key={relation.id}>
+                  <button className="review-evidence-link" onClick={() => openItem(dependent.id)}>
+                    {dependent.identifier}: {dependent.title}
+                  </button>
+                  <small className="muted">
+                    Waits on{' '}
+                    <button className="text-button" onClick={() => openItem(blocker.id)}>
+                      {blocker.identifier}
+                    </button>
+                    {state === 'conflict' ? ' · schedule conflict' : ''}
+                  </small>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">No unresolved dependencies.</p>
+          )}
+          {evidence.blockers.length > 10 && (
+            <button
+              className="text-button"
+              onClick={() => navigate('project', project.id, 'gantt')}
+            >
+              View timeline · {evidence.blockers.length - 10} more
+            </button>
+          )}
+        </details>
+        <details className="review-evidence-group">
+          <summary>
+            Milestone slips<strong>{evidence.slippedMilestones.length}</strong>
+          </summary>
+          {evidence.slippedMilestones.length ? (
+            <ul>
+              {evidence.slippedMilestones.slice(0, 10).map((milestone) => (
+                <li key={milestone.id}>
+                  <button
+                    className="review-evidence-link"
+                    onClick={() => navigate('project', milestone.projectId, 'overview')}
+                  >
+                    <span>{milestone.title}</span>
+                    <time dateTime={milestone.dueDate || undefined}>
+                      {shortDate(milestone.dueDate)}
+                    </time>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">No past-due milestones.</p>
+          )}
+          {evidence.slippedMilestones.length > 10 && (
+            <button
+              className="text-button"
+              onClick={() => navigate('project', project.id, 'overview')}
+            >
+              View milestones · {evidence.slippedMilestones.length - 10} more
+            </button>
+          )}
+        </details>
+      </div>
+      {omittedRestricted && (
+        <p className="muted review-evidence-privacy">
+          Restricted work is visible here to you but omitted from the shared update draft.
+        </p>
+      )}
+    </section>
   );
 }

@@ -79,6 +79,33 @@ export async function openDatabase(
   );
   await db.query(`CREATE INDEX IF NOT EXISTS entities_data_gin ON entities USING GIN(data)`);
   await db.query(
+    `CREATE INDEX IF NOT EXISTS entities_workspace ON entities(collection, (COALESCE(data->>'workspaceId','default')))`,
+  );
+  await db.query(
+    `CREATE INDEX IF NOT EXISTS activity_item_date ON entities((data->>'itemId'),(data->>'createdAt')) WHERE collection='activity'`,
+  );
+  // A database trigger also observes integration writes and direct SQL updates.
+  // The counter changes in the writer's transaction, so rolled-back changes
+  // never invalidate a successful bootstrap response.
+  await db.query(
+    `CREATE TABLE IF NOT EXISTS bootstrap_revision (id INTEGER PRIMARY KEY CHECK (id=1), revision BIGINT NOT NULL)`,
+  );
+  await db.query(`INSERT INTO bootstrap_revision(id,revision) VALUES (1,0) ON CONFLICT DO NOTHING`);
+  await db.query(`CREATE OR REPLACE FUNCTION bump_bootstrap_revision() RETURNS trigger AS $$
+    BEGIN
+      UPDATE bootstrap_revision SET revision=revision+1 WHERE id=1;
+      RETURN NULL;
+    END;
+    $$ LANGUAGE plpgsql`);
+  await db.transaction(async (tx) => {
+    // Hold the table lock across replacement: another writer must never observe
+    // a gap with the invalidation trigger temporarily absent on restart.
+    await tx.query(`DROP TRIGGER IF EXISTS entities_bootstrap_revision ON entities`);
+    await tx.query(`CREATE TRIGGER entities_bootstrap_revision
+      AFTER INSERT OR UPDATE OR DELETE ON entities
+      FOR EACH STATEMENT EXECUTE FUNCTION bump_bootstrap_revision()`);
+  });
+  await db.query(
     `CREATE TABLE IF NOT EXISTS credentials (user_id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password TEXT NOT NULL)`,
   );
   await db.query(
@@ -109,6 +136,14 @@ export function makeStore(db: Database) {
         await db.query<{ data: T }>('SELECT data FROM entities WHERE collection=$1 ORDER BY id', [
           collection,
         ])
+      ).rows.map((row) => row.data);
+    },
+    async listWorkspace<T>(collection: string, workspaceId: string): Promise<T[]> {
+      return (
+        await db.query<{ data: T }>(
+          `SELECT data FROM entities WHERE collection=$1 AND COALESCE(data->>'workspaceId','default')=$2 ORDER BY id`,
+          [collection, workspaceId],
+        )
       ).rows.map((row) => row.data);
     },
     async get<T>(collection: string, id: string): Promise<T | null> {
