@@ -594,7 +594,14 @@ for (const [path, schema, omit, required] of resources) {
           'limit',
         ].map((name) => ({ name, in: 'query', required: false, schema: string }))
       : [];
-  operation(`/${path}`, 'get', `List accessible ${path}`, list(schema), undefined, { parameters });
+  operation(
+    `/${path}`,
+    'get',
+    `List accessible ${path}${path === 'milestones' ? ' by due date (undated last), then title' : ''}`,
+    list(schema),
+    undefined,
+    { parameters },
+  );
   operation(
     `/${path}`,
     'post',
