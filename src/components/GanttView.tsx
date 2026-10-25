@@ -19,7 +19,14 @@ import type { Project, WorkItem } from '../../shared/types';
 import { useApp } from '../lib/context';
 import { blockingRelations, scheduleConflicts } from '../../shared/dependencies';
 import { patch } from '../lib/api';
-import { descendants, isDone, itemSearchText, shortDate, statuses, today } from '../lib/model';
+import {
+  descendants,
+  groupedStatuses,
+  isDone,
+  itemSearchText,
+  shortDate,
+  today,
+} from '../lib/model';
 import { dateAt, dayNumber, scheduleRange, shiftSchedule } from '../lib/gantt';
 import { Avatar, EmptyState, Modal, StatusIcon } from './ui';
 import './gantt.css';
@@ -257,7 +264,7 @@ export default function GanttView({ project, items }: { project: Project; items:
     setFitDays(Math.max(21, end - start + 9));
     reset(start - 4);
   }
-  const groups = statuses
+  const groups = groupedStatuses
     .map((status) => ({
       ...status,
       items: scheduled

@@ -4,11 +4,15 @@ import type { Bootstrap, SavedView, WorkItem } from '../shared/types.ts';
 import {
   filteredItems,
   filterWorkItems,
+  groupedStatuses,
   groupWorkItemsByTag,
   hashWithoutItem,
   itemPageHash,
   sortWorkItems,
+  statusGroupOrder,
+  statuses,
   today,
+  workflowStatusOrder,
   type Route,
 } from '../src/lib/model.ts';
 const user = {
@@ -326,6 +330,47 @@ test('milestone filters include legacy unassigned items and compose with existin
     filterWorkItems(items, user.id, { milestoneId: 'm', status: 'done' }).map((i) => i.id),
     ['done'],
   );
+});
+
+test('statuses follow the workflow while groups put work in flight first', () => {
+  assert.deepEqual(workflowStatusOrder, [
+    'backlog',
+    'todo',
+    'in_progress',
+    'in_review',
+    'done',
+    'canceled',
+  ]);
+  assert.deepEqual(statusGroupOrder, [
+    'in_progress',
+    'in_review',
+    'todo',
+    'backlog',
+    'done',
+    'canceled',
+  ]);
+  assert.deepEqual(
+    statuses.map((s) => s.id),
+    workflowStatusOrder,
+  );
+  assert.deepEqual(
+    groupedStatuses.map((s) => s.id),
+    statusGroupOrder,
+  );
+  const all = ['backlog', 'todo', 'in_progress', 'in_review', 'done', 'canceled'].sort();
+  for (const order of [workflowStatusOrder, statusGroupOrder])
+    assert.deepEqual([...order].sort(), all);
+  const byId = (list: typeof statuses) =>
+    Object.fromEntries(list.map(({ id, name, color }) => [id, { name, color }]));
+  assert.deepEqual(byId(statuses), {
+    backlog: { name: 'Backlog', color: '#9da5af' },
+    todo: { name: 'Todo', color: '#87919b' },
+    in_progress: { name: 'In progress', color: '#d09335' },
+    in_review: { name: 'In review', color: '#9773be' },
+    done: { name: 'Done', color: '#398665' },
+    canceled: { name: 'Canceled', color: '#9da5af' },
+  });
+  assert.deepEqual(byId(groupedStatuses), byId(statuses));
 });
 
 test('full-page items get their own hash and return to the list they were opened from', () => {
