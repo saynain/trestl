@@ -15,6 +15,7 @@ export interface BoardPreferences {
 }
 export function defaultBoardPreferences(showDone = false): BoardPreferences {
   return {
+    // `statuses` follows the workflow, so columns read left to right.
     columns: statuses.map(({ id, name }) => ({ id, name, hidden: false })),
     compact: false,
     showLabels: true,

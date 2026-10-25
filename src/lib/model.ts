@@ -1,12 +1,34 @@
 import type { Bootstrap, Priority, Project, Status, WorkItem } from '../../shared/types';
-export const statuses: { id: Status; name: string; color: string }[] = [
-  { id: 'in_progress', name: 'In progress', color: '#d09335' },
-  { id: 'todo', name: 'Todo', color: '#87919b' },
-  { id: 'in_review', name: 'In review', color: '#9773be' },
-  { id: 'backlog', name: 'Backlog', color: '#9da5af' },
-  { id: 'done', name: 'Done', color: '#398665' },
-  { id: 'canceled', name: 'Canceled', color: '#9da5af' },
+const statusMeta: Record<Status, { name: string; color: string }> = {
+  backlog: { name: 'Backlog', color: '#9da5af' },
+  todo: { name: 'Todo', color: '#87919b' },
+  in_progress: { name: 'In progress', color: '#d09335' },
+  in_review: { name: 'In review', color: '#9773be' },
+  done: { name: 'Done', color: '#398665' },
+  canceled: { name: 'Canceled', color: '#9da5af' },
+};
+/** Lifecycle order for status pickers, filters, board columns and the overview distribution. */
+export const workflowStatusOrder: Status[] = [
+  'backlog',
+  'todo',
+  'in_progress',
+  'in_review',
+  'done',
+  'canceled',
 ];
+/** Grouping order for lists and Gantt: work in flight first, then what's next, then closed. */
+export const statusGroupOrder: Status[] = [
+  'in_progress',
+  'in_review',
+  'todo',
+  'backlog',
+  'done',
+  'canceled',
+];
+const statusList = (order: Status[]): { id: Status; name: string; color: string }[] =>
+  order.map((id) => ({ id, ...statusMeta[id] }));
+export const statuses = statusList(workflowStatusOrder);
+export const groupedStatuses = statusList(statusGroupOrder);
 export const priorities: { id: Priority; name: string; color: string }[] = [
   { id: 'urgent', name: 'Urgent', color: '#c85d50' },
   { id: 'high', name: 'High', color: '#c18a36' },
