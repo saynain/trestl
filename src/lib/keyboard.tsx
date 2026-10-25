@@ -91,9 +91,12 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
       for (const scope of registered) {
         if (scope.root && !scope.root.current?.isConnected) continue;
         if (scope.name === 'list' && dialog) continue;
+        // Item actions apply to the work item in the topmost dialog, or to a full-page item
+        // when no dialog covers it.
+        const itemHost = dialog ?? document.querySelector<HTMLElement>('.item-page');
         if (
           (scope.name === 'item' || scope.name === 'composer') &&
-          (!dialog || !scope.root?.current || !dialog.contains(scope.root.current))
+          (!itemHost || !scope.root?.current || !itemHost.contains(scope.root.current))
         )
           continue;
         for (const [id, run] of Object.entries(scope.actions) as [

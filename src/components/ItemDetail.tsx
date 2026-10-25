@@ -2,11 +2,12 @@ import { ParentSelect, ParentPicker, HierarchyMenu } from './ParentPicker';
 import { ImageMarkdownTextarea } from './ImageMarkdownTextarea';
 import { workItemOptions } from '../lib/work-item-options';
 import { assigneeOptions } from '../lib/assignees';
-import { useShortcuts, activateItemControl } from '../lib/keyboard';
+import { useShortcuts, activateItemControl, isTyping } from '../lib/keyboard';
 import { itemActions, type ItemAction } from '../lib/shortcuts';
 import { Select } from './Select';
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
+  ArrowLeft,
   ArrowUpRight,
   Download,
   CircleAlert,
@@ -52,6 +53,44 @@ function Property({ name, children }: { name: string; children: ReactNode }) {
 }
 const message = (error: unknown) =>
   error instanceof Error ? error.message : 'Something went wrong. Please try again.';
+/** A work item as its own page in the main area; Back or Escape returns to where it was opened. */
+function ItemPage({
+  title,
+  onClose,
+  className = '',
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  className?: string;
+  children: ReactNode;
+}) {
+  const root = useRef<HTMLElement>(null);
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    root.current?.focus({ preventScroll: true });
+    const handler = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || isTyping(event.target)) return;
+      if (document.querySelector('[role="dialog"], .popover, .profile-popover')) return;
+      close.current();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, []);
+  return (
+    <section ref={root} tabIndex={-1} className={`item-page ${className}`} aria-label={title}>
+      <header className="item-page-header">
+        <button type="button" className="text-button item-page-back" onClick={onClose}>
+          <ArrowLeft size={15} />
+          Back
+        </button>
+        <h2>{title}</h2>
+      </header>
+      {children}
+    </section>
+  );
+}
 function DatePropertyInput({
   value,
   onSave,
@@ -167,12 +206,14 @@ function ActivityIcon({ body }: { body: string }) {
 export default function ItemDetail({
   id,
   activityId,
+  presentation = 'modal',
   onClose,
   initialAction,
   onActionHandled,
 }: {
   id: string;
   activityId?: string;
+  presentation?: 'modal' | 'page';
   onClose: () => void;
   initialAction?: ItemAction;
   onActionHandled?: () => void;
@@ -370,14 +411,11 @@ export default function ItemDetail({
     }
   }, [item?.id, initialAction]);
 
-  return (
-    <Modal
-      title={item ? `${project?.name || 'Personal inbox'}  /  ${item.identifier}` : 'Work item'}
-      onClose={onClose}
-      wide
-      className={`item-detail-modal ${uiPreferences.itemLayout === 'centered' ? 'item-detail-centered' : ''}`}
-      initialFocus="panel"
-    >
+  const frameTitle = item
+    ? `${project?.name || 'Personal inbox'}  /  ${item.identifier}`
+    : 'Work item';
+  const body = (
+    <>
       {!item ? (
         <div className="item-loading">
           {error ? (
@@ -516,7 +554,9 @@ export default function ItemDetail({
                     event.preventDefault();
                     event.stopPropagation();
                     setEditing(false);
-                    actionRoot.current?.closest<HTMLElement>('[role="dialog"]')?.focus();
+                    actionRoot.current
+                      ?.closest<HTMLElement>('[role="dialog"], .item-page')
+                      ?.focus();
                   }
                 }}
                 onSubmit={async (e) => {
@@ -1327,6 +1367,21 @@ export default function ItemDetail({
           onSave={(parentId) => update({ parentId })}
         />
       )}
+    </>
+  );
+  return presentation === 'page' ? (
+    <ItemPage title={frameTitle} onClose={onClose} className="item-detail-page">
+      {body}
+    </ItemPage>
+  ) : (
+    <Modal
+      title={frameTitle}
+      onClose={onClose}
+      wide
+      className={`item-detail-modal ${uiPreferences.itemLayout === 'centered' ? 'item-detail-centered' : ''}`}
+      initialFocus="panel"
+    >
+      {body}
     </Modal>
   );
 }

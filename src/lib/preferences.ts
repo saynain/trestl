@@ -1,8 +1,9 @@
 import type { User } from '../../shared/types';
 
 type Profile = Pick<User, 'id' | 'workspaceId' | 'role'>;
+export type ItemLayout = 'side-panel' | 'centered' | 'page';
 export interface UiPreferences {
-  itemLayout: 'side-panel' | 'centered';
+  itemLayout: ItemLayout;
   zenMode: boolean;
 }
 export const defaultUiPreferences: UiPreferences = { itemLayout: 'side-panel', zenMode: false };
@@ -11,7 +12,10 @@ export function readUiPreferences(user: Profile): UiPreferences {
   try {
     const saved = JSON.parse(localStorage.getItem(uiKey(user)) || 'null');
     return {
-      itemLayout: saved?.itemLayout === 'centered' ? 'centered' : 'side-panel',
+      itemLayout:
+        saved?.itemLayout === 'centered' || saved?.itemLayout === 'page'
+          ? saved.itemLayout
+          : 'side-panel',
       zenMode: saved?.zenMode === true,
     };
   } catch {

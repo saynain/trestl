@@ -327,6 +327,52 @@
   font-weight: 450;
   color: var(--muted);
 }
+.item-page {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - 61px);
+  border-top: 1px solid var(--border);
+  outline: none;
+}
+.item-page-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 51px;
+  padding: 0 30px;
+  border-bottom: 1px solid var(--border);
+}
+.item-page-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.item-page-header h2 {
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 450;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.item-page .item-detail {
+  overflow: visible;
+}
+@media (min-width: 761px) {
+  /* A full page has room for property values that the panels truncate. */
+  .item-page .item-detail {
+    grid-template-columns: minmax(0, 1fr) clamp(300px, 26vw, 380px);
+  }
+  .item-page .item-properties {
+    padding: 29px 24px;
+  }
+  .item-page .item-property {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+}
 .item-detail {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;
@@ -1056,7 +1102,8 @@
     flex-wrap: wrap;
     gap: 5px;
   }
-  .item-detail-modal .modal-header {
+  .item-detail-modal .modal-header,
+  .item-page-header {
     padding: 0 16px;
   }
   .item-detail-modal .modal-header h2 {
