@@ -11,7 +11,6 @@ import {
   Copy,
   Download,
   ExternalLink,
-  Github,
   KeyRound,
   Link2,
   Loader2,
@@ -23,7 +22,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../lib/context';
 import { api, patch, post, remove } from '../lib/api';
-import { Avatar } from './ui';
+import { Avatar, GitHubIcon } from './ui';
 import { navigate } from '../lib/model';
 import type { ItemLayout } from '../lib/preferences';
 import './settings.css';
@@ -440,7 +439,7 @@ function Integrations({ connections }: { connections: GitConnection[] }) {
         )}
         {!loading && !error && !integrations.length && (
           <div className="settings-empty">
-            <Github size={27} strokeWidth={1.3} />
+            <GitHubIcon size={27} strokeWidth={1.3} />
             <strong>Your projects, connected</strong>
             <p>
               Import repository issues while keeping planning, deadlines, and internal discussion in
@@ -454,7 +453,11 @@ function Integrations({ connections }: { connections: GitConnection[] }) {
             <div className="settings-connection" key={integration.id}>
               <div className="settings-connection-heading">
                 <span className="settings-provider-icon">
-                  {integration.provider === 'github' ? <Github size={19} /> : <Link2 size={19} />}
+                  {integration.provider === 'github' ? (
+                    <GitHubIcon size={19} />
+                  ) : (
+                    <Link2 size={19} />
+                  )}
                 </span>
                 <div>
                   <strong>{integration.name}</strong>

@@ -17,7 +17,6 @@ import {
   CalendarDays,
   ArrowRightLeft,
   GitFork,
-  Github,
   ChevronRight,
   Link2,
   Lock,
@@ -52,7 +51,7 @@ import {
   saveDraft,
 } from '../lib/drafts';
 import { priorities, statuses, types, shortDate } from '../lib/model';
-import { Avatar, Modal, StatusIcon } from './ui';
+import { Avatar, GitHubIcon, Modal, StatusIcon } from './ui';
 import './item.css';
 interface EditDraft {
   title: string;
@@ -478,7 +477,7 @@ export default function ItemDetail({
   }
   const source = item?.source;
   const providerName = source?.provider === 'github' ? 'GitHub' : 'Gitea';
-  const SourceIcon = source?.provider === 'github' ? Github : GitFork;
+  const SourceIcon = source?.provider === 'github' ? GitHubIcon : GitFork;
   const project = data.projects.find((p) => p.id === item?.projectId);
   const parent = data.items.find((i) => i.id === item?.parentId);
   const subtasks = data.items.filter((i) => i.parentId === id);
@@ -1224,7 +1223,8 @@ export default function ItemDetail({
                 {detail!.activity.map((entry) => {
                   const user = data.users.find((u) => u.id === entry.userId);
                   const commentProvider = entry.source?.provider === 'github' ? 'GitHub' : 'Gitea';
-                  const CommentSourceIcon = entry.source?.provider === 'github' ? Github : GitFork;
+                  const CommentSourceIcon =
+                    entry.source?.provider === 'github' ? GitHubIcon : GitFork;
                   return entry.kind === 'event' ? (
                     <li key={entry.id} className="item-event">
                       <span className="item-event-icon">

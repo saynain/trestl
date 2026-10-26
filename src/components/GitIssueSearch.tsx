@@ -1,10 +1,10 @@
 import { Select } from './Select';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ArrowUpRight, Check, Github, Link2, Loader2, Search, Settings } from 'lucide-react';
+import { ArrowUpRight, Check, Link2, Loader2, Search, Settings } from 'lucide-react';
 import { api, post } from '../lib/api';
 import { useApp } from '../lib/context';
 import { navigate } from '../lib/model';
-import { Modal } from './ui';
+import { GitHubIcon, Modal } from './ui';
 import type { GitConnection } from './GitSettings';
 import './item.css';
 interface Issue {
@@ -132,7 +132,7 @@ export default function GitIssueSearch({
           </div>
         ) : !connections.length ? (
           <div className="confluence-search-empty">
-            <Github size={25} />
+            <GitHubIcon size={25} />
             <h3>Connect your Git account</h3>
             <p>Save a GitHub or Gitea token once to reference issues in all your projects.</p>
             <button
@@ -197,7 +197,7 @@ export default function GitIssueSearch({
             {issue && (
               <article className="confluence-search-result">
                 <div className="confluence-result-heading">
-                  <Github size={17} />
+                  <GitHubIcon size={17} />
                   <a href={issue.externalUrl} target="_blank" rel="noopener noreferrer">
                     {issue.title}
                     <ArrowUpRight size={13} />
