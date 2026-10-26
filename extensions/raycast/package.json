@@ -87,7 +87,7 @@
     "format:check": "prettier --check src tests package.json README.md"
   },
   "dependencies": {
-    "@raycast/api": "^1.103.0",
+    "@raycast/api": "^2.9.0",
     "react": "^19.0.0"
   },
   "devDependencies": {
