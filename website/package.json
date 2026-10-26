@@ -14,7 +14,7 @@
     "check:docs": "node scripts/check-docs.mjs"
   },
   "dependencies": {
-    "@astrojs/react": "^6.0.5",
+    "@astrojs/react": "^7.1.1",
     "@fontsource-variable/manrope": "^5.3.0",
     "@fontsource/instrument-serif": "^5.3.0",
     "@tailwindcss/vite": "^4.3.3",
