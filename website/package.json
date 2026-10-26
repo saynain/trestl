@@ -18,7 +18,7 @@
     "@fontsource-variable/manrope": "^5.3.0",
     "@fontsource/instrument-serif": "^5.3.0",
     "@tailwindcss/vite": "^4.3.3",
-    "astro": "^7.3.2",
+    "astro": "~7.3.8",
     "fumadocs-core": "^16.15.9",
     "fumadocs-ui": "^16.15.9",
     "lucide-react": "^1.45.0",
@@ -37,5 +37,11 @@
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
     "typescript": "^5.9.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "fast-uri@<3.1.9": "^3.1.9",
+      "source-map-js@<1.2.2": "^1.2.2"
+    }
   }
 }
