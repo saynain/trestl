@@ -109,7 +109,7 @@ an inspection/export format, not a full database restore.
 
 ## Build from source
 
-Install Node.js 22.23.2+, pnpm 10.7.1, stable Rust, and the
+Install Node.js 22.23.4+, pnpm 10.7.1, stable Rust, and the
 [Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/).
 macOS requires Xcode command-line tools, Windows requires MSVC C++ build tools,
 and Linux requires WebKitGTK 4.1 and GTK development libraries (see the workflow).
@@ -132,7 +132,7 @@ pnpm desktop:build
 ```
 
 Build on each target OS and architecture; the preparation script deliberately
-rejects a mismatched runtime target. It downloads official Node.js 22.23.2,
+rejects a mismatched runtime target. It downloads official Node.js 22.23.4,
 checks its SHA-256 against Node's published checksum manifest, and caches it in
 `node_modules/.cache/trestl-desktop/`. A first build needs network access;
 installed applications do not. Generated runtime/resources live in ignored
