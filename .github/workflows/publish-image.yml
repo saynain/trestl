@@ -32,6 +32,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
+          # Runner images can lag behind Node.js security releases.
+          check-latest: true
 
       - name: Select image version
         id: image
