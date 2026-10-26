@@ -26,7 +26,7 @@ await mkdir(resources, { recursive: true });
 await mkdir('src-tauri/binaries', { recursive: true });
 
 // Bundle a pinned, official Node distribution. Verify the archive before extracting it.
-const version = '22.23.2';
+const version = '22.23.4';
 const platform = process.platform === 'win32' ? 'win' : process.platform;
 const distribution = `node-v${version}-${platform}-${process.arch}`;
 const archive = `${distribution}.${process.platform === 'win32' ? 'zip' : 'tar.gz'}`;
