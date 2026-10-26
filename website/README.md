@@ -24,11 +24,22 @@ pnpm --dir website build
 pnpm --dir website preview
 ```
 
-The build checks the demo's TypeScript, builds the real application with its isolated data adapter, checks Astro, generates `website/dist/`, and verifies the built docs links and anchors. Deploy that directory to a static host at the domain root. No API server or live Trestl instance is needed. `/play/` is the standalone dashboard; `/demo/` contains its generated assets. `/api/search.json` is a static documentation search index, not a Trestl API proxy.
+The build checks the demo's TypeScript, builds the real application with its isolated data adapter, checks Astro, generates `website/dist/`, and verifies the built docs links and anchors. The site must be served from a domain root. No API server or live Trestl instance is needed. `/play/` is the standalone dashboard; `/demo/` contains its generated assets. `/api/search.json` is a static documentation search index, not a Trestl API proxy.
 
 The deployed demo updates when the website is rebuilt and deployed; publishing an app release alone does not update static hosting. The embedded and full-demo URLs include a fingerprint of the built app document so returning visitors load the current bundle after deployment.
 
 The dashboard retains the product's dependencies, including the lazily loaded Excalidraw canvas editor, fonts, and workers. Its bundle is larger than an illustrative mockup. The iframe is lazy-loaded so marketing content does not wait for the app.
+
+## Deploy
+
+The site is published at [trestl.dev](https://trestl.dev) as an assets-only Cloudflare Worker. `wrangler.jsonc` serves `dist/` on the `trestl.dev` custom domain, with `src/pages/404.astro` for unknown paths and no `workers.dev` or preview URLs.
+
+The **Website** workflow builds and deploys the site when a `v*` release tag is pushed, so the docs match the version people can install. Run it manually from **Actions → Website → Run workflow** to redeploy. It uses the `website` environment, whose deployment policy allows release tags and `main`:
+
+- `CLOUDFLARE_API_TOKEN` (environment secret): an account API token created from the **Edit Cloudflare Workers** template, limited to the Trestl account and the `trestl.dev` zone.
+- `CLOUDFLARE_ACCOUNT_ID` (environment variable): the Cloudflare account that owns the zone.
+
+To deploy from a workstation after `pnpm --dir website build`, sign in with `npx wrangler@4.152.0 login`, then run `npx wrangler@4.152.0 deploy` in `website/` with `CLOUDFLARE_ACCOUNT_ID` set.
 
 ## Documentation
 

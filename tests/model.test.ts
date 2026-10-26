@@ -293,15 +293,15 @@ test('search finds original issue references without treating arbitrary links as
     source: {
       provider: 'gitea',
       integrationId: 'connection',
-      repository: 'basis/kubernetes',
+      repository: 'acme/platform',
       number: 42,
-      url: 'https://git.example.test/basis/kubernetes/issues/42',
+      url: 'https://git.example.test/acme/platform/issues/42',
       state: 'closed',
       lastSyncedAt: null,
       connected: true,
     },
   });
-  for (const search of ['basis/kubernetes #42', 'GITEA', '#42']) {
+  for (const search of ['acme/platform #42', 'GITEA', '#42']) {
     assert.deepEqual(
       filterWorkItems([item('native'), linked], user.id, { search }).map((item) => item.id),
       ['linked'],

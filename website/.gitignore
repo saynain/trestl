@@ -6,3 +6,6 @@ dist/
 public/demo/
 
 .generated/
+
+# Local Wrangler state from deploys.
+.wrangler/
