@@ -10,6 +10,10 @@ updates:
       application:
         update-types: [minor, patch]
     ignore:
+      # PGlite 0.4 changes the default database and 0.5 moves to PostgreSQL 18;
+      # existing data folders need a migration before either upgrade.
+      - dependency-name: '@electric-sql/pglite'
+        update-types: ['version-update:semver-minor', 'version-update:semver-major']
       # Node.js type definitions follow the Node 22 runtime, not the newest Node.
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
