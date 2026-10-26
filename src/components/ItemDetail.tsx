@@ -38,14 +38,50 @@ import type {
   Visibility,
   WorkItem,
 } from '../../shared/types';
-import { api, patch, post, remove } from '../lib/api';
+import { ApiError, api, patch, post, remove } from '../lib/api';
 import { useApp } from '../lib/context';
+import {
+  clearDraft,
+  draftKey,
+  draftTextChanges,
+  isRetryIntent,
+  hasDraftChanges,
+  type DraftText,
+  readDraft,
+  retryIntent,
+  saveDraft,
+} from '../lib/drafts';
 import { priorities, statuses, types, shortDate } from '../lib/model';
 import { Avatar, Modal, StatusIcon } from './ui';
 import './item.css';
+interface EditDraft {
+  title: string;
+  description: string;
+  revision: number;
+  base?: DraftText;
+}
+const isEditDraft = (value: unknown): value is EditDraft => {
+  if (!value || typeof value !== 'object') return false;
+  const draft = value as Record<string, unknown>;
+  return (
+    typeof draft.title === 'string' &&
+    typeof draft.description === 'string' &&
+    typeof draft.revision === 'number' &&
+    Number.isInteger(draft.revision) &&
+    draft.revision >= 0 &&
+    (draft.base === undefined ||
+      (!!draft.base &&
+        typeof draft.base === 'object' &&
+        typeof (draft.base as DraftText).title === 'string' &&
+        typeof (draft.base as DraftText).description === 'string'))
+  );
+};
+const isCommentDraft = (value: unknown): value is { body: string } =>
+  !!value && typeof value === 'object' && typeof (value as { body?: unknown }).body === 'string';
+
 function Property({ name, children }: { name: string; children: ReactNode }) {
   return (
-    <label className="item-property">
+    <label className="item-property" data-property={name}>
       <span>{name}</span>
       {children}
     </label>
@@ -218,7 +254,17 @@ export default function ItemDetail({
   initialAction?: ItemAction;
   onActionHandled?: () => void;
 }) {
-  const { data, refresh, toast, openItem, createItem, uiPreferences } = useApp();
+  const { data, refresh, applyItems, toast, openItem, createItem, uiPreferences } = useApp();
+  const editKey = draftKey(data.user, `edit:${id}`);
+  const commentKey = draftKey(data.user, `comment:${id}`);
+  const commentRetryKey = `${commentKey}.retry`;
+  const pendingComment = useRef(readDraft(commentRetryKey, isRetryIntent));
+  const editBase = useRef<DraftText>({ title: '', description: '' });
+  const [editRevision, setEditRevision] = useState(0);
+  const currentId = useRef(id);
+  currentId.current = id;
+  const [latestLoaded, setLatestLoaded] = useState(false);
+  const [conflict, setConflict] = useState<Partial<WorkItem> | null>(null);
   const actionRoot = useRef<HTMLDivElement>(null);
   const [editField, setEditField] = useState<'title' | 'description'>('title');
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -237,6 +283,7 @@ export default function ItemDetail({
   const [commentPreview, setCommentPreview] = useState(false);
   const [tagDraft, setTagDraft] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [mobilePropertiesExpanded, setMobilePropertiesExpanded] = useState(false);
   const [showLink, setShowLink] = useState(false);
   const [linkTitle, setLinkTitle] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
@@ -247,7 +294,12 @@ export default function ItemDetail({
   const [relationKind, setRelationKind] = useState('blocks');
   const reload = useCallback(async () => {
     const next = await api<Detail>(`/items/${id}`);
-    setDetail(next);
+    if (currentId.current === id)
+      setDetail((current) =>
+        current?.item.id === id && (current.item.revision ?? 0) > (next.item.revision ?? 0)
+          ? current
+          : next,
+      );
     return next;
   }, [id]);
   useEffect(() => {
@@ -255,7 +307,10 @@ export default function ItemDetail({
     setDetail(null);
     setError('');
     setEditing(false);
-    setComment('');
+    setComment(readDraft(commentKey, isCommentDraft)?.body || '');
+    pendingComment.current = readDraft(commentRetryKey, isRetryIntent);
+    setConflict(null);
+    setLatestLoaded(false);
     setCommentPreview(false);
     setTagDraft('');
     setConfirmDelete(false);
@@ -266,6 +321,15 @@ export default function ItemDetail({
       .then((next) => {
         if (alive) {
           setDetail(next);
+          const draft = readDraft(editKey, isEditDraft);
+          const base = draft?.base || next.item;
+          if (draft && hasDraftChanges(draft, base) && !next.item.source) {
+            editBase.current = { title: base.title, description: base.description };
+            setTitle(draft.title);
+            setDescription(draft.description);
+            setEditRevision(draft.revision);
+            setEditing(true);
+          } else clearDraft(editKey);
         }
       })
       .catch((err) => {
@@ -274,21 +338,59 @@ export default function ItemDetail({
     return () => {
       alive = false;
     };
-  }, [id]);
-  async function update(changes: Partial<WorkItem>) {
+  }, [id, editKey, commentKey, commentRetryKey]);
+  useEffect(() => {
+    if (editing && detail?.item.id === id) persistEditDraft();
+  }, [editKey, id, editing, title, description, editRevision, detail?.item.id]);
+  useEffect(() => {
+    // Do not write a previous item's state during a modal navigation render.
+    if (detail?.item.id !== id) return;
+    if (comment) saveDraft(commentKey, { body: comment });
+    else clearDraft(commentKey);
+  }, [commentKey, id, comment, detail?.item.id]);
+  async function update(changes: Partial<WorkItem>, expectedRevision = detail?.item.revision ?? 0) {
     if (saving) return false;
     setSaving(true);
     setError('');
     try {
       const { item } = await patch<{ item: WorkItem }>(`/items/${id}`, {
         ...changes,
-        ...(changes.parentId !== undefined ? { expectedRevision: detail?.item.revision ?? 0 } : {}),
+        expectedRevision,
       });
-      setDetail((current) => current && { ...current, item });
-      await Promise.all([reload(), refresh()]);
+      setDetail((current) => (current?.item.id === id ? { ...current, item } : current));
+      applyItems([item]);
+      // A property-only save from the editor's same base also advances that base safely.
+      if (
+        editing &&
+        editRevision === (detail?.item.revision ?? 0) &&
+        changes.title === undefined &&
+        changes.description === undefined
+      )
+        setEditRevision(item.revision ?? 0);
+      setConflict(null);
+      // The write is complete. A failed activity refresh must not look like a failed save.
+      void reload().catch(() =>
+        toast('Saved. Activity could not refresh; reopen to retry.', 'error'),
+      );
+      if (
+        changes.status !== undefined &&
+        changes.status !== detail?.item.status &&
+        detail?.item.recurrence
+      )
+        void refresh().catch(() => toast('Saved. Recurring work could not refresh.', 'error'));
       return true;
     } catch (err) {
-      setError(message(err));
+      if (
+        err instanceof ApiError &&
+        err.status === 409 &&
+        err.message.startsWith('Work item changed.')
+      ) {
+        setConflict(changes);
+        setLatestLoaded(false);
+        setError(
+          'This work item changed elsewhere. Your changes are preserved. Reload the latest version to compare, or explicitly reapply your changes.',
+        );
+      } else setError(message(err));
       return false;
     } finally {
       setSaving(false);
@@ -300,8 +402,10 @@ export default function ItemDetail({
     setError('');
     try {
       await action();
-      await Promise.all([reload(), refresh()]);
       after?.();
+      const results = await Promise.allSettled([reload(), refresh()]);
+      if (results.some((result) => result.status === 'rejected'))
+        toast('Saved. Some activity could not refresh; reopen to retry.', 'error');
     } catch (err) {
       setError(message(err));
     } finally {
@@ -312,8 +416,26 @@ export default function ItemDetail({
     e?.preventDefault();
     if (comment.trim() && !commentUploading)
       await mutate(
-        () => post(`/items/${id}/comments`, { body: comment.trim() }),
         () => {
+          const body = { body: comment.trim() };
+          pendingComment.current = retryIntent(body, pendingComment.current);
+          saveDraft(commentRetryKey, pendingComment.current);
+          return api(`/items/${id}/comments`, {
+            method: 'POST',
+            body: JSON.stringify(body),
+            headers: { 'Idempotency-Key': pendingComment.current.key },
+          }).catch((err) => {
+            if (err instanceof ApiError && err.status === 404) {
+              pendingComment.current = null;
+              clearDraft(commentRetryKey);
+            }
+            throw err;
+          });
+        },
+        () => {
+          clearDraft(commentKey);
+          clearDraft(commentRetryKey);
+          pendingComment.current = null;
           setComment('');
           setCommentPreview(false);
         },
@@ -324,7 +446,10 @@ export default function ItemDetail({
     setError('');
     try {
       await remove(`/items/${id}`);
-      await refresh();
+      clearDraft(editKey);
+      clearDraft(commentKey);
+      clearDraft(commentRetryKey);
+      void refresh().catch(() => toast('Deleted. The list could not refresh.', 'error'));
       toast('Work item deleted');
       onClose();
     } catch (err) {
@@ -358,14 +483,92 @@ export default function ItemDetail({
   const parent = data.items.find((i) => i.id === item?.parentId);
   const subtasks = data.items.filter((i) => i.parentId === id);
   const creator = data.users.find((u) => u.id === item?.creatorId);
+  function beginEditing(field: 'title' | 'description' = 'title') {
+    if (!item || saving) return;
+    if (editing) {
+      setEditField(field);
+      return;
+    }
+    const recovered = readDraft(editKey, isEditDraft);
+    const base = recovered?.base || item;
+    const draft = recovered && hasDraftChanges(recovered, base) ? recovered : null;
+    if (!draft) clearDraft(editKey);
+    editBase.current = draft
+      ? { title: base.title, description: base.description }
+      : { title: item.title, description: item.description };
+    setTitle(draft?.title ?? item.title);
+    setDescription(draft?.description ?? item.description);
+    setEditRevision(draft?.revision ?? item.revision ?? 0);
+    setEditField(field);
+    setEditing(true);
+  }
+  function persistEditDraft() {
+    if (hasDraftChanges({ title, description }, editBase.current))
+      saveDraft(editKey, { title, description, revision: editRevision, base: editBase.current });
+    else clearDraft(editKey);
+  }
+  function stopEditing(preserve: boolean) {
+    if (preserve) persistEditDraft();
+    else {
+      clearDraft(editKey);
+      setConflict(null);
+      setError('');
+    }
+    setEditing(false);
+  }
+  function finishEditing() {
+    clearDraft(editKey);
+    setConflict(null);
+    setError('');
+    setEditing(false);
+  }
+  async function saveTextEdit() {
+    if (!title.trim() || descriptionUploading || saving) return;
+    const changes = draftTextChanges({ title, description }, editBase.current);
+    if (!Object.keys(changes).length || (await update(changes, editRevision))) finishEditing();
+  }
+  async function reapplyChanges() {
+    if (!conflict || saving) return;
+    const textConflict =
+      editing && (conflict.title !== undefined || conflict.description !== undefined);
+    const changes = textConflict
+      ? draftTextChanges({ title, description }, editBase.current)
+      : conflict;
+    if (textConflict && (!title.trim() || descriptionUploading)) return;
+    try {
+      const latest = await reload();
+      applyItems([latest.item]);
+      if (textConflict && !Object.keys(changes).length) {
+        finishEditing();
+        return;
+      }
+      if (await update(changes, latest.item.revision ?? 0)) {
+        if (textConflict) finishEditing();
+      }
+    } catch (err) {
+      setError(message(err));
+    }
+  }
+  async function loadLatest() {
+    if (saving) return;
+    try {
+      const latest = await reload();
+      applyItems([latest.item]);
+      setEditRevision(latest.item.revision ?? 0);
+      setLatestLoaded(true);
+      // Keep the user's text visible for comparison; applying it remains explicit.
+      setError(
+        'Latest version loaded. Your draft is still available above; review it before saving.',
+      );
+    } catch (err) {
+      setError(message(err));
+    }
+  }
   function act(action: ItemAction) {
     if (!item || saving) return false;
     if (action === 'title' || action === 'description') {
       if (source) return false;
-      setTitle(item.title);
-      setDescription(item.description);
-      setEditField(action);
-      setEditing(true);
+      beginEditing(action);
       return;
     }
     return activateItemControl(actionRoot.current, action);
@@ -414,6 +617,10 @@ export default function ItemDetail({
   const frameTitle = item
     ? `${project?.name || 'Personal inbox'}  /  ${item.identifier}`
     : 'Work item';
+  const close = () => {
+    if (editing) persistEditDraft();
+    onClose();
+  };
   const body = (
     <>
       {!item ? (
@@ -483,9 +690,7 @@ export default function ItemDetail({
                   aria-label="Edit title and description"
                   title="Edit title and description (T / D)"
                   onClick={() => {
-                    setTitle(item.title);
-                    setDescription(item.description);
-                    setEditing(true);
+                    beginEditing();
                   }}
                 >
                   <Pencil size={15} />
@@ -553,7 +758,7 @@ export default function ItemDetail({
                   if (event.key === 'Escape') {
                     event.preventDefault();
                     event.stopPropagation();
-                    setEditing(false);
+                    stopEditing(true);
                     actionRoot.current
                       ?.closest<HTMLElement>('[role="dialog"], .item-page')
                       ?.focus();
@@ -561,48 +766,52 @@ export default function ItemDetail({
                 }}
                 onSubmit={async (e) => {
                   e.preventDefault();
-                  if (
-                    title.trim() &&
-                    !descriptionUploading &&
-                    (await update({ title: title.trim(), description }))
-                  )
-                    setEditing(false);
+                  await saveTextEdit();
                 }}
               >
-                <input
-                  className="input item-edit-title"
-                  aria-label="Title"
-                  value={title}
-                  autoFocus
-                  required
-                  maxLength={240}
-                  onChange={(e) => setTitle(e.target.value)}
-                />
-                <ImageMarkdownTextarea
-                  excludeItemId={id}
-                  projectId={item.projectId}
-                  className="input"
-                  aria-label="Description"
-                  value={description}
-                  setValue={setDescription}
-                  onBusyChange={setDescriptionUploading}
-                  rows={8}
-                />
-                <div className="item-edit-buttons">
-                  <span className="muted">Markdown supported</span>
-                  <button type="button" className="button ghost" onClick={() => setEditing(false)}>
-                    Cancel
-                  </button>
-                  <button
-                    className="button primary"
-                    type="submit"
-                    disabled={saving || descriptionUploading || !title.trim()}
-                    title="Save changes (Cmd+Enter / Ctrl+Enter)"
-                    aria-keyshortcuts="Meta+Enter Control+Enter"
-                  >
-                    Save changes
-                  </button>
-                </div>
+                <fieldset
+                  disabled={saving}
+                  style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
+                >
+                  <input
+                    className="input item-edit-title"
+                    aria-label="Title"
+                    value={title}
+                    autoFocus
+                    required
+                    maxLength={240}
+                    onChange={(e) => setTitle(e.target.value)}
+                  />
+                  <ImageMarkdownTextarea
+                    excludeItemId={id}
+                    projectId={item.projectId}
+                    className="input"
+                    aria-label="Description"
+                    value={description}
+                    setValue={setDescription}
+                    onBusyChange={setDescriptionUploading}
+                    rows={8}
+                  />
+                  <div className="item-edit-buttons">
+                    <span className="muted">Markdown supported</span>
+                    <button
+                      type="button"
+                      className="button ghost"
+                      onClick={() => stopEditing(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="button primary"
+                      type="submit"
+                      disabled={saving || descriptionUploading || !title.trim()}
+                      title="Save changes (Cmd+Enter / Ctrl+Enter)"
+                      aria-keyshortcuts="Meta+Enter Control+Enter"
+                    >
+                      Save changes
+                    </button>
+                  </div>
+                </fieldset>
               </form>
             ) : (
               <>
@@ -620,9 +829,7 @@ export default function ItemDetail({
                   <button
                     className="item-empty-description"
                     onClick={() => {
-                      setTitle(item.title);
-                      setDescription('');
-                      setEditing(true);
+                      beginEditing('description');
                     }}
                   >
                     Add a description…
@@ -650,6 +857,59 @@ export default function ItemDetail({
             {error && (
               <div className="form-error" role="alert">
                 {error}
+                {conflict && !editing && (
+                  <p>
+                    Pending changes:{' '}
+                    {Object.entries(conflict)
+                      .map(
+                        ([field, value]) =>
+                          `${field}: ${Array.isArray(value) ? value.join(', ') : (value ?? 'cleared')}`,
+                      )
+                      .join(' · ')}
+                  </p>
+                )}
+                {conflict && latestLoaded && (
+                  <section aria-label="Latest saved version">
+                    <strong>Latest saved version</strong>
+                    <p>{item.title}</p>
+                    <MarkdownBody>{item.description || 'No description'}</MarkdownBody>
+                  </section>
+                )}
+                {conflict && (
+                  <div className="item-edit-buttons">
+                    <button
+                      className="button small"
+                      disabled={saving}
+                      onClick={() => void loadLatest()}
+                    >
+                      Reload latest
+                    </button>
+                    <button
+                      className="button small"
+                      disabled={saving}
+                      onClick={() => void reapplyChanges()}
+                    >
+                      Reapply my changes
+                    </button>
+                    <button
+                      className="button small ghost"
+                      disabled={saving}
+                      onClick={async () => {
+                        try {
+                          const latest = await reload();
+                          applyItems([latest.item]);
+                          finishEditing();
+                          setConflict(null);
+                          setError('');
+                        } catch (err) {
+                          setError(message(err));
+                        }
+                      }}
+                    >
+                      Discard my changes
+                    </button>
+                  </div>
+                )}
                 <button
                   className="icon-button"
                   aria-label="Dismiss error"
@@ -1042,77 +1302,82 @@ export default function ItemDetail({
               <form className="item-comment-form" onSubmit={sendComment}>
                 <Avatar user={data.user} size={36} />
                 <div>
-                  <div
-                    className="item-comment-toolbar"
-                    role="group"
-                    aria-label="Comment editor mode"
+                  <fieldset
+                    disabled={saving}
+                    style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
                   >
-                    <button
-                      type="button"
-                      aria-pressed={!commentPreview}
-                      onClick={() => setCommentPreview(false)}
+                    <div
+                      className="item-comment-toolbar"
+                      role="group"
+                      aria-label="Comment editor mode"
                     >
-                      Write
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={commentPreview}
-                      onClick={() => setCommentPreview(true)}
-                    >
-                      Preview
-                    </button>
-                  </div>
-                  {commentPreview ? (
-                    <div className="item-comment-preview" aria-label="Comment preview">
-                      {comment.trim() ? (
-                        <MarkdownBody>{comment}</MarkdownBody>
-                      ) : (
-                        <p className="muted">Nothing to preview yet.</p>
-                      )}
+                      <button
+                        type="button"
+                        aria-pressed={!commentPreview}
+                        onClick={() => setCommentPreview(false)}
+                      >
+                        Write
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={commentPreview}
+                        onClick={() => setCommentPreview(true)}
+                      >
+                        Preview
+                      </button>
                     </div>
-                  ) : (
-                    <ImageMarkdownTextarea
-                      excludeItemId={id}
-                      projectId={item.projectId}
-                      className="input"
-                      aria-label={source ? 'Internal note' : 'Comment'}
-                      placeholder={
-                        source ? 'Add an internal note…' : 'Leave a comment or an update…'
-                      }
-                      rows={3}
-                      data-shortcut="m"
-                      value={comment}
-                      setValue={setComment}
-                      onBusyChange={setCommentUploading}
-                      onKeyDown={(e) => {
-                        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                          e.preventDefault();
-                          void sendComment();
+                    {commentPreview ? (
+                      <div className="item-comment-preview" aria-label="Comment preview">
+                        {comment.trim() ? (
+                          <MarkdownBody>{comment}</MarkdownBody>
+                        ) : (
+                          <p className="muted">Nothing to preview yet.</p>
+                        )}
+                      </div>
+                    ) : (
+                      <ImageMarkdownTextarea
+                        excludeItemId={id}
+                        projectId={item.projectId}
+                        className="input"
+                        aria-label={source ? 'Internal note' : 'Comment'}
+                        placeholder={
+                          source ? 'Add an internal note…' : 'Leave a comment or an update…'
                         }
-                      }}
-                    />
-                  )}
-                  {source && (
-                    <p className="item-comment-scope">
-                      Internal notes stay in Trestl and are never posted to {providerName}.
-                    </p>
-                  )}
-                  <footer>
-                    <span className="muted">Markdown supported · ⌘ / Ctrl ↵</span>
-                    <button
-                      type="submit"
-                      className="button primary small"
-                      disabled={saving || commentUploading || !comment.trim()}
-                    >
-                      <Send size={12} />
-                      {saving ? 'Saving…' : source ? 'Add internal note' : 'Comment'}
-                    </button>
-                  </footer>
+                        rows={3}
+                        data-shortcut="m"
+                        value={comment}
+                        setValue={setComment}
+                        onBusyChange={setCommentUploading}
+                        onKeyDown={(e) => {
+                          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                            e.preventDefault();
+                            void sendComment();
+                          }
+                        }}
+                      />
+                    )}
+                    {source && (
+                      <p className="item-comment-scope">
+                        Internal notes stay in Trestl and are never posted to {providerName}.
+                      </p>
+                    )}
+                    <footer>
+                      <span className="muted">Markdown supported · ⌘ / Ctrl ↵</span>
+                      <button
+                        type="submit"
+                        className="button primary small"
+                        disabled={saving || commentUploading || !comment.trim()}
+                      >
+                        <Send size={12} />
+                        {saving ? 'Saving…' : source ? 'Add internal note' : 'Comment'}
+                      </button>
+                    </footer>
+                  </fieldset>
                 </div>
               </form>
             </section>
           </main>
-          <aside className="item-properties">
+          <aside className={`item-properties ${mobilePropertiesExpanded ? 'expanded' : ''}`}>
             {source && (
               <div className="item-repository-state">
                 <h3>Repository state</h3>
@@ -1128,7 +1393,7 @@ export default function ItemDetail({
               {saving && <span className="muted">Saving…</span>}
             </h3>
             {source && <p className="item-property-note">These attributes stay in Trestl.</p>}
-            <fieldset disabled={saving}>
+            <fieldset id={`item-properties-${id}`} disabled={saving}>
               <Property name={source ? 'Planning status' : 'Status'}>
                 <Select
                   shortcut="s"
@@ -1307,6 +1572,14 @@ export default function ItemDetail({
                 </div>
               </div>
             </fieldset>
+            <button
+              className="mobile-property-toggle text-button"
+              aria-expanded={mobilePropertiesExpanded}
+              aria-controls={`item-properties-${id}`}
+              onClick={() => setMobilePropertiesExpanded((value) => !value)}
+            >
+              {mobilePropertiesExpanded ? 'Fewer properties' : 'More properties'}
+            </button>
             <div className="item-property-divider" />
             <button className="item-rail-action" onClick={() => setShowRelation(true)}>
               <Plus size={14} />
@@ -1370,13 +1643,13 @@ export default function ItemDetail({
     </>
   );
   return presentation === 'page' ? (
-    <ItemPage title={frameTitle} onClose={onClose} className="item-detail-page">
+    <ItemPage title={frameTitle} onClose={close} className="item-detail-page">
       {body}
     </ItemPage>
   ) : (
     <Modal
       title={frameTitle}
-      onClose={onClose}
+      onClose={close}
       wide
       className={`item-detail-modal ${uiPreferences.itemLayout === 'centered' ? 'item-detail-centered' : ''}`}
       initialFocus="panel"

@@ -27,6 +27,8 @@ export interface User {
   role: 'admin' | 'member';
 }
 export interface Project {
+  /** Immutable verified creator; null/absent means no local creation attribution. */
+  creationActorId?: string | null;
   roadmap?: Roadmap;
   workspaceId?: string;
   id: string;
@@ -61,6 +63,10 @@ export interface ProjectUpdate {
 }
 export type RoadmapHorizon = 'current' | 'next' | 'future' | 'deferred';
 export interface RoadmapFeature {
+  /** Optional delivery references; omitted for editorial-only and older roadmaps. */
+  projectIds?: string[];
+  milestoneIds?: string[];
+  itemIds?: string[];
   id: string;
   title: string;
   summary: string;
@@ -89,6 +95,8 @@ export interface IssueSource {
   connected: boolean;
 }
 export interface WorkItem {
+  /** Immutable verified creator; null/absent means no local creation attribution. */
+  creationActorId?: string | null;
   importedFrom?: { authorName: string; identifier?: string };
   /** Absent on records created before milestone linking. */
   milestoneId?: string | null;
@@ -128,6 +136,12 @@ export interface Activity {
   source?: { provider: 'github' | 'gitea'; author: string };
   body: string;
   createdAt: string;
+}
+export interface ActivityHeatmap {
+  /** Calendar year and day boundaries are UTC. Future days have zero activity. */
+  year: number;
+  days: { date: string; count: number }[];
+  total: number;
 }
 export interface Relation {
   id: string;

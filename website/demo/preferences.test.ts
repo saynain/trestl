@@ -45,9 +45,41 @@ test('demo follows its host, preserves manual choices, and falls back safely wit
   for (const [key, value] of Object.entries(globals))
     Object.defineProperty(globalThis, key, { value, configurable: true });
   try {
-    const { followWebsiteTheme, readTheme, saveTheme, readCanvasTheme, saveCanvasTheme } =
-      await import('./preferences');
+    const {
+      followWebsiteTheme,
+      readTheme,
+      saveTheme,
+      readCanvasTheme,
+      saveCanvasTheme,
+      readUiPreferences,
+      saveUiPreferences,
+    } = await import('./preferences');
     const user = { id: 'demo-you', role: 'admin' as const, workspaceId: 'demo' };
+    values.set(
+      'trestl.ui.v1.demo-you',
+      JSON.stringify({
+        itemLayout: 'centered',
+        favorites: [{ kind: 'project', id: 'real-project' }],
+      }),
+    );
+    assert.deepEqual(readUiPreferences(user).favorites, []);
+    saveUiPreferences(user, {
+      itemLayout: 'centered',
+      zenMode: true,
+      favorites: [
+        { kind: 'project', id: 'studio' },
+        { kind: 'view', id: 'priority' },
+      ],
+    });
+    assert.deepEqual(readUiPreferences(user).favorites, [
+      { kind: 'project', id: 'studio' },
+      { kind: 'view', id: 'priority' },
+    ]);
+    saveUiPreferences(user, { itemLayout: 'page', zenMode: false, favorites: [] });
+    assert.equal(readUiPreferences(user).itemLayout, 'page');
+    assert.deepEqual(readUiPreferences({ ...user, workspaceId: 'other' }).favorites, []);
+    assert.deepEqual(readUiPreferences({ ...user, id: 'other' }).favorites, []);
+    assert.equal(JSON.parse(values.get('trestl.ui.v1.demo-you')!).favorites[0].id, 'real-project');
     followWebsiteTheme();
     assert.equal(document.documentElement.dataset.theme, 'light');
     root.dataset.theme = 'dark';
@@ -91,6 +123,10 @@ test('demo follows its host, preserves manual choices, and falls back safely wit
     media.dispatchEvent(new Event('change'));
     assert.equal(document.documentElement.dataset.theme, 'light');
     storageBlocked = true;
+    assert.deepEqual(readUiPreferences(user).favorites, []);
+    assert.doesNotThrow(() =>
+      saveUiPreferences(user, { itemLayout: 'side-panel', zenMode: false, favorites: [] }),
+    );
     saveTheme(user, 'dark');
     media.dispatchEvent(new Event('change'));
     assert.equal(readTheme(user), 'dark');
