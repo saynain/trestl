@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { Socket } from 'node:net';
 import { createApp } from '../server/app.ts';
 import type { CanvasServerMessage } from '../shared/canvas-collaboration.ts';
 import { canvasChanges, emptyChanges, mergeCanvas } from '../shared/canvas-collaboration.ts';
@@ -247,6 +248,9 @@ test(
     const dataDir = await mkdtemp(join(tmpdir(), 'trestl-live-test-'));
     let app = await createApp({ dataDir, integrations: false });
     const connections: Awaited<ReturnType<typeof app.injectWS>>[] = [];
+    // Injected sockets have no peer address, which rate limiting needs as its key.
+    const injectWS: typeof app.injectWS = (url, context = {}, options) =>
+      app.injectWS(url, { socket: { remoteAddress: '127.0.0.1' } as Socket, ...context }, options);
     try {
       const setup = await app.inject({
         method: 'POST',
@@ -295,7 +299,7 @@ test(
       const endpoint = `/api/v1${path}/${canvas.id}/live`;
       const connect = async (cookie = owner, url = endpoint) => {
         const messages: CanvasServerMessage[] = [];
-        const socket = await app.injectWS(
+        const socket = await injectWS(
           url,
           { headers: { cookie } },
           {
@@ -402,15 +406,15 @@ test(
       await t.test(
         'unauthenticated, cross-origin, private-project and read-only connections are rejected',
         async () => {
-          await assert.rejects(app.injectWS(endpoint), /401/);
+          await assert.rejects(injectWS(endpoint), /401/);
           await assert.rejects(
-            app.injectWS(endpoint, { headers: { cookie: owner, origin: 'https://evil.test' } }),
+            injectWS(endpoint, { headers: { cookie: owner, origin: 'https://evil.test' } }),
             /403/,
           );
           const token = (await call('POST', '/tokens', { name: 'Read', scope: 'read' })).json()
             .token;
           await assert.rejects(
-            app.injectWS(endpoint, { headers: { authorization: `Bearer ${token}` } }),
+            injectWS(endpoint, { headers: { authorization: `Bearer ${token}` } }),
             /403/,
           );
           const secret = (
@@ -424,13 +428,13 @@ test(
             await call('POST', `/projects/${secret.id}/canvases`, { title: 'Hidden' })
           ).json();
           await assert.rejects(
-            app.injectWS(`/api/v1/projects/${secret.id}/canvases/${hidden.id}/live`, {
+            injectWS(`/api/v1/projects/${secret.id}/canvases/${hidden.id}/live`, {
               headers: { cookie: bob },
             }),
             /404/,
           );
           await assert.rejects(
-            app.injectWS(`/api/v1/projects/${secret.id}/canvases/${canvas.id}/live`, {
+            injectWS(`/api/v1/projects/${secret.id}/canvases/${canvas.id}/live`, {
               headers: { cookie: owner },
             }),
             /404/,
@@ -455,7 +459,7 @@ test(
               m.type === 'error' && m.fatal,
           );
           assert.match(removed.message, /no longer available/);
-          await assert.rejects(app.injectWS(endpoint, { headers: { cookie: bob } }), /404/);
+          await assert.rejects(injectWS(endpoint, { headers: { cookie: bob } }), /404/);
           await call('PATCH', `/projects/${project.id}`, { memberIds: [member.id] });
         },
       );
