@@ -132,6 +132,19 @@ try {
   assert.equal(bootstrap.user.role, 'admin');
   assert.equal(bootstrap.user.personalWorkspaceId, undefined);
   const item = await (await api('/items', { title: 'Persist across container restart' })).json();
+  const comment = await (
+    await api(`/items/${item.id}/comments`, { body: 'Activity smoke test' })
+  ).json();
+  const year = new Date(item.createdAt).getUTCFullYear();
+  const heatmap = await (
+    await api(`/activity/heatmap?userId=${bootstrap.user.id}&year=${year}`)
+  ).json();
+  assert.equal(heatmap.year, year);
+  assert.equal(heatmap.total, 1 + (new Date(comment.createdAt).getUTCFullYear() === year ? 1 : 0));
+  assert.equal(
+    heatmap.days.reduce((sum, day) => sum + day.count, 0),
+    heatmap.total,
+  );
   await compose('restart', 'app');
   await ready();
   const restored = await (await api(`/items/${item.id}`)).json();
@@ -146,7 +159,7 @@ try {
   await ready();
   await api(`/items/${item.id}`);
   console.log(
-    'Docker smoke passed: frontend, setup, persistence, session, DB outage and recovery.',
+    'Docker smoke passed: frontend, setup, activity heatmap, persistence, session, DB outage and recovery.',
   );
 } catch (error) {
   await compose('logs', '--no-color', '--tail', '80', 'app').catch(() => {});

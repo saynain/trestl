@@ -58,11 +58,11 @@
   .work-view .work-tree-row .due-cell:has(.hierarchy-menu) {
     display: flex;
   }
-  .work-tree-row .due-cell > :not(.hierarchy-menu) {
+  .work-tree-row .due-cell > svg {
     display: none;
   }
   .work-view .work-row.work-tree-row {
-    grid-template-columns: minmax(0, 1fr) 28px 28px;
+    grid-template-columns: minmax(0, 1fr) 24px 90px;
   }
 }
 .hierarchy-selecting .work-tree-main {

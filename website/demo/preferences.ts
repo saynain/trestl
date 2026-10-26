@@ -1,4 +1,5 @@
 import type { User } from '../../shared/types';
+import { defaultUiPreferences, type UiPreferences, type Favorite } from '../../src/lib/preferences';
 export * from '../../src/lib/preferences';
 type Profile = Pick<User, 'id' | 'workspaceId' | 'role'>;
 type Theme = 'light' | 'dark';
@@ -6,6 +7,40 @@ const key = 'trestl.demo.theme';
 const canvasKey = 'trestl.demo.canvas-theme';
 const websiteKey = 'trestl.website.theme';
 const system = matchMedia('(prefers-color-scheme: dark)');
+const uiKey = (user: Profile) => `trestl.demo.ui.v1.${user.workspaceId || 'demo'}.${user.id}`;
+export function readUiPreferences(user: Profile): UiPreferences {
+  try {
+    const saved = JSON.parse(localStorage.getItem(uiKey(user)) || 'null');
+    const favorites: Favorite[] = [];
+    for (const entry of Array.isArray(saved?.favorites) ? saved.favorites : []) {
+      if (
+        entry &&
+        (entry.kind === 'project' || entry.kind === 'view') &&
+        typeof entry.id === 'string' &&
+        entry.id.length &&
+        !favorites.some((favorite) => favorite.kind === entry.kind && favorite.id === entry.id)
+      )
+        favorites.push({ kind: entry.kind, id: entry.id });
+    }
+    return {
+      itemLayout:
+        saved?.itemLayout === 'centered' || saved?.itemLayout === 'page'
+          ? saved.itemLayout
+          : 'side-panel',
+      zenMode: saved?.zenMode === true,
+      favorites,
+    };
+  } catch {
+    return { ...defaultUiPreferences, favorites: [] };
+  }
+}
+export function saveUiPreferences(user: Profile, value: UiPreferences) {
+  try {
+    localStorage.setItem(uiKey(user), JSON.stringify(value));
+  } catch {
+    // The frame keeps its current settings when storage is blocked.
+  }
+}
 function stored(key: string): string | null {
   try {
     return localStorage.getItem(key);

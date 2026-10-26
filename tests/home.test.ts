@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { WorkItem } from '../shared/types.ts';
-import { homeItems, homeSection, tomorrow } from '../src/lib/home.ts';
+import {
+  homeItems,
+  homeSection,
+  homeTodayKey,
+  readHomeToday,
+  saveHomeToday,
+  tomorrow,
+} from '../src/lib/home.ts';
 
 const base: WorkItem = {
   id: 'one',
@@ -32,10 +39,43 @@ test('reviews become actionable on their date, independently of delivery dates',
   assert.equal(group({ followUpDate: '2026-09-08' }), 'attention');
   assert.equal(group({ followUpDate: date, dueDate: '2026-12-01' }), 'attention');
   assert.equal(group({ followUpDate: '2026-09-10' }), 'next');
-  assert.equal(group({ status: 'in_progress' }), 'attention');
-  assert.equal(group({ status: 'in_review' }), 'attention');
-  assert.equal(group({ status: 'in_progress', followUpDate: '2026-09-10' }), 'next');
+  assert.equal(group({ status: 'in_progress' }), 'continuing');
+  assert.equal(group({ status: 'in_review' }), 'continuing');
+  assert.equal(group({ status: 'in_progress', followUpDate: '2026-09-10' }), 'continuing');
   assert.equal(homeSection({ ...base, followUpDate: '2026-09-10' }, '2026-09-10'), 'attention');
+});
+
+test('continuing work does not compete with immediate deadlines or reviews', () => {
+  assert.equal(group({ status: 'in_progress', dueDate: '2026-10-01' }), 'continuing');
+  assert.equal(group({ status: 'in_review', dueDate: date }), 'attention');
+  assert.equal(group({ status: 'in_progress', followUpDate: date }), 'attention');
+});
+
+test('Today selections are private to the workspace, profile and calendar day', () => {
+  const existing = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const values = new Map<string, string>();
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    },
+  });
+  try {
+    const key = homeTodayKey('workspace', 'me', date);
+    saveHomeToday(key, ['one']);
+    assert.deepEqual(readHomeToday(key), ['one']);
+    assert.deepEqual(readHomeToday(homeTodayKey('other', 'me', date)), []);
+    assert.deepEqual(readHomeToday(homeTodayKey('workspace', 'other', date)), []);
+    assert.deepEqual(readHomeToday(homeTodayKey('workspace', 'me', tomorrow(date))), []);
+    values.set(key, '["one",null,"one",2]');
+    assert.deepEqual(readHomeToday(key), ['one']);
+    values.set(key, 'invalid');
+    assert.deepEqual(readHomeToday(key), []);
+  } finally {
+    if (existing) Object.defineProperty(globalThis, 'localStorage', existing);
+    else Reflect.deleteProperty(globalThis, 'localStorage');
+  }
 });
 
 test('postponing a review never hides a due or overdue deadline', () => {

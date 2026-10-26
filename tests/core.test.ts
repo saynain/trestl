@@ -492,13 +492,13 @@ test('demo data provides nested projects without exposing private leadership dat
     const lead = await setup(app, true);
     const data = (await client(app, lead.cookie)('GET', '/bootstrap')).json();
     assert.equal(data.projects.length, 6);
-    assert.equal(data.items.length, 18);
-    assert.equal(new Set(data.items.map((i: { identifier: string }) => i.identifier)).size, 18);
+    assert.equal(data.items.length, 20);
+    assert.equal(new Set(data.items.map((i: { identifier: string }) => i.identifier)).size, 20);
     assert.ok(data.projects.some((p: { parentId: string | null }) => p.parentId));
     const created = (
       await client(app, lead.cookie)('POST', '/items', { title: 'Next item' })
     ).json();
-    assert.equal(created.identifier, 'INBOX-01');
+    assert.equal(created.identifier, 'INBOX-03');
   } finally {
     await app.close();
   }
@@ -737,14 +737,14 @@ test('bootstrap uses bounded database reads while resolving large nested and mal
     assert.equal(visible.items.length, 51);
     assert.equal(visible.projects.length, 1);
     assert.ok(
-      reads <= 18,
-      `Bootstrap used ${reads} queries; expected at most five authentication/configuration reads, eleven collection reads and two installation reads`,
+      reads <= 19,
+      `Bootstrap used ${reads} queries; expected at most five authentication/configuration reads, eleven collection reads, two installation reads and one cache version read`,
     );
     reads = 0;
     const own = (await api('GET', '/bootstrap')).json();
     assert.equal(own.items.length, 102);
     assert.equal(own.projects.length, 2);
-    assert.ok(reads <= 18);
+    assert.ok(reads <= 19);
   } finally {
     await app.close();
   }

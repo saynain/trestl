@@ -7,8 +7,11 @@ import type {
   Milestone,
   SavedView,
   ResourceLink,
+  Bootstrap,
+  ProjectUpdate,
 } from '../../shared/types';
 import { createDemoState } from './seed';
+import { activityHeatmap } from '../../shared/activity-heatmap';
 
 export class ApiError extends Error {
   constructor(
@@ -30,6 +33,8 @@ export function createDemoApi() {
   const state = createDemoState();
   const { data } = state;
   let sequence = 100;
+  let version = 1;
+  const captures = new Map<string, { body: string; item: WorkItem }>();
   const id = () => `demo-new-${++sequence}`;
   const now = () => new Date().toISOString();
   function find<T extends { id: string }>(list: T[], key: string): T {
@@ -41,9 +46,49 @@ export function createDemoApi() {
   function revise<T extends { revision?: number }>(record: T, body: Record<string, unknown>) {
     if (body.expectedRevision !== undefined && body.expectedRevision !== (record.revision ?? 0))
       throw new ApiError('This record changed. Reopen it and try again.', 409);
-    const { expectedRevision, id: ignoredId, workspaceId: ignoredWorkspace, ...changes } = body;
+    const {
+      expectedRevision,
+      undoCompletion: ignoredUndo,
+      id: ignoredId,
+      workspaceId: ignoredWorkspace,
+      creationActorId: ignoredCreationActor,
+      ...changes
+    } = body;
     Object.assign(record, changes, { revision: (record.revision ?? 0) + 1 });
     return record;
+  }
+  function updateItem(item: WorkItem, body: Record<string, unknown>) {
+    const result = revise(item, body);
+    result.updatedAt = now();
+    result.completedAt = result.status === 'done' ? item.completedAt || now() : null;
+    state.activity.push({
+      id: id(),
+      itemId: item.id,
+      userId: data.user.id,
+      kind: 'event',
+      body: 'Updated this work item',
+      createdAt: now(),
+    });
+    return result;
+  }
+  function checkRevision(record: { revision?: number }, expectedRevision: unknown) {
+    if (expectedRevision !== undefined && expectedRevision !== (record.revision ?? 0))
+      throw new ApiError('This record changed. Reopen it and try again.', 409);
+  }
+  function pruneDeliveryLinks() {
+    const access = {
+      projectIds: new Set(data.projects.map((project) => project.id)),
+      milestoneIds: new Set(data.milestones.map((milestone) => milestone.id)),
+      itemIds: new Set(data.items.map((item) => item.id)),
+    };
+    for (const project of data.projects) {
+      for (const feature of project.roadmap?.features || []) {
+        for (const field of ['projectIds', 'milestoneIds', 'itemIds'] as const) {
+          if (feature[field])
+            feature[field] = feature[field]!.filter((id) => access[field].has(id));
+        }
+      }
+    }
   }
   const connections = [
     {
@@ -78,6 +123,58 @@ export function createDemoApi() {
         installationName: data.workspace!.name,
       };
     if (url.pathname === '/bootstrap' && method === 'GET') return data;
+    if (url.pathname === '/activity/heatmap' && method === 'GET') {
+      const rawYear = url.searchParams.get('year') || String(new Date().getUTCFullYear());
+      const year = Number(rawYear);
+      if (!/^\d{4}$/.test(rawYear) || year < 1970 || year > new Date().getUTCFullYear())
+        throw new ApiError('Choose a valid activity year.', 400);
+      const projectId = url.searchParams.get('projectId');
+      const userId = url.searchParams.get('userId') || (projectId ? undefined : data.user.id);
+      if (userId) find(data.users, userId);
+      const projectIds = new Set<string>();
+      if (projectId) {
+        find(data.projects, projectId);
+        projectIds.add(projectId);
+        let changed = true;
+        while (changed) {
+          changed = false;
+          for (const project of data.projects)
+            if (
+              project.parentId &&
+              projectIds.has(project.parentId) &&
+              !projectIds.has(project.id)
+            ) {
+              projectIds.add(project.id);
+              changed = true;
+            }
+        }
+      }
+      const linkedItems = new Set(
+        data.projectRelations
+          ?.filter((relation) => projectIds.has(relation.projectId))
+          .map((relation) => relation.itemId),
+      );
+      const items = data.items.filter(
+        (item) =>
+          !projectId ||
+          (!!item.projectId && projectIds.has(item.projectId)) ||
+          linkedItems.has(item.id),
+      );
+      const itemIds = new Set(items.map((item) => item.id));
+      return activityHeatmap(
+        {
+          items,
+          projects: data.projects.filter((project) => !projectId || projectIds.has(project.id)),
+          projectUpdates: (data.projectUpdates || []).filter(
+            (update) => !projectId || projectIds.has(update.projectId),
+          ),
+          activity: state.activity.filter((activity) => itemIds.has(activity.itemId)),
+          users: data.users,
+        },
+        year,
+        { userId },
+      );
+    }
     if (url.pathname === '/export' && method === 'GET')
       return {
         ...data,
@@ -119,8 +216,71 @@ export function createDemoApi() {
       return data.workspace;
     }
     if (resource === 'items') {
+      if (key === 'batch' && method === 'POST') {
+        const updates = body.updates as Record<string, unknown>[];
+        const allowed = new Set(['id', 'expectedRevision', 'status', 'position', 'parentId']);
+        if (
+          !Array.isArray(updates) ||
+          !updates.length ||
+          updates.length > 1000 ||
+          updates.some(
+            (update) =>
+              !update ||
+              typeof update.id !== 'string' ||
+              !Number.isInteger(update.expectedRevision) ||
+              Number(update.expectedRevision) < 0 ||
+              Object.keys(update).some((key) => !allowed.has(key)) ||
+              !['status', 'position', 'parentId'].some((key) => key in update) ||
+              (update.status !== undefined &&
+                !['backlog', 'todo', 'in_progress', 'in_review', 'done', 'canceled'].includes(
+                  String(update.status),
+                )) ||
+              (update.position !== undefined &&
+                (typeof update.position !== 'number' || !Number.isFinite(update.position))) ||
+              (update.parentId !== undefined &&
+                update.parentId !== null &&
+                typeof update.parentId !== 'string'),
+          ) ||
+          new Set(updates.map((update) => update.id)).size !== updates.length
+        )
+          throw new ApiError(
+            'Choose valid, unique work items and planning changes for the batch.',
+            400,
+          );
+        const proposed = new Map(data.items.map((item) => [item.id, clone(item)]));
+        for (const update of updates) {
+          const item = find(data.items, String(update.id));
+          checkRevision(item, update.expectedRevision);
+          Object.assign(proposed.get(item.id)!, update);
+        }
+        for (const item of proposed.values()) {
+          const visited = new Set([item.id]);
+          let cursor = item;
+          while (cursor.parentId) {
+            const parent = proposed.get(cursor.parentId);
+            if (!parent || parent.projectId !== item.projectId || visited.has(parent.id))
+              throw new ApiError(
+                'Subtasks must have a parent in the same project and cannot form a cycle.',
+                400,
+              );
+            visited.add(parent.id);
+            cursor = parent;
+          }
+        }
+        return {
+          data: updates.map((update) => updateItem(find(data.items, String(update.id)), update)),
+        };
+      }
       if (!key && method === 'GET') return { data: data.items };
       if (!key && method === 'POST') {
+        const captureKey = new Headers(options.headers).get('Idempotency-Key');
+        const submittedBody = JSON.stringify(body);
+        const previous = captureKey ? captures.get(captureKey) : undefined;
+        if (previous) {
+          if (previous.body !== submittedBody)
+            throw new ApiError('Use a new retry key for a changed capture.', 409);
+          return previous.item;
+        }
         const newId = id();
         const project = data.projects.find((p) => p.id === body.projectId);
         const item: WorkItem = {
@@ -148,8 +308,10 @@ export function createDemoApi() {
           completedAt: null,
           position: data.items.length,
           ...body,
+          creationActorId: data.user.id,
         };
         data.items.push(item);
+        if (captureKey) captures.set(captureKey, { body: submittedBody, item: clone(item) });
         return item;
       }
       const item = find(data.items, key);
@@ -161,20 +323,10 @@ export function createDemoApi() {
           links: data.links.filter((l) => l.itemId === key),
         };
       if (!child && method === 'PATCH') {
-        const result = revise(item, body);
-        result.updatedAt = now();
-        result.completedAt = result.status === 'done' ? now() : null;
-        state.activity.push({
-          id: id(),
-          itemId: key,
-          userId: data.user.id,
-          kind: 'event',
-          body: 'Updated this work item',
-          createdAt: now(),
-        });
-        return { item: result };
+        return { item: updateItem(item, body) };
       }
       if (!child && method === 'DELETE') {
+        checkRevision(item, body.expectedRevision);
         const removed = new Set([key]);
         let changed = true;
         while (changed) {
@@ -192,6 +344,7 @@ export function createDemoApi() {
         );
         data.links = data.links.filter((l) => !l.itemId || !removed.has(l.itemId));
         state.activity = state.activity.filter((a) => !removed.has(a.itemId));
+        pruneDeliveryLinks();
         return;
       }
       if (child === 'comments' && method === 'POST') {
@@ -243,11 +396,34 @@ export function createDemoApi() {
           ownerId: data.user.id,
           createdAt: now(),
           ...body,
+          creationActorId: data.user.id,
         };
         data.projects.push(project);
         return project;
       }
       const project = find(data.projects, key);
+      if (child === 'updates' && method === 'GET')
+        return {
+          data: (data.projectUpdates || []).filter((update) => update.projectId === project.id),
+        };
+      if (child === 'updates' && method === 'POST') {
+        if (
+          !['on_track', 'at_risk', 'off_track'].includes(body.health) ||
+          typeof body.body !== 'string' ||
+          !body.body.trim()
+        )
+          throw new ApiError('Choose project health and add an update.', 400);
+        const update: ProjectUpdate = {
+          id: id(),
+          projectId: project.id,
+          authorId: data.user.id,
+          health: body.health,
+          body: body.body.trim(),
+          createdAt: now(),
+        };
+        (data.projectUpdates ??= []).push(update);
+        return update;
+      }
       if (!child && method === 'GET') return project;
       if (!child && method === 'PATCH') {
         Object.assign(project, body);
@@ -281,9 +457,31 @@ export function createDemoApi() {
         state.activity = state.activity.filter((a) => !itemIds.has(a.itemId));
         state.canvases = state.canvases.filter((c) => !removed.has(c.projectId));
         state.collections = state.collections.filter((c) => !removed.has(c.projectId));
+        data.projectUpdates = data.projectUpdates?.filter(
+          (update) => !removed.has(update.projectId),
+        );
+        pruneDeliveryLinks();
         return;
       }
       if (child === 'roadmap' && method === 'PATCH') {
+        if (!Array.isArray(body.features)) throw new ApiError('Choose roadmap features.', 400);
+        for (const feature of body.features) {
+          for (const [field, records] of [
+            ['projectIds', data.projects],
+            ['milestoneIds', data.milestones],
+            ['itemIds', data.items],
+          ] as const) {
+            if (
+              feature[field] !== undefined &&
+              (!Array.isArray(feature[field]) ||
+                feature[field].some(
+                  (key: unknown) =>
+                    typeof key !== 'string' || !records.some((record) => record.id === key),
+                ))
+            )
+              throw new ApiError('Choose delivery links available in this demo.', 400);
+          }
+        }
         project.roadmap ??= {
           revision: 0,
           headline: '',
@@ -291,10 +489,12 @@ export function createDemoApi() {
           reviewedAt: null,
           features: [],
         };
-        return revise(project.roadmap, body);
+        revise(project.roadmap, body);
+        return project;
       }
       if (child === 'canvases' || child === 'canvas-collections') {
-        const list: (ProjectCanvas | CanvasCollection)[] = child === 'canvases' ? state.canvases : state.collections;
+        const list: (ProjectCanvas | CanvasCollection)[] =
+          child === 'canvases' ? state.canvases : state.collections;
         if (!childId && method === 'GET')
           return {
             data: list
@@ -378,19 +578,39 @@ export function createDemoApi() {
         return record;
       }
       if (method === 'DELETE') {
+        const record = find(list, key);
+        if (resource === 'milestones') checkRevision(record as Milestone, body.expectedRevision);
         const index = list.findIndex((r) => r.id === key);
         if (index >= 0) list.splice(index, 1);
+        if (resource === 'milestones') {
+          data.items.forEach((item) => {
+            if (item.milestoneId === key) {
+              item.milestoneId = null;
+              item.revision = (item.revision ?? 0) + 1;
+            }
+          });
+          pruneDeliveryLinks();
+        }
         return;
       }
     }
     // Never fall back to the live API, even for a newly added product feature.
     throw unavailable();
   }
-  return async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-    return clone(await request(path, options)) as T;
-  };
+  async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const result = await request(path, options);
+    if (options.method && options.method.toUpperCase() !== 'GET') version++;
+    return clone(result) as T;
+  }
+  return Object.assign(api, {
+    async fetchBootstrap(etag?: string): Promise<{ data?: Bootstrap; etag?: string }> {
+      const current = `"demo-${version}"`;
+      return etag === current ? { etag: current } : { data: clone(data), etag: current };
+    },
+  });
 }
 export const api = createDemoApi();
+export const fetchBootstrap = (etag?: string) => api.fetchBootstrap(etag);
 export const post = <T>(path: string, body: unknown) =>
   api<T>(path, { method: 'POST', body: JSON.stringify(body) });
 export const patch = <T>(path: string, body: unknown) =>

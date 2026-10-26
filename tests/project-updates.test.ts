@@ -2,12 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../server/app.ts';
 import type { AppContext } from '../server/context.ts';
-import type { Project, ProjectUpdate } from '../shared/types.ts';
+import type { Bootstrap, Project, ProjectUpdate, WorkItem } from '../shared/types.ts';
 import {
   latestProjectUpdates,
   latestProjectUpdate,
   reviewProjects,
   updateIsStale,
+  projectReviewEvidence,
+  projectEvidenceDraft,
+  projectDraftEvidence,
 } from '../src/lib/project-updates.ts';
 
 test('updates persist with authenticated authors, validate content, respect project access and clean up', async () => {
@@ -90,6 +93,275 @@ test('updates persist with authenticated authors, validate content, respect proj
   } finally {
     await app.close();
   }
+});
+
+test('review evidence uses completion dates, live dependencies and calendar deadlines across visible subprojects', () => {
+  const now = new Date(2026, 9, 5, 12).getTime();
+  const item = (id: string, changes: Partial<WorkItem> = {}): WorkItem => ({
+    id,
+    identifier: `REV-${id}`,
+    title: id,
+    description: '',
+    projectId: 'root',
+    parentId: null,
+    type: 'task',
+    status: 'todo',
+    priority: 'medium',
+    assigneeId: null,
+    dueDate: null,
+    followUpDate: null,
+    recurrence: null,
+    labels: [],
+    visibility: 'workspace',
+    creatorId: 'lead',
+    createdAt: '2026-09-01T00:00:00Z',
+    updatedAt: '2026-10-05T00:00:00Z',
+    completedAt: null,
+    position: 0,
+    ...changes,
+  });
+  const data = {
+    projects: [
+      { id: 'root', parentId: null },
+      { id: 'child', parentId: 'root' },
+      { id: 'other', parentId: null },
+    ],
+    projectUpdates: [
+      { id: 'update', projectId: 'root', createdAt: new Date(2026, 9, 1, 12).toISOString() },
+    ],
+    items: [
+      item('completed', {
+        status: 'done',
+        completedAt: new Date(2026, 9, 2, 12).toISOString(),
+        projectId: 'child',
+      }),
+      item('old', { status: 'done', completedAt: new Date(2026, 8, 30, 12).toISOString() }),
+      item('reopened', { status: 'todo', completedAt: new Date(2026, 9, 3, 12).toISOString() }),
+      item('canceled', { status: 'canceled', dueDate: '2026-10-01' }),
+      item('late', { dueDate: '2026-10-04' }),
+      item('today', { dueDate: '2026-10-05' }),
+      item('week', { dueDate: '2026-10-12' }),
+      item('later', { dueDate: '2026-10-13' }),
+      item('external', { projectId: 'other', dueDate: '2026-10-02' }),
+      item('linked', { projectId: 'other', dueDate: '2026-10-03' }),
+      item('resolved', { status: 'done' }),
+    ],
+    projectRelations: [{ itemId: 'linked', projectId: 'root' }],
+    relations: [
+      { id: 'blocking', itemId: 'external', targetId: 'today', kind: 'blocks' },
+      { id: 'done', itemId: 'resolved', targetId: 'week', kind: 'blocks' },
+      { id: 'related', itemId: 'late', targetId: 'week', kind: 'related' },
+      { id: 'hidden', itemId: 'invisible', targetId: 'today', kind: 'blocks' },
+      { id: 'other', itemId: 'late', targetId: 'external', kind: 'blocks' },
+    ],
+    milestones: [
+      { id: 'slip', title: 'Launch', projectId: 'child', dueDate: '2026-10-04', completed: false },
+      { id: 'done', projectId: 'root', dueDate: '2026-10-04', completed: true },
+      { id: 'today', projectId: 'root', dueDate: '2026-10-05', completed: false },
+      { id: 'external', projectId: 'other', dueDate: '2026-10-04', completed: false },
+    ],
+  } as Bootstrap;
+  const evidence = projectReviewEvidence(data, 'root', now);
+  assert.equal(evidence.includesSubprojects, true);
+  assert.deepEqual(
+    evidence.completed.map((i) => i.id),
+    ['completed'],
+  );
+  assert.deepEqual(
+    evidence.overdue.map((i) => i.id),
+    ['linked', 'late'],
+  );
+  assert.deepEqual(
+    evidence.upcoming.map((i) => i.id),
+    ['today', 'week'],
+  );
+  assert.deepEqual(
+    evidence.blockers.map((r) => r.relation.id),
+    ['blocking'],
+  );
+  assert.deepEqual(
+    evidence.slippedMilestones.map((m) => m.id),
+    ['slip'],
+  );
+  const draft = projectEvidenceDraft(evidence, data, 'root');
+  assert.match(draft, /REV-completed/);
+  assert.match(draft, /REV-today waits on REV-external/);
+  assert.match(draft, /choose the project health/);
+  assert.doesNotMatch(draft, /REV-old/);
+  const noUpdate = projectReviewEvidence({ ...data, projectUpdates: [] }, 'root', now);
+  assert.equal(Date.parse(noUpdate.since), now - 7 * 86400000);
+  assert.deepEqual(
+    noUpdate.completed.map((i) => i.id),
+    ['completed', 'old'],
+  );
+});
+
+test('evidence draft remains editable within update size limits for large projects', () => {
+  const evidence = {
+    since: '2026-10-01T00:00:00Z',
+    includesSubprojects: false,
+    completed: Array.from(
+      { length: 1000 },
+      (_, i) => ({ identifier: `REV-${i}`, title: 'a'.repeat(1000) }) as WorkItem,
+    ),
+    overdue: [] as WorkItem[],
+    upcoming: [] as WorkItem[],
+    blockers: [],
+    slippedMilestones: [],
+  };
+  const draft = projectEvidenceDraft(
+    evidence,
+    { projects: [{ id: 'root', parentId: null }], items: evidence.completed } as Bootstrap,
+    'root',
+  );
+  assert.ok(draft.length < 20000);
+  assert.match(draft, /985 more/);
+});
+
+test('shared evidence drafts omit private work, narrower child projects and restricted dependency endpoints', () => {
+  const projects = [
+    { id: 'root', parentId: null, visibility: 'workspace', ownerId: 'a' },
+    { id: 'wide-child', parentId: 'root', visibility: 'workspace', ownerId: 'a' },
+    { id: 'narrow-child', parentId: 'root', visibility: 'private', ownerId: 'a' },
+    { id: 'other-public', parentId: null, visibility: 'workspace', ownerId: 'a' },
+    { id: 'other-private', parentId: null, visibility: 'private', ownerId: 'a', memberIds: ['b'] },
+  ] as Project[];
+  const item = (id: string, changes: Partial<WorkItem> = {}) =>
+    ({
+      id,
+      identifier: id,
+      title: id,
+      visibility: 'workspace',
+      projectId: 'root',
+      parentId: null,
+      creatorId: 'a',
+      ...changes,
+    }) as WorkItem;
+  const items = [
+    item('public-work'),
+    item('private-note', { visibility: 'private' }),
+    item('child-work', { projectId: 'wide-child' }),
+    item('secret-child', { projectId: 'narrow-child' }),
+    item('secret-linked', { projectId: 'other-private' }),
+    item('public-linked', { projectId: 'other-public' }),
+    item('secret-parent', { visibility: 'private' }),
+    item('inherited-secret', { parentId: 'secret-parent' }),
+    item('missing-parent', { parentId: 'hidden' }),
+  ];
+  const data = { projects, items, users: [{ id: 'a' }, { id: 'b' }] } as Bootstrap;
+  const evidence = {
+    since: '2026-10-01T00:00:00Z',
+    includesSubprojects: true,
+    completed: items,
+    overdue: items,
+    upcoming: items,
+    blockers: [
+      { relation: { id: 'secret-edge' }, blocker: items[1], dependent: items[0], state: 'waiting' },
+      { relation: { id: 'public-edge' }, blocker: items[2], dependent: items[0], state: 'waiting' },
+    ],
+    slippedMilestones: [
+      {
+        id: 'public-milestone',
+        title: 'Public milestone',
+        projectId: 'wide-child',
+        dueDate: '2026-10-01',
+      },
+      {
+        id: 'secret-milestone',
+        title: 'Secret milestone',
+        projectId: 'narrow-child',
+        dueDate: '2026-10-01',
+      },
+    ],
+  } as Parameters<typeof projectDraftEvidence>[0];
+  const shareable = projectDraftEvidence(evidence, data, 'root');
+  assert.deepEqual(
+    shareable.completed.map((entry) => entry.id),
+    ['public-work', 'child-work', 'public-linked'],
+  );
+  assert.equal(shareable.omittedRestricted, true);
+  assert.deepEqual(
+    shareable.blockers.map((entry) => entry.relation.id),
+    ['public-edge'],
+  );
+  assert.deepEqual(
+    shareable.slippedMilestones.map((entry) => entry.id),
+    ['public-milestone'],
+  );
+  const body = projectEvidenceDraft(evidence, data, 'root');
+  assert.doesNotMatch(body, /private-note|secret|missing-parent|Restricted|omitted/);
+  assert.match(body, /public-work/);
+  assert.equal(projectDraftEvidence(evidence, data, 'missing-project').completed.length, 0);
+
+  // A private project can safely reuse work available to all its own members.
+  const privateData = {
+    ...data,
+    projects: projects.map((project) =>
+      project.id === 'root'
+        ? { ...project, visibility: 'private' as const, memberIds: ['b'] }
+        : project,
+    ),
+  };
+  assert.deepEqual(
+    projectDraftEvidence(evidence, privateData, 'root').completed.map((entry) => entry.id),
+    ['public-work', 'child-work', 'secret-linked', 'public-linked'],
+  );
+  const ownerOnly = {
+    ...privateData,
+    projects: privateData.projects.map((project) =>
+      project.id === 'root' ? { ...project, memberIds: [] } : project,
+    ),
+  };
+  assert.ok(
+    projectDraftEvidence(evidence, ownerOnly, 'root').completed.some(
+      (entry) => entry.id === 'private-note',
+    ),
+  );
+});
+
+test('draft audience checks intersect project ancestors and fail closed on item cycles', () => {
+  const projects = [
+    { id: 'root', visibility: 'private', ownerId: 'a', memberIds: ['b'], parentId: null },
+    { id: 'restricted-parent', visibility: 'private', ownerId: 'a', parentId: null },
+    {
+      id: 'broad-child',
+      visibility: 'private',
+      ownerId: 'a',
+      memberIds: ['b'],
+      parentId: 'restricted-parent',
+    },
+  ] as Project[];
+  const items = [
+    {
+      id: 'ancestor-restricted',
+      title: 'Ancestor restricted',
+      identifier: 'secret',
+      projectId: 'broad-child',
+      visibility: 'workspace',
+      parentId: null,
+    },
+    {
+      id: 'cycle',
+      title: 'Cycle',
+      identifier: 'cycle',
+      projectId: 'root',
+      visibility: 'workspace',
+      parentId: 'cycle',
+    },
+  ] as WorkItem[];
+  const evidence = {
+    since: '2026-10-01T00:00:00Z',
+    includesSubprojects: false,
+    completed: items,
+    overdue: [],
+    upcoming: [],
+    blockers: [],
+    slippedMilestones: [],
+  };
+  assert.deepEqual(
+    projectDraftEvidence(evidence, { projects, items } as Bootstrap, 'root').completed,
+    [],
+  );
 });
 
 test('weekly review uses latest health, flags seven-day updates and excludes inactive projects', () => {
