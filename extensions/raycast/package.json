@@ -88,14 +88,14 @@
   },
   "dependencies": {
     "@raycast/api": "^1.103.0",
-    "react": "^19.0.0"
+    "react": "^19.3.1"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "@types/react": "^19.0.0",
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
     "typescript": "^5.9.0",
-    "tsx": "^4.20.5",
-    "prettier": "^3.9.6"
+    "tsx": "^4.23.15",
+    "prettier": "^3.9.10"
   },
   "packageManager": "pnpm@10.7.1"
 }
