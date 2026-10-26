@@ -93,7 +93,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
-    "typescript": "^5.9.0",
+    "typescript": "^7.0.2",
     "tsx": "^4.20.5",
     "prettier": "^3.9.6"
   },
