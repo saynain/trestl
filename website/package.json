@@ -37,5 +37,11 @@
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
     "typescript": "^5.9.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "fast-uri@<3.1.9": "^3.1.9",
+      "source-map-js@<1.2.2": "^1.2.2"
+    }
   }
 }
