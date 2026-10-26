@@ -1,0 +1,54 @@
+.people-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 30px 32px;
+  min-width: 0;
+}
+.people-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  margin-bottom: 32px;
+}
+.people-heading h1 {
+  font-size: 27px;
+  letter-spacing: -0.8px;
+}
+.people-heading p,
+.people-profile p {
+  color: var(--muted);
+  margin-top: 6px;
+  line-height: 1.6;
+}
+.people-picker {
+  width: 240px;
+  max-width: 100%;
+  flex-shrink: 0;
+}
+.people-profile {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.people-profile h2 {
+  font-size: 18px;
+}
+.overview-activity {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+@media (max-width: 640px) {
+  .people-content {
+    padding: 24px 20px;
+  }
+  .people-heading {
+    flex-direction: column;
+    gap: 18px;
+    margin-bottom: 24px;
+  }
+  .people-picker {
+    width: 100%;
+  }
+}

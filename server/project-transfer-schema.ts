@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { canvasScene } from './canvases.ts';
-import { roadmapUpdate } from './roadmap.ts';
+import { roadmapUpdate, validateRoadmapReferences } from './roadmap.ts';
 
 export const transferLimit = 32 * 1024 * 1024;
 const id = z.string().uuid();
@@ -211,7 +211,14 @@ export function validatePackage(data: ProjectPackage): string | null {
     !acyclic(data.items)
   )
     return 'Invalid project or work item hierarchy';
+  const roadmapAccess = {
+    projectIds: new Set(projects.keys()),
+    itemIds: new Set(items.keys()),
+    milestoneIds: new Set(milestones.keys()),
+  };
   for (const p of data.projects) {
+    if (p.roadmap && validateRoadmapReferences(p.roadmap.features, roadmapAccess))
+      return 'Roadmap references missing delivery records';
     if (!people.has(p.ownerId)) return 'Project owner is missing from people';
     if (p.startDate && p.dueDate && p.startDate > p.dueDate)
       return 'Project dates are out of order';

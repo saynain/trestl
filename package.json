@@ -14,6 +14,7 @@
   "packageManager": "pnpm@10.7.1",
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "preview:demo": "pnpm build && node scripts/preview-demo.mjs",
     "dev:server": "tsx watch server/index.ts",
     "dev:web": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",

@@ -253,6 +253,7 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
             itemId: item.id,
             userId: integration.creatorId,
             kind: 'event',
+            importedFrom: { authorName: `${integration.provider} repository import` },
             body: `Imported from ${integration.provider === 'github' ? 'GitHub' : 'Gitea'} · ${integration.repository} #${issue.number}. Repository updates own the title and description; planning fields stay local.`,
             createdAt: now,
           };

@@ -389,6 +389,10 @@ test('Gitea sync is idempotent, preserves local planning and reconciles source c
     });
     assert.ok(item.source?.lastSyncedAt);
     assert.ok(!JSON.stringify(item).includes('secret-access-token'));
+    const importEvent = (await store.list<Activity>('activity')).find(
+      (row) => row.kind === 'event' && row.body.startsWith('Imported from'),
+    );
+    assert.ok(importEvent?.importedFrom, 'Repository import events require source provenance');
     const importedActivity = (await store.list<Activity>('activity')).find((row) => row.source);
     assert.equal(importedActivity?.body, 'Ready for review');
     assert.deepEqual(importedActivity?.source, { provider: 'gitea', author: 'engineer' });
