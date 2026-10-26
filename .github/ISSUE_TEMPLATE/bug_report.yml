@@ -1,0 +1,51 @@
+name: Bug report
+description: Something in Trestl doesn't work as expected.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. Report security problems privately instead; see the [security policy](https://github.com/saynain/trestl/blob/main/SECURITY.md). Leave out real workspace data, credentials, and hostnames.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected to happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open …
+        2. Select …
+        3. See …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Trestl version
+      description: The release or commit you run, for example `v0.6.0`.
+    validations:
+      required: true
+  - type: dropdown
+    id: setup
+    attributes:
+      label: Where does it happen?
+      options:
+        - Desktop app
+        - Docker Compose
+        - Kubernetes
+        - Development server (pnpm dev)
+        - CLI
+        - Raycast extension
+        - Website or online demo
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Environment and other details
+      description: Operating system, browser, database (PGlite or PostgreSQL), authentication mode, logs, or screenshots.

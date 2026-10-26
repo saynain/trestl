@@ -6,6 +6,9 @@ A self-hosted project workspace for personal projects and small teams.
 Capture tasks and follow-ups, organize ongoing responsibilities, and plan
 projects with a finish line. Repositories are optional connections.
 
+[Website](https://trestl.dev) · [Try the demo](https://trestl.dev/play/) ·
+[Documentation](https://trestl.dev/docs/)
+
 Trestl is licensed under [MIT](LICENSE). It is an early release: the core
 workflows are usable, while operational scale and hosted-service features are
 still developing.
@@ -30,10 +33,10 @@ See the [user guide](docs/user-guide.md) for the complete workflows.
 The desktop app and its bundled server are aligned to **v0.6.0**. Signed macOS,
 Windows, and Linux release installers are pending signing configuration; they
 are not included in the current web/CLI release. Test installers are available
-from successful **Desktop installers** workflow runs in GitHub Actions.
-The app includes its runtime and local database; no server setup is needed. See the
-[desktop guide](docs/desktop.md) for platform requirements, backups, and checksum
-verification. Downloads require access while this repository is private.
+from successful **Desktop installers** workflow runs in GitHub Actions; downloading
+workflow artifacts requires a GitHub account. The app includes its runtime and local
+database; no server setup is needed. See the [desktop guide](docs/desktop.md) for
+platform requirements, backups, and checksum verification.
 
 ## Install the CLI
 
@@ -47,7 +50,7 @@ trestl login --profile work --url https://projects.example.com
 trestl auth status --profile work
 ```
 
-Sign in in your browser and approve the code displayed in your terminal. Your CLI uses the same user and permissions as the app. Use `--scope read` for read-only access. See the [CLI guide](cli/README.md) for Windows checksums, GHCR installation, automation and token revocation. Downloads require access while the repository/packages are private.
+Sign in in your browser and approve the code displayed in your terminal. Your CLI uses the same user and permissions as the app. Use `--scope read` for read-only access. See the [CLI guide](cli/README.md) for Windows checksums, GHCR installation, automation and token revocation.
 
 ### Project updates and weekly review
 
@@ -90,8 +93,6 @@ Open **http://127.0.0.1:5173** and create your administrator account. There
 are no default credentials. You can start empty or opt into example projects.
 Data persists in `.data/`; no external services are required. The API runs on
 port 4317. Existing local users can continue running `pnpm dev` as before.
-
-The repository currently requires GitHub access while it is private.
 
 ### One installation, your account, and your projects
 
@@ -150,7 +151,7 @@ configuration outside the product repository.
 - [GitHub App integration](docs/github-app.md)
 - [CLI and agent integration](cli/README.md)
 - [Raycast extension](extensions/raycast/README.md)
-- [Contributing](CONTRIBUTING.md)
+- [Contributing](CONTRIBUTING.md), [code of conduct](CODE_OF_CONDUCT.md), and [security policy](SECURITY.md)
 
 The running server exposes its API contract at `/api/v1/openapi.json`.
 
@@ -166,7 +167,7 @@ installation-wide JSON restore are not implemented. Project export/import suppor
 portability but does not replace database backups. Database migrations run at
 startup; back up before upgrading and retain your `APP_SECRET`.
 
-The CLI and container image can be built from source or published through the release workflows. The CLI is distributed through GitHub Releases and GHCR, not the npm registry. This project does not provide a hosted SaaS. Private artifacts require access until their visibility is explicitly changed for an open-source launch.
+The CLI and container image can be built from source or published through the release workflows. The CLI is distributed through GitHub Releases and GHCR, not the npm registry. This project does not provide a hosted SaaS.
 
 ### Authentication proxy deployments
 
@@ -174,4 +175,4 @@ For a dedicated company installation behind Traefik and oauth2-proxy, see [Googl
 
 ## Website and documentation
 
-The [Astro website](website/README.md) lives in `website/` and builds separately from the application. Its interactive demo reuses the product UI with isolated sample data, and its documentation is generated from this repository's guides. Run `pnpm --dir website install --frozen-lockfile`, then `pnpm --dir website build` after installing root dependencies. Deploy `website/dist/` to a static host.
+The [Astro website](website/README.md) lives in `website/` and builds separately from the application. Its interactive demo reuses the product UI with isolated sample data, and its documentation is generated from this repository's guides. Run `pnpm --dir website install --frozen-lockfile`, then `pnpm --dir website build` after installing root dependencies. Each release tag deploys it to [trestl.dev](https://trestl.dev).

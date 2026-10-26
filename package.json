@@ -4,6 +4,8 @@
   "private": true,
   "description": "A self-hosted project workspace for personal projects and small teams",
   "license": "MIT",
+  "homepage": "https://trestl.dev",
+  "bugs": "https://github.com/saynain/trestl/issues",
   "repository": {
     "type": "git",
     "url": "https://github.com/saynain/trestl.git"

@@ -14,4 +14,4 @@ For a new release:
 
 This workflow does not publish an npm registry package. GitHub Release downloads avoid requiring ORAS for ordinary users; GHCR provides the same package for registry-based distribution and mirrors.
 
-A private repository's releases require GitHub access. GHCR packages default to private and have their own visibility/access settings. Opening the source repository does not by itself guarantee anonymous artifact access. Before an open-source launch, deliberately make both intended packages public and verify downloads without credentials. The publishing workflow never changes visibility.
+Release downloads and both GHCR packages, `ghcr.io/saynain/trestl` and `ghcr.io/saynain/trestl-cli`, are public and need no credentials. New GHCR packages default to private and have their own visibility settings, separate from the repository. If you publish another package, make it public in its package settings and verify a download without credentials. The publishing workflow never changes visibility.

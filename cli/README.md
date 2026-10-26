@@ -6,7 +6,7 @@ A standalone Node.js client for Trestl. Run it from any repository or directory;
 
 Install [Node.js 22.9 or newer](https://nodejs.org/), then download the `.tgz` and `SHA256SUMS` from the [latest GitHub release](https://github.com/saynain/trestl/releases/latest). The same package works on macOS, Linux and Windows and contains no runtime dependencies.
 
-For version 0.6.0, using the GitHub CLI (also works while the repository is private):
+For version 0.6.0, using the GitHub CLI:
 
 ```sh
 gh release download v0.6.0 --repo saynain/trestl --pattern 'trestl-cli-*.tgz' --pattern SHA256SUMS

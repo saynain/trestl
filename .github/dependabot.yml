@@ -1,0 +1,39 @@
+# Security updates are opened as soon as an advisory is published. These
+# version updates are grouped and monthly to keep the number of PRs small.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      application:
+        update-types: [minor, patch]
+  - package-ecosystem: npm
+    directory: /website
+    schedule:
+      interval: monthly
+    groups:
+      website:
+        update-types: [minor, patch]
+  - package-ecosystem: npm
+    directory: /extensions/raycast
+    schedule:
+      interval: monthly
+    groups:
+      raycast:
+        update-types: [minor, patch]
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: monthly
+    groups:
+      desktop:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']

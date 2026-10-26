@@ -81,8 +81,6 @@ The compact sun/moon toggle defaults to system appearance and remembers an expli
 
 Git connections and imported issues are illustrative. Live sync, credentials, account administration, and token creation require a real installation. The marketing copy describes inbound issue sync accurately: edits in Trestl are not posted back to Git providers. External source and documentation links remain ordinary links.
 
-## Before public launch
+## Links
 
-The root README currently says the repository is private. Make it publicly accessible before marketing the source as available to everyone. Source and license links point to `https://github.com/saynain/trestl`; documentation links stay under `/docs/`. This website does not change repository visibility or publish anything.
-
-Set Astro's `site` configuration and add a canonical URL when the production domain is selected. The $0 claim refers to the MIT-licensed software; users provide hosting. Docker and Kubernetes links lead to the full configuration guides.
+Source and license links point to `https://github.com/saynain/trestl`; documentation links stay under `/docs/`. Astro's `site` is `https://trestl.dev`, which the pages use for their canonical and Open Graph URLs. The $0 claim refers to the MIT-licensed software; users provide hosting. Docker and Kubernetes links lead to the full configuration guides.

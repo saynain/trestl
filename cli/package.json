@@ -4,6 +4,13 @@
   "description": "Trestl command line client for people and agents",
   "type": "module",
   "license": "MIT",
+  "homepage": "https://trestl.dev/docs/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saynain/trestl.git",
+    "directory": "cli"
+  },
+  "bugs": "https://github.com/saynain/trestl/issues",
   "bin": {
     "trestl": "dist/index.js"
   },
