@@ -16,7 +16,7 @@ These are not signed release installers and do not provide a published updater f
 
 Once signing is configured, the workflow attaches installers and
 `desktop-SHA256SUMS` to the same [GitHub Release](https://github.com/saynain/trestl/releases)
-as the CLI. Downloads require repository access while the repository is private:
+as the CLI:
 
 | Platform      | Architecture                             | Installer                      |
 | ------------- | ---------------------------------------- | ------------------------------ |

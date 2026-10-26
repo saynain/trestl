@@ -4,13 +4,13 @@ Trestl is a project workspace for personal projects and small teams. Use the [de
 
 ## Desktop app
 
-Download the installer for your platform from [GitHub Releases](https://github.com/saynain/trestl/releases/latest). Trestl Desktop includes its runtime and embedded database; it does not require Node.js, Docker, or a server. See the [desktop guide](/docs/desktop/) for installation, platform requirements, updates, and backups. Release downloads require repository access while the project is private.
+Trestl Desktop includes its runtime and embedded database; it does not require Node.js, Docker, or a server. Signed installers will be attached to [GitHub Releases](https://github.com/saynain/trestl/releases/latest) once code signing is configured. Until then, unsigned test installers are available from the **Desktop installers** workflow in GitHub Actions. See the [desktop guide](/docs/desktop/) for installation, platform requirements, updates, and backups.
 
 The commands below run the web application from source.
 
 ## Before you begin
 
-You need **Node.js 22.9+**, **pnpm 10.7.1**, and Git. Repository access is required while the project is private.
+You need **Node.js 22.9+**, **pnpm 10.7.1**, and Git.
 
 ## Start Trestl
 

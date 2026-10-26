@@ -4,6 +4,14 @@ Trestl is a small-team and personal project workspace. Prefer improvements that
 make everyday capture, planning, and collaboration simpler. Keep advanced
 features optional and deployment configuration portable.
 
+Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md). Report
+security problems privately as described in the [security policy](SECURITY.md),
+not in a public issue.
+
+Looking for a place to start? Try the issues labeled
+[good first issue](https://github.com/saynain/trestl/labels/good%20first%20issue)
+or [help wanted](https://github.com/saynain/trestl/labels/help%20wanted).
+
 ## Development
 
 Follow the [development guide](docs/development.md). Use a disposable local

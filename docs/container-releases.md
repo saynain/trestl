@@ -47,15 +47,11 @@ Publication uses the job's short-lived `GITHUB_TOKEN` with `contents: read` and
 links the package to its GitHub repository. GitHub Actions and the required
 package permissions must be allowed by the account's policies.
 
-New GHCR packages default to **private**. After first publication, confirm the
-package visibility and repository access under **GitHub profile → Packages →
-trestl → Package settings**. This workflow does not change visibility. If a
-package already exists, its current visibility remains in effect.
-
-When ready for public distribution, change the package visibility explicitly.
-Changing repository visibility is not a substitute for checking package
-visibility. A public image exposes its packaged code, including Trestl's server
-TypeScript, even if the source repository is private.
+The `ghcr.io/saynain/trestl` package is public, so pulling it needs no
+credentials. New GHCR packages default to **private**, and this workflow does
+not change visibility. If you publish the image from a fork or under another
+name, set its visibility under **GitHub profile → Packages → Package
+settings**; repository visibility does not change package visibility.
 
 See [GitHub's container registry documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
 
@@ -67,10 +63,12 @@ the internal platform's configuration, outside this product repository.
 For Harbor:
 
 1. Create a **GitHub Container Registry** endpoint for `https://ghcr.io`.
-   While the package is private, use a GitHub account with package access and a
-   personal access token **(classic)** with `read:packages`. The fine-grained
-   token used for source mirroring does not replace this credential. Store the
-   token using the platform's secret-management procedure; never in Git.
+   The public package needs no credentials. To replicate a private package,
+   such as one published from a private fork, use a GitHub account with package
+   access and a personal access token **(classic)** with `read:packages`. The
+   fine-grained token used for source mirroring does not replace this
+   credential. Store the token using the platform's secret-management
+   procedure; never in Git.
 2. Create a pull-based replication rule matching `saynain/trestl` and the
    selected tag or release-tag pattern. Replicate into a normal private Harbor
    project. Verify the destination repository path after applying Harbor's

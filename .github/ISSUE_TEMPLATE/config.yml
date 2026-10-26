@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/saynain/trestl/security/advisories/new
+    about: Report security problems privately instead of opening a public issue.
+  - name: Documentation
+    url: https://trestl.dev/docs/
+    about: Guides for the desktop app, self-hosting, the CLI, and the API.

@@ -7,6 +7,7 @@ import Integrations from '../components/Integrations.astro';
 import Theme from '../components/Theme.astro';
 import '../styles/site.css';
 const repo = 'https://github.com/saynain/trestl';
+const canonical = new URL(Astro.url.pathname, Astro.site);
 const commands = {
   local: 'git clone https://github.com/saynain/trestl.git\ncd trestl\ncorepack enable\npnpm install --frozen-lockfile\npnpm dev',
   docker: 'git clone https://github.com/saynain/trestl.git\ncd trestl\ncp .env.example .env\n# Configure APP_SECRET and POSTGRES_PASSWORD\n# in .env before starting (see the guide).\ndocker compose up --build -d',
@@ -24,6 +25,8 @@ const commands = {
     <meta property="og:title" content="Trestl — Good work needs a little structure." />
     <meta property="og:description" content="Your tasks, projects, and big ideas. Together, on your terms. Free and open source, with every feature included." />
     <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonical} />
+    <link rel="canonical" href={canonical} />
     <meta name="twitter:card" content="summary" />
     <link rel="icon" type="image/svg+xml" href={faviconUrl} />
     <title>Trestl — Good work needs a little structure.</title>
