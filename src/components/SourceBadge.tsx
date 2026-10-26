@@ -1,4 +1,5 @@
-import { AlertCircle, Github, GitFork } from 'lucide-react';
+import { AlertCircle, GitFork } from 'lucide-react';
+import { GitHubIcon } from './ui';
 import type { WorkItem } from '../../shared/types';
 import { isDone } from '../lib/model';
 
@@ -7,7 +8,7 @@ export function SourceBadge({ item }: { item: WorkItem }) {
   const source = item.source;
   if (!source) return null;
   const provider = source.provider === 'github' ? 'GitHub' : 'Gitea';
-  const Icon = source.provider === 'github' ? Github : GitFork;
+  const Icon = source.provider === 'github' ? GitHubIcon : GitFork;
   const needsReview = source.state === 'closed' && !isDone(item);
   return (
     <span className="source-badge-line">
