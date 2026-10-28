@@ -1,6 +1,6 @@
 # Contributing to Trestl
 
-Trestl is a small-team and personal project workspace. Prefer improvements that
+Trestl is project management for small technical teams. Prefer improvements that
 make everyday capture, planning, and collaboration simpler. Keep advanced
 features optional and deployment configuration portable.
 
@@ -27,6 +27,9 @@ guide. Run the extension's checks when changing Raycast code.
 Describe the problem, resulting behavior, and relevant verification in the
 pull request. Discuss substantial changes in an issue before implementing
 them. Keep unrelated cleanup separate.
+
+Check feature ideas against the [product direction](docs/product/direction.md).
+It lists the frozen features, which get bug fixes only, and the non-goals.
 
 ## Deployment boundaries
 
