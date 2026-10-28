@@ -1,10 +1,52 @@
 # Product direction
 
-## Website copy to keep
+The maintainer adopted this position on 2026-10-29. Use it to decide whether a change belongs in Trestl. The open [epics](https://github.com/saynain/trestl/issues?q=is%3Aissue%20state%3Aopen%20label%3Aepic) hold the roadmap.
 
-> Trestl helps you manage your responsibilities, capture ideas and follow-ups, and collaborate on ongoing work and projects. Run it yourself, alone or with your team, with all features included.
+## Position
 
-Keep this wording for the future project website.
+Trestl is project management for small technical teams. It should be bare minimum, really fast, and easy to set up properly.
+
+Trestl also aims to be the self-hosted work queue that a team shares with its coding agents.
+
+## Who it is for
+
+Small technical teams of about 2–15 people who self-host Git.
+
+## The wedge: ready → claim → review
+
+Agents claim unblocked work through the CLI or MCP, do it in the team's own Gitea, Forgejo or GitHub repository, and hand it back for human review with the pull request linked. People see the same queue in the app.
+
+This is direction, not a shipped feature. What exists today:
+
+- Agents with a shell use the [CLI](../../cli/README.md) and its agent skill. They get scoped API tokens, revision checks on updates, and idempotency keys for creates and comments.
+- Gitea and GitHub issues can be linked to projects or imported. Sync is inbound only, and pull requests are not imported.
+
+Planned: ready, claim and review states, agent identities, outgoing webhooks and an MCP server ([#69](https://github.com/saynain/trestl/issues/69)); two-way sync, pull request linking and verified Forgejo support ([#68](https://github.com/saynain/trestl/issues/68)).
+
+## What to stress
+
+- MIT, with every feature included. No open core.
+- One process on a laptop or a server. The server runs the app and the API, with an embedded database (PGlite) or PostgreSQL.
+- Projects move between installations with [project export and import](../project-transfer.md).
+
+## Frozen
+
+These features stay, but get bug fixes only. Don't extend them.
+
+- Live canvas collaboration
+- Roadmap presentation and print
+- Activity heatmaps
+- The theme library
+- The Raycast extension
+- Confluence search
+
+## Non-goals
+
+- Time tracking or invoicing.
+- Chat, wikis or docs. Link to documentation instead.
+- Multi-tenancy, organization switching, billing or SaaS provisioning. One installation is one organization. A hosting provider can run separate installations.
+- Native mobile apps.
+- In-app AI. Agents bring their own model.
 
 ## Core product
 
@@ -14,8 +56,6 @@ First-run onboarding creates the installation and its password-protected adminis
 
 ## Deferred ideas
 
-A future cross-platform desktop application could store multiple installation/account profiles, each tied to its server URL. Keep API clients independent of a single hard-coded server. This is an idea, not part of the current implementation.
-
-Hosting multiple customer organizations in one installation is out of scope. A hosting provider can operate separate installations until there is a demonstrated need for multi-tenancy. Do not add organization switching, billing, or SaaS provisioning to the core product.
+The desktop app could later store several installation/account profiles, each tied to its server URL. Keep API clients independent of a single hard-coded server. This is an idea, not part of the current implementation.
 
 Real deployment hostnames, company email domains, and secrets belong only in private deployment configuration.

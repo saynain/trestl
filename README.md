@@ -2,16 +2,23 @@
 
 # Trestl
 
-A self-hosted project workspace for personal projects and small teams.
-Capture tasks and follow-ups, organize ongoing responsibilities, and plan
-projects with a finish line. Repositories are optional connections.
+Self-hosted project management for small technical teams.
+
+Trestl covers the essentials for teams of about 2–15 people. Plan work in
+lists, boards and timelines, link Gitea and GitHub issues, and let coding
+agents read and update work through the CLI. It runs as one process on a
+laptop or a server, and projects move between installations.
 
 [Website](https://trestl.dev) · [Try the demo](https://trestl.dev/play/) ·
 [Documentation](https://trestl.dev/docs/)
 
-Trestl is licensed under [MIT](LICENSE). It is an early release: the core
-workflows are usable, while operational scale and hosted-service features are
-still developing.
+Trestl is licensed under [MIT](LICENSE), with every feature included and no
+open core. It is an early release: the core workflows are usable, while
+operational scale and hosted-service features are still developing.
+
+Next, Trestl is becoming a work queue that teams share with their coding
+agents: ready → claim → review. This is not built yet; see the
+[product direction](docs/product/direction.md).
 
 ## What you can do
 
