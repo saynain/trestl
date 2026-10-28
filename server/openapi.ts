@@ -794,6 +794,73 @@ operation(
   object({ body: { type: 'string', minLength: 1, maxLength: 50000 } }, ['body']),
   { created: true, parameters: [idempotencyParameter] },
 );
+operation(
+  '/items/ready',
+  'get',
+  'List ready work, by priority then due date',
+  list('WorkItem'),
+  undefined,
+  {
+    description:
+      'Ready work is accessible, has status todo, is unassigned or assigned to the caller, and has no unfinished blockers (finish-to-start blocks relations whose blocker is not done or canceled). Blockers the caller cannot access still block. Order: priority (urgent first), due date (undated last), then board position. Read-only tokens may list ready work.',
+    parameters: [
+      {
+        name: 'projectId',
+        description: 'Project UUID or key; null selects inbox items',
+        schema: string,
+      },
+      { name: 'label', description: 'Case-insensitive label name', schema: string },
+      {
+        name: 'repository',
+        description:
+          'owner/name. Matches the repository an item was imported from or its own repository links; items without either match their project repository links.',
+        schema: string,
+      },
+      { name: 'cursor', schema: string },
+      { name: 'limit', schema: { type: 'integer', minimum: 1, maximum: 500 } },
+    ].map((parameter) => ({ ...parameter, in: 'query', required: false })),
+  },
+);
+const queueResult = object(
+  { item: ref('WorkItem'), comment: ref('Activity'), link: ref('ResourceLink') },
+  ['item'],
+);
+const queueRevision = {
+  type: 'integer',
+  minimum: 0,
+  maximum: 2147483646,
+  description: 'Optional compare-and-set revision; a stale revision returns 409.',
+};
+const queueComment = { type: 'string', minLength: 1, maxLength: 50000 };
+for (const [action, summary, description, properties] of [
+  [
+    'claim',
+    'Claim ready work: assign yourself and set in_progress',
+    'The item must be ready for the caller when the claim commits. Concurrent claims serialize: exactly one succeeds and the others return 409. Reuse an Idempotency-Key to retry an uncertain claim; a new key never claims the same item twice.',
+    { expectedRevision: queueRevision },
+  ],
+  [
+    'release',
+    'Release your claim: set todo and clear the assignee',
+    'Only the claimant (status in_progress, assigned to the caller) can release. An optional comment explains why.',
+    { expectedRevision: queueRevision, comment: queueComment },
+  ],
+  [
+    'handoff',
+    'Hand off your claim for review: set in_review',
+    'Only the claimant can hand off. The assignee stays as the responsible person. pullRequestUrl adds a repository link once per URL; comment adds a discussion comment.',
+    {
+      expectedRevision: queueRevision,
+      comment: queueComment,
+      pullRequestUrl: { type: 'string', format: 'uri', maxLength: 2048 },
+    },
+  ],
+] as const)
+  operation(`/items/{id}/${action}`, 'post', summary, queueResult, object(properties), {
+    optionalBody: true,
+    parameters: [idempotencyParameter],
+    description: `Accepts an item UUID or identifier. ${description} Read-only tokens return 403.`,
+  });
 paths['/images'] = {
   post: {
     summary: 'Upload a PNG, JPEG, GIF, or WebP image for work item Markdown (8 MB maximum)',

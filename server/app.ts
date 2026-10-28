@@ -17,6 +17,12 @@ import {
   type ProxyAuthConfig,
 } from './proxy-auth.ts';
 import { createsDependencyCycle, scheduleConflicts } from '../shared/dependencies.ts';
+import {
+  belongsToRepository,
+  compareReady,
+  pullRequestTitle,
+  repositoryName,
+} from '../shared/work-queue.ts';
 import { registerProjectTransfer } from './project-transfer.ts';
 import { registerCanvases } from './canvases.ts';
 import { registerCanvasCollaboration } from './canvas-collaboration.ts';
@@ -88,6 +94,23 @@ const date = z
   }, 'Invalid calendar date')
   .nullable();
 const reference = z.string().uuid().nullable();
+const revisionInput = z.number().int().min(0).max(2147483646);
+const pageQuery = {
+  cursor: z
+    .string()
+    .regex(/^\d+$/)
+    .refine((v) => Number.isSafeInteger(Number(v)))
+    .optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+};
+function paginate<T>(items: T[], query: { cursor?: string; limit?: number }) {
+  const offset = Number(query.cursor ?? '0');
+  const limit = query.limit ?? 100;
+  return {
+    data: items.slice(offset, offset + limit),
+    ...(items.length > offset + limit ? { nextCursor: String(offset + limit) } : {}),
+  };
+}
 const visibility = z.enum(['workspace', 'private']);
 const projectAllowsUser = (project: Project, user: User) =>
   project.visibility !== 'private' ||
@@ -1381,12 +1404,7 @@ export async function createApp(
         parentId: z.string().optional(),
         milestoneId: z.string().optional(),
         visibility: visibility.optional(),
-        cursor: z
-          .string()
-          .regex(/^\d+$/)
-          .refine((v) => Number.isSafeInteger(Number(v)))
-          .optional(),
-        limit: z.coerce.number().int().min(1).max(500).optional(),
+        ...pageQuery,
       })
       .strict()
       .parse(request.query);
@@ -1415,18 +1433,14 @@ export async function createApp(
       );
     }
     items.sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
-    const offset = Number(query.cursor ?? '0');
-    const limit = query.limit ?? 100;
-    return {
-      data: items.slice(offset, offset + limit),
-      ...(items.length > offset + limit ? { nextCursor: String(offset + limit) } : {}),
-    };
+    return paginate(items, query);
   });
+  type QueueResult = { item: WorkItem; comment?: Activity; link?: ResourceLink };
   type RetryRecord = {
     id: string;
     fingerprint: string;
     itemId: string;
-    result: WorkItem | Activity;
+    result: WorkItem | Activity | QueueResult;
   };
   const retryContext = (
     request: FastifyRequest,
@@ -1534,6 +1548,8 @@ export async function createApp(
     input: Partial<z.infer<typeof itemInput>>,
     expectedRevision?: number,
     undoCompletion = false,
+    /** Replaces the field-by-field activity summary, for example for a queue transition. */
+    event?: string,
   ) => {
     const old = await checkedItem(s, u, itemId);
     if (expectedRevision !== undefined && expectedRevision !== (old.revision ?? 0))
@@ -1589,13 +1605,13 @@ export async function createApp(
     const changes = Object.entries(input)
       .filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(old[k as keyof WorkItem]))
       .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : (v ?? 'cleared')}`);
-    if (changes.length)
+    if (event || changes.length)
       await s.put('activity', {
         id: id(),
         itemId: item.id,
         userId: u.id,
         kind: 'event',
-        body: changes.join(' · '),
+        body: event ?? changes.join(' · '),
         createdAt: now(),
       });
     if (undoCompletion && old.status === 'done' && item.status !== 'done') {
@@ -1812,32 +1828,236 @@ export async function createApp(
     });
     return reply.code(204).send();
   });
+  const commentBody = z.string().trim().min(1).max(50000);
+  const addComment = async (s: Store, tx: Database, u: User, item: WorkItem, body: string) => {
+    const comment = await s.put<Activity>('activity', {
+      id: id(),
+      itemId: item.id,
+      userId: u.id,
+      kind: 'comment',
+      body,
+      createdAt: now(),
+    });
+    await bindImages(tx, u, item.id, body);
+    await saveMentions(s, u, item, body, '', comment.id);
+    return comment;
+  };
   app.post<{ Params: { id: string } }>('/api/v1/items/:id/comments', async (request, reply) => {
     const u = requireUser(request),
-      input = z
-        .object({ body: z.string().trim().min(1).max(50000) })
-        .strict()
-        .parse(request.body);
+      input = z.object({ body: commentBody }).strict().parse(request.body);
     const result = await mutate(async (s, tx) => {
       const item = await checkedItem(s, u, request.params.id);
       const retry = retryContext(request, u, `comment:${item.id}`, input);
       const previous = await replay(s, u, retry);
       if (previous) return previous;
-      const result = await s.put('activity', {
-        id: id(),
-        itemId: item.id,
-        userId: u.id,
-        kind: 'comment',
-        body: input.body,
-        createdAt: now(),
-      });
-      await bindImages(tx, u, item.id, input.body);
-      await saveMentions(s, u, item, input.body, '', result.id);
+      const result = await addComment(s, tx, u, item, input.body);
       if (retry) await s.put('idempotency', { ...retry, itemId: item.id, result });
       return result;
     });
     return reply.code(201).send(result);
   });
+  // Work queue: ready → claim → handoff. A claim is the caller's assignment of in-progress
+  // work, not a separate record, so ordinary edits and board moves stay consistent with it.
+  const memberName = async (s: Store, u: User, userId: string) =>
+    (await workspaceUser(s, userId, workspaceOf(u)))?.name ?? 'another member';
+  /** Unfinished blockers per dependent, including blockers the caller cannot access. */
+  const unfinishedBlockers = async (s: Store, itemIds: string[]) => {
+    const blockers = new Map<string, string[]>();
+    if (!itemIds.length) return blockers;
+    const { rows } = await s.query<{ targetId: string; blockerId: string }>(
+      `SELECT r.data->>'targetId' AS "targetId", b.id AS "blockerId"
+       FROM entities r JOIN entities b ON b.collection='items' AND b.id=r.data->>'itemId'
+       WHERE r.collection='relations' AND r.data->>'kind'='blocks'
+         AND r.data->>'targetId'=ANY($1::text[])
+         AND COALESCE(b.data->>'status','') NOT IN ('done','canceled')
+       ORDER BY b.id`,
+      [itemIds],
+    );
+    for (const row of rows)
+      blockers.set(row.targetId, [...(blockers.get(row.targetId) ?? []), row.blockerId]);
+    return blockers;
+  };
+  /** Fails unless the caller may claim the item now. Callers hold the mutation lock. */
+  const requireReady = async (s: Store, u: User, item: WorkItem) => {
+    if (item.status === 'in_progress' || item.status === 'in_review')
+      fail(
+        409,
+        `${item.identifier} is already ${item.status === 'in_progress' ? 'in progress' : 'in review'}${item.assigneeId ? ` (claimed by ${item.assigneeId === u.id ? 'you' : await memberName(s, u, item.assigneeId)})` : ''}. Choose another ready item.`,
+      );
+    if (item.status !== 'todo')
+      fail(409, `${item.identifier} has status ${item.status}; only todo items can be claimed.`);
+    if (item.assigneeId && item.assigneeId !== u.id)
+      fail(
+        409,
+        `${item.identifier} is assigned to ${await memberName(s, u, item.assigneeId)}. Choose another ready item.`,
+      );
+    const blockers = (await unfinishedBlockers(s, [item.id])).get(item.id) ?? [];
+    if (!blockers.length) return;
+    const named: string[] = [];
+    for (const blockerId of blockers)
+      if (await canItemIn(s, u, blockerId))
+        named.push((await s.get<WorkItem>('items', blockerId))!.identifier);
+    const hidden = blockers.length - named.length;
+    if (hidden) named.push(`${hidden} item${hidden === 1 ? '' : 's'} you cannot access`);
+    fail(409, `${item.identifier} is blocked by unfinished work: ${named.join(', ')}.`);
+  };
+  /** Release and handoff act only on work the caller has claimed. */
+  const requireClaim = async (s: Store, u: User, item: WorkItem, action: string) => {
+    if (item.status === 'in_progress' && item.assigneeId === u.id) return;
+    if (item.status === 'in_progress' && item.assigneeId)
+      fail(
+        409,
+        `${item.identifier} is claimed by ${await memberName(s, u, item.assigneeId)}. Only the claimant can ${action} it.`,
+      );
+    fail(
+      409,
+      `${item.identifier} is not claimed by you (status ${item.status}). Claim it before you ${action} it.`,
+    );
+  };
+  app.get('/api/v1/items/ready', async (request) => {
+    const user = requireUser(request);
+    const query = z
+      .object({
+        projectId: z.string().optional(),
+        label: z.string().trim().min(1).max(40).optional(),
+        repository: z
+          .string()
+          .max(300)
+          .refine((value) => repositoryName(value) !== null, 'Use owner/name')
+          .transform((value) => repositoryName(value)!)
+          .optional(),
+        ...pageQuery,
+      })
+      .strict()
+      .parse(request.query);
+    if (query.projectId && query.projectId !== 'null')
+      query.projectId = (await checkedProject(store, user, query.projectId)).id;
+    const visible = await visibleData(user);
+    const label = query.label?.toLowerCase();
+    const candidates = visible.items.filter(
+      (item) =>
+        item.status === 'todo' &&
+        (!item.assigneeId || item.assigneeId === user.id) &&
+        (!query.projectId ||
+          (query.projectId === 'null' ? !item.projectId : item.projectId === query.projectId)) &&
+        (!label || (item.labels ?? []).some((value) => value.toLowerCase() === label)) &&
+        (!query.repository || belongsToRepository(item, visible.links, query.repository)),
+    );
+    const blocked = await unfinishedBlockers(
+      store,
+      candidates.map((item) => item.id),
+    );
+    return paginate(candidates.filter((item) => !blocked.has(item.id)).sort(compareReady), query);
+  });
+  type QueueInput = { expectedRevision?: number; comment?: string; pullRequestUrl?: string };
+  /** Each transition runs under the mutation lock, with revision checks and retry keys. */
+  const queueTransition = (
+    path: 'claim' | 'release' | 'handoff',
+    schema: z.ZodType<QueueInput>,
+    transition: (
+      s: Store,
+      tx: Database,
+      u: User,
+      item: WorkItem,
+      input: QueueInput,
+    ) => Promise<QueueResult>,
+  ) =>
+    app.post<{ Params: { id: string } }>(`/api/v1/items/:id/${path}`, async (request) => {
+      const u = requireUser(request);
+      const input = schema.parse(request.body ?? {});
+      return mutate(async (s, tx) => {
+        const item = await checkedItem(s, u, request.params.id);
+        const retry = retryContext(request, u, `${path}:${item.id}`, input);
+        const previous = await replay(s, u, retry);
+        if (previous) return previous;
+        if (input.expectedRevision !== undefined && input.expectedRevision !== (item.revision ?? 0))
+          fail(409, 'Work item changed. Read it again before updating.');
+        const result = await transition(s, tx, u, item, input);
+        if (retry) await s.put('idempotency', { ...retry, itemId: item.id, result });
+        return result;
+      });
+    });
+  queueTransition(
+    'claim',
+    z.object({ expectedRevision: revisionInput.optional() }).strict(),
+    async (s, tx, u, item) => {
+      await requireReady(s, u, item);
+      return updateItem(
+        s,
+        tx,
+        u,
+        item.id,
+        { status: 'in_progress', assigneeId: u.id },
+        item.revision ?? 0,
+        false,
+        'claimed this work item',
+      );
+    },
+  );
+  queueTransition(
+    'release',
+    z
+      .object({ expectedRevision: revisionInput.optional(), comment: commentBody.optional() })
+      .strict(),
+    async (s, tx, u, item, input) => {
+      await requireClaim(s, u, item, 'release');
+      const result = await updateItem(
+        s,
+        tx,
+        u,
+        item.id,
+        { status: 'todo', assigneeId: null },
+        item.revision ?? 0,
+        false,
+        'released this work item',
+      );
+      if (!input.comment) return result;
+      return { ...result, comment: await addComment(s, tx, u, result.item, input.comment) };
+    },
+  );
+  queueTransition(
+    'handoff',
+    z
+      .object({
+        expectedRevision: revisionInput.optional(),
+        comment: commentBody.optional(),
+        pullRequestUrl: safeUrl.optional(),
+      })
+      .strict(),
+    async (s, tx, u, item, input) => {
+      await requireClaim(s, u, item, 'hand off');
+      const result: QueueResult = await updateItem(
+        s,
+        tx,
+        u,
+        item.id,
+        { status: 'in_review' },
+        item.revision ?? 0,
+        false,
+        'handed this work item off for review',
+      );
+      if (input.pullRequestUrl) {
+        const existing = (
+          await s.query<{ data: ResourceLink }>(
+            "SELECT data FROM entities WHERE collection='links' AND data->>'itemId'=$1 AND data->>'url'=$2",
+            [item.id, input.pullRequestUrl],
+          )
+        ).rows[0]?.data;
+        result.link =
+          existing ??
+          (await s.put<ResourceLink>('links', {
+            id: id(),
+            projectId: null,
+            itemId: item.id,
+            title: pullRequestTitle(input.pullRequestUrl),
+            url: input.pullRequestUrl,
+            kind: 'repository',
+          }));
+      }
+      if (input.comment) result.comment = await addComment(s, tx, u, result.item, input.comment);
+      return result;
+    },
+  );
   app.get('/api/v1/views', async (request) => ({
     data: (await visibleData(requireUser(request))).views,
   }));

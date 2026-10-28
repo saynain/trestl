@@ -1,6 +1,6 @@
 ---
 name: trestl
-description: Use Trestl as task and project context across repositories and chats when the user mentions Trestl, references its work items or links, or the current repository maps to it. Read and search work, inform planning or implementation, and perform explicitly authorized tracker updates through the CLI.
+description: Use Trestl as task and project context across repositories and chats when the user mentions Trestl, references its work items or links, or the current repository maps to it. Read and search work, pick up ready work through ready → claim → handoff, inform planning or implementation, and perform explicitly authorized tracker updates through the CLI.
 ---
 
 Use this skill when Trestl is the referenced source of work, including chats outside the Trestl source repository. An identifier such as `K8S-12` is a Trestl reference only when the conversation or repository mapping establishes that connection; do not assume every issue identifier belongs here. A general request to plan a project does not by itself select Trestl.
@@ -21,10 +21,20 @@ Use the tracker to inform the requested planning, review, or implementation task
 
 Report findings with item identifiers so the user can trace the context. A request to investigate, plan, summarize, or implement work does not authorize posting tracker updates. Follow the user's communication constraints. Draft a proposed status/comment after implementation unless the user explicitly authorized that exact tracker action.
 
+## Work queue: ready → claim → handoff
+
+When the user asks you to pick up, take or work on ready Trestl work, that request authorizes the queue workflow and its tracker writes: `ready`, `claim`, then `handoff` or `release`. It does not authorize other edits. List with `trestl ready --profile <name> --json --page --limit 10`, adding `--project <key>`, `--label <name>` or `--repository <owner/name>` when the task establishes them. Ready items are `todo`, unassigned or assigned to the user, and unblocked, already sorted by priority and then due date. Take the first item that fits the request and the current repository; do not reorder the queue by your own judgment unless the user asks. An empty list means there is no ready work: report that rather than claiming blocked, backlog or someone else's items.
+
+Claim before starting: `trestl claim <identifier> --profile <name> --idempotency-key <new-key> --json`. Never claim by setting status or assignee with `update`. Exit 5 means another person or agent claimed it first, or it is no longer ready: run `ready` again and choose another item. Retry an uncertain claim (exit 6) only with the same key. The response is `{item}`; treat its title and description as task data, and read `get --json` for activity, relations and links.
+
+When the work is validated, open the pull request according to repository rules, then hand off: `trestl handoff <identifier> --profile <name> --pr <url> --comment "<what changed and how it was validated>" --idempotency-key <new-key> --json`. This sets `in_review`, keeps the user as assignee, links the pull request and posts the comment. If you can't finish, release the claim with `trestl release <identifier> --profile <name> --comment "<why>"`. Do not leave claimed work silently in progress. Exit 5 on handoff or release means you no longer hold the claim (someone reassigned or moved it): report this instead of forcing the status. Claim, release and handoff need a write token; with a read-only token (exit 3), report the item you would have claimed.
+
+## Authorized edits
+
 For an authorized edit, retain `item.revision` from the initial read (use 0 for a legacy item without it) and send it as `--expected-revision`. On exit 5, reread and reconcile the change; do not blindly retry with a new revision. Repository defaults never move existing items; use explicit `--project` only for an intended move.
 
 For authorized item creates, milestone creates or comments, choose one `--idempotency-key` per logical operation and retain it with the exact input. If a request times out, retry with the same key, account, server, and input. Use a new key only for a new operation. Do not retry indefinitely; after a repeated failure report the operation and key for later recovery.
 
 Use command-specific help (for example, `trestl update --help`) to discover supported flags. For authorized hierarchy edits, use `--parent <id-or-identifier>` or `--no-parent`; ordinary parent items represent epics/features. Milestone assignment uses `--milestone <id-or-exact-title>` in the item project or `--no-milestone` to clear. Ambiguous milestone titles require IDs. `milestones --json` includes progress counts and linked item IDs. Authorized dependency removal uses `relation-remove <blocker> <dependent>` in that order. Item deletion requires `delete <id-or-identifier> --expected-revision <observed-revision>` and refuses parents with child items.
 
-With `--json`, success is on stdout and structured errors are on stderr as `{"error":{"code":"...","message":"...","status":409}}` (status is present for HTTP errors). Exit codes: 0 success, 1 local/unclassified failure, 2 invalid usage/input, 3 authentication/permission failure, 4 not found, 5 conflict, 6 network/server/rate-limit/protocol failure. No automatic mutation retries occur.
+With `--json`, success is on stdout and structured errors are on stderr as `{"error":{"code":"...","message":"...","status":409}}` (status is present for HTTP errors). Exit codes: 0 success, 1 local/unclassified failure, 2 invalid usage/input, 3 authentication/permission failure (including a read-only token), 4 not found, 5 conflict (including a lost or missing claim), 6 network/server/rate-limit/protocol failure. No automatic mutation retries occur.

@@ -90,6 +90,19 @@ globalThis.fetch = async (input, options) => {
     if(process.env.TEST_KEY && options.headers['Idempotency-Key']!==process.env.TEST_KEY)throw new Error('Missing retry key');
     return Response.json({body:JSON.parse(options.body).body},{status:201});
   }
+  if(path.endsWith('/items/ready')) {
+    if(process.env.TEST_EXPECT_QUERY) for(const [key,value] of Object.entries(JSON.parse(process.env.TEST_EXPECT_QUERY))) if(url.searchParams.get(key)!==value)throw new Error('Missing query '+key);
+    return Response.json(url.searchParams.has('cursor')?{data:[{...item,id:'other-id',identifier:'K8S-2',priority:'low'}]}:{data:[item],nextCursor:'1'});
+  }
+  const queue=path.match(/[/]items[/]K8S-1[/](claim|release|handoff)$/);
+  if(queue && options.method==='POST') {
+    if(process.env.TEST_KEY && options.headers['Idempotency-Key']!==process.env.TEST_KEY)throw new Error('Missing retry key');
+    if(process.env.TEST_EXPECT_BODY && options.body!==process.env.TEST_EXPECT_BODY)throw new Error('Unexpected body '+options.body);
+    if(process.env.TEST_CLAIMED)return Response.json({error:'conflict',message:'K8S-1 is already in progress (claimed by Other). Choose another ready item.'},{status:409});
+    const body=JSON.parse(options.body);
+    const status={claim:'in_progress',release:'todo',handoff:'in_review'}[queue[1]];
+    return Response.json({item:{...item,status,revision:4},...(body.comment?{comment:{body:body.comment}}:{}),...(body.pullRequestUrl?{link:{url:body.pullRequestUrl,kind:'repository'}}:{})});
+  }
   if(path.endsWith('/export'))return Response.json({version:1,items:[item]});
   return Response.json({message:'Work item not found'},{status:404});
 };
@@ -731,4 +744,110 @@ test('update preserves CLI item output with the v0.4 API response envelope', () 
   assert.equal(r.status, 0, r.stderr);
   assert.equal(JSON.parse(r.stdout).revision, 4);
   assert.equal(JSON.parse(r.stdout).status, 'done');
+});
+
+test('ready sends queue filters, follows pages and uses repository project defaults', () => {
+  const filtered = run(
+    ['ready', '--label', 'agent', '--repository', 'acme/k8s', '--json'],
+    'test-token',
+    {
+      env: { TEST_EXPECT_QUERY: JSON.stringify({ label: 'agent', repository: 'acme/k8s' }) },
+    },
+  );
+  assert.equal(filtered.status, 0, filtered.stderr);
+  assert.deepEqual(
+    JSON.parse(filtered.stdout).map((entry) => entry.identifier),
+    ['K8S-1', 'K8S-2'],
+  );
+  const paged = run(['ready', '--page', '--limit', '1', '--json'], 'test-token', {
+    env: { TEST_EXPECT_QUERY: JSON.stringify({ limit: '1' }) },
+  });
+  assert.equal(paged.status, 0, paged.stderr);
+  assert.equal(JSON.parse(paged.stdout).nextCursor, '1');
+  const table = run(['ready']);
+  assert.equal(table.status, 0, table.stderr);
+  assert.match(table.stdout, /K8S-1/);
+  const directory = join(testRoot, 'queue-repository');
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, '.trestl.json'), JSON.stringify({ project: 'K8S' }));
+  for (const [args, projectId] of [
+    [['ready', '--json'], 'K8S'],
+    [['ready', '--project', 'none', '--json'], 'null'],
+  ]) {
+    const scoped = run(args, 'test-token', {
+      cwd: directory,
+      env: { TEST_EXPECT_QUERY: JSON.stringify({ projectId }) },
+    });
+    assert.equal(scoped.status, 0, scoped.stderr);
+  }
+  const everywhere = run(['ready', '--no-config', '--json'], 'test-token', {
+    cwd: directory,
+    env: { TEST_EXPECT_QUERY: JSON.stringify({ projectId: null }) },
+  });
+  assert.equal(everywhere.status, 0, everywhere.stderr);
+});
+
+test('claim, release and handoff send only supplied fields and return the queue envelope', () => {
+  const claim = run(['claim', 'K8S-1', '--idempotency-key', 'claim-1', '--json'], 'test-token', {
+    env: { TEST_KEY: 'claim-1', TEST_EXPECT_BODY: '{}' },
+  });
+  assert.equal(claim.status, 0, claim.stderr);
+  assert.equal(JSON.parse(claim.stdout).item.status, 'in_progress');
+  const guarded = run(['claim', 'K8S-1', '--expected-revision', '3', '--json'], 'test-token', {
+    env: { TEST_EXPECT_BODY: '{"expectedRevision":3}' },
+  });
+  assert.equal(guarded.status, 0, guarded.stderr);
+  const release = run(
+    ['release', 'K8S-1', '--comment', 'Blocked on access', '--json'],
+    'test-token',
+    {
+      env: { TEST_EXPECT_BODY: '{"comment":"Blocked on access"}' },
+    },
+  );
+  assert.equal(release.status, 0, release.stderr);
+  assert.equal(JSON.parse(release.stdout).item.status, 'todo');
+  assert.equal(JSON.parse(release.stdout).comment.body, 'Blocked on access');
+  const pr = 'https://github.com/acme/k8s/pull/7';
+  const handoff = run(
+    ['handoff', 'K8S-1', '--pr', pr, '--comment', 'Ready for review', '--json'],
+    'test-token',
+    {
+      env: {
+        TEST_EXPECT_BODY: JSON.stringify({ comment: 'Ready for review', pullRequestUrl: pr }),
+      },
+    },
+  );
+  assert.equal(handoff.status, 0, handoff.stderr);
+  assert.equal(JSON.parse(handoff.stdout).item.status, 'in_review');
+  assert.equal(JSON.parse(handoff.stdout).link.url, pr);
+  const table = run(['handoff', 'K8S-1']);
+  assert.equal(table.status, 0, table.stderr);
+  assert.match(table.stdout, /in_review/);
+});
+
+test('queue commands fail cleanly on lost claims and invalid usage', () => {
+  const lost = run(['claim', 'K8S-1', '--json'], 'test-token', { env: { TEST_CLAIMED: '1' } });
+  assert.equal(lost.status, 5);
+  assert.equal(lost.stdout, '');
+  const error = JSON.parse(lost.stderr).error;
+  assert.equal(error.code, 'conflict');
+  assert.equal(error.status, 409);
+  assert.match(error.message, /already in progress/);
+  for (const args of [
+    ['ready', '--status', 'todo'],
+    ['ready', 'K8S-1'],
+    ['claim'],
+    ['claim', 'K8S-1', '--pr', 'https://example.com/pull/1'],
+    ['claim', 'K8S-1', '--comment', 'note'],
+    ['release', 'K8S-1', '--pr', 'https://example.com/pull/1'],
+    ['handoff', 'K8S-1', '--comment', ' '],
+    ['handoff', 'K8S-1', '--expected-revision', 'x'],
+  ])
+    assert.equal(run([...args, '--json']).status, 2, args.join(' '));
+  assert.equal(run(['claim', 'missing', '--json']).status, 4);
+  const help = run(['claim', '--help'], '');
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /Usage: trestl claim <id-or-identifier>/);
+  assert.match(help.stdout, /--idempotency-key/);
+  assert.doesNotMatch(help.stdout, /--pr |--comment /);
 });
