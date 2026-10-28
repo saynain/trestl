@@ -216,7 +216,7 @@ export default function GitSettings({
       {!connections.length && !editing && (
         <p className="settings-helper">
           {admin
-            ? 'Add a connection to find and import Git issues.'
+            ? 'Add a connection so project owners can attach repositories and find Git issues.'
             : 'An administrator can add a shared Git connection.'}
         </p>
       )}
@@ -253,8 +253,8 @@ export default function GitSettings({
             {confirmDelete === c.id && (
               <div className="settings-confirm">
                 <span>
-                  Disconnect {c.name}? Repository imports will stop. Existing work and links will
-                  remain.
+                  Disconnect {c.name}? Repositories attached with it are detached. Existing work and
+                  links remain.
                 </span>
                 <button className="button" onClick={() => setConfirmDelete('')}>
                   Cancel

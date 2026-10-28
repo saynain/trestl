@@ -2113,33 +2113,6 @@ textarea::placeholder {
 .resource-row a:hover strong {
   color: var(--accent);
 }
-.resource-sync-note {
-  display: flex;
-  gap: 15px;
-  align-items: center;
-  margin-top: 30px;
-  padding: 22px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  color: var(--muted);
-}
-.resource-sync-note > div {
-  flex: 1;
-}
-.resource-sync-note strong {
-  font-size: var(--text-ui);
-  font-weight: 500;
-  color: var(--text);
-}
-.resource-sync-note p {
-  font-size: var(--text-sm);
-  line-height: 1.7;
-  margin-top: 6px;
-}
-.resource-sync-note > .button {
-  font-size: var(--text-ui);
-}
 .auth-page {
   min-height: 100vh;
   background: var(--surface);
@@ -2481,12 +2454,6 @@ textarea::placeholder {
   .project-table-row > :nth-child(3),
   .projects-table-head > :nth-child(3) {
     display: none;
-  }
-  .resource-sync-note {
-    flex-wrap: wrap;
-  }
-  .resource-sync-note > .button {
-    margin-left: 35px;
   }
   .resources-content {
     padding: 25px;
@@ -2879,13 +2846,6 @@ textarea::placeholder {
   }
   .resource-row > .icon-button {
     width: 24px;
-  }
-  .resource-sync-note {
-    padding: 17px;
-    gap: 10px;
-  }
-  .resource-sync-note > .button {
-    margin-left: 30px;
   }
   .resources-content .section-heading p {
     font-size: var(--text-ui);

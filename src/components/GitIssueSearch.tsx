@@ -6,6 +6,7 @@ import { useApp } from '../lib/context';
 import { navigate } from '../lib/model';
 import { GitHubIcon, Modal } from './ui';
 import type { GitConnection } from './GitSettings';
+import type { Repository } from './ProjectRepositories';
 import './item.css';
 interface Issue {
   title: string;
@@ -41,11 +42,23 @@ export default function GitIssueSearch({
     const controller = new AbortController();
     setLoading(true);
     setLoadError('');
-    api<GitConnection[]>('/git/connections', { signal: controller.signal })
-      .then((result) => {
+    Promise.all([
+      api<GitConnection[]>('/git/connections', { signal: controller.signal }),
+      api<{ data: Repository[] }>(`/projects/${projectId}/repositories`, {
+        signal: controller.signal,
+      }).catch(() => ({ data: [] })),
+    ])
+      .then(([result, repositories]) => {
         if (!controller.signal.aborted) {
+          // Start from the project's default repository when its connection is available.
+          const preferred = repositories.data.find(
+            (repository) =>
+              repository.isDefault &&
+              result.some((connection) => connection.id === repository.connection?.id),
+          );
           setConnections(result);
-          setConnectionId(result[0]?.id ?? '');
+          setConnectionId(preferred?.connection?.id ?? result[0]?.id ?? '');
+          if (preferred) setReference((current) => current || `${preferred.repository}#`);
         }
       })
       .catch((error) => {
@@ -58,7 +71,7 @@ export default function GitIssueSearch({
       controller.abort();
       request.current?.abort();
     };
-  }, [attempt]);
+  }, [attempt, projectId]);
   function reset() {
     request.current?.abort();
     setIssue(null);

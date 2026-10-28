@@ -16,17 +16,16 @@ import {
   Loader2,
   LogOut,
   Plus,
-  RefreshCw,
   Trash2,
   X,
 } from 'lucide-react';
 import { useApp } from '../lib/context';
 import { api, patch, post, remove } from '../lib/api';
-import { Avatar, GitHubIcon } from './ui';
+import { Avatar } from './ui';
 import { navigate } from '../lib/model';
 import type { ItemLayout } from '../lib/preferences';
 import './settings.css';
-import GitSettings, { type GitConnection } from './GitSettings';
+import GitSettings from './GitSettings';
 import AppearanceSettings from './AppearanceSettings';
 
 type Tab =
@@ -39,16 +38,6 @@ type Tab =
   | 'people'
   | 'integrations'
   | 'api';
-type Integration = {
-  id: string;
-  provider: string;
-  name: string;
-  repository: string;
-  baseUrl: string;
-  projectId: string;
-  lastSyncedAt?: string | null;
-  lastError?: string | null;
-};
 type AccessToken = {
   workspaceId?: string;
   id: string;
@@ -225,302 +214,15 @@ export default function Settings({
 }
 
 function WorkspaceIntegrations() {
-  const { data } = useApp();
-  const [connections, setConnections] = useState<GitConnection[]>([]);
   return (
     <>
       <p className="settings-context-note">
-        Repository imports share issues with people who can access the destination project. New Git
-        connections are shared with everyone in this installation. Confluence search uses your
-        personal account and its permissions.
+        Git connections are shared with everyone in this installation. Project owners attach
+        repositories from a project’s Resources tab, and imported issues follow that project’s
+        access. Confluence search uses your personal account and its permissions.
       </p>
-      <GitSettings onChange={setConnections} />
-      {data.user.role === 'admin' ? (
-        <Integrations connections={connections} />
-      ) : (
-        <section className="settings-section">
-          <h2>Repository imports</h2>
-          <p>A workspace administrator can manage repository imports for {data.workspace?.name}.</p>
-        </section>
-      )}
+      <GitSettings />
       <DocumentationSettings />
-    </>
-  );
-}
-
-function Integrations({ connections }: { connections: GitConnection[] }) {
-  const { data, toast, refresh } = useApp();
-  const [integrations, setIntegrations] = useState<Integration[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [adding, setAdding] = useState(false);
-  const [busy, setBusy] = useState('');
-  const [confirmDelete, setConfirmDelete] = useState('');
-  const admin = data.user.role === 'admin';
-  async function load() {
-    if (!admin) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    try {
-      setIntegrations(rows(await api<{ data: Integration[] }>('/integrations')));
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setLoading(false);
-    }
-  }
-  useEffect(() => {
-    void load();
-  }, []);
-  async function create(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const values = new FormData(event.currentTarget);
-    setBusy('create');
-    setError('');
-    try {
-      await post('/integrations', {
-        name: values.get('name'),
-        connectionId: values.get('connectionId'),
-        repository: values.get('repository'),
-        projectId: values.get('projectId'),
-      });
-      setAdding(false);
-      await load();
-      toast('Repository connected. Sync to import its issues.');
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy('');
-    }
-  }
-  async function sync(id: string) {
-    setBusy(id);
-    setError('');
-    try {
-      const result = await post<{
-        imported?: number;
-        updated?: number;
-        comments?: number;
-        skipped?: number;
-      }>(`/integrations/${id}/sync`, {});
-      await load();
-      await refresh();
-      toast(
-        `Sync complete${result.imported !== undefined ? ` · ${result.imported} imported` : ''}${result.updated !== undefined ? ` · ${result.updated} updated` : ''}${result.comments !== undefined ? ` · ${result.comments} comments` : ''}`,
-      );
-    } catch (e) {
-      setError(errorMessage(e));
-      await load();
-    } finally {
-      setBusy('');
-    }
-  }
-  async function disconnect(id: string) {
-    setBusy(id);
-    setError('');
-    try {
-      await remove(`/integrations/${id}`);
-      setConfirmDelete('');
-      await load();
-      toast('Repository disconnected');
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy('');
-    }
-  }
-  return (
-    <>
-      <section className="settings-section">
-        <div className="settings-section-header">
-          <div>
-            <h2>Repository imports</h2>
-            <p>
-              Optionally sync a repository into a project using one of your saved Git connections.
-            </p>
-          </div>
-          {admin && (
-            <button
-              className="button primary"
-              onClick={() => {
-                setAdding(!adding);
-                setError('');
-              }}
-            >
-              {adding ? <X size={15} /> : <Plus size={15} />}
-              {adding ? 'Cancel' : 'Add repository import'}
-            </button>
-          )}
-        </div>
-        {error && (
-          <div className="settings-error" role="alert">
-            {error}
-          </div>
-        )}
-        {adding && (
-          <form className="settings-form" onSubmit={create}>
-            <div className="settings-form-grid">
-              <label className="field">
-                Saved Git connection
-                <Select className="select" name="connectionId" required defaultValue="">
-                  <option value="" disabled>
-                    Select a connection
-                  </option>
-                  {connections.map((connection) => (
-                    <option value={connection.id} key={connection.id}>
-                      {connection.name} · {connection.provider === 'github' ? 'GitHub' : 'Gitea'}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-              <label className="field">
-                Connection name
-                <input
-                  className="input"
-                  name="name"
-                  required
-                  placeholder="Platform engineering"
-                  maxLength={100}
-                />
-              </label>
-            </div>
-            <div className="settings-form-grid">
-              <label className="field">
-                Repository
-                <input
-                  className="input"
-                  name="repository"
-                  required
-                  placeholder="organization/repository"
-                />
-              </label>
-              <label className="field">
-                Import into project
-                <Select className="select" name="projectId" required defaultValue="">
-                  <option value="" disabled>
-                    Select a project
-                  </option>
-                  {data.projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-            </div>
-            <p className="settings-helper">
-              The project is the destination for imported work. Your saved connection remains
-              available from every project.
-            </p>
-            <div className="settings-form-actions">
-              <button
-                className="button primary"
-                disabled={!!busy || !data.projects.length || !connections.length}
-              >
-                {busy === 'create' && <Loader2 size={14} className="settings-spin" />}Add repository
-                import
-              </button>
-            </div>
-            {!connections.length && (
-              <p className="settings-helper">Save a Git connection above to add an import.</p>
-            )}
-            {!data.projects.length && (
-              <p className="settings-helper">Create a project to choose an import destination.</p>
-            )}
-          </form>
-        )}
-        {loading && (
-          <div className="settings-loading">
-            <Loader2 className="settings-spin" size={16} />
-            Loading connections…
-          </div>
-        )}
-        {!loading && !error && !integrations.length && (
-          <div className="settings-empty">
-            <GitHubIcon size={27} strokeWidth={1.3} />
-            <strong>Your projects, connected</strong>
-            <p>
-              Import repository issues while keeping planning, deadlines, and internal discussion in
-              your workspace.
-            </p>
-            {!admin && <p>Ask an administrator to connect a repository.</p>}
-          </div>
-        )}
-        <div className="settings-connections">
-          {integrations.map((integration) => (
-            <div className="settings-connection" key={integration.id}>
-              <div className="settings-connection-heading">
-                <span className="settings-provider-icon">
-                  {integration.provider === 'github' ? (
-                    <GitHubIcon size={19} />
-                  ) : (
-                    <Link2 size={19} />
-                  )}
-                </span>
-                <div>
-                  <strong>{integration.name}</strong>
-                  <span>
-                    {integration.repository} <span>→</span>{' '}
-                    {data.projects.find((project) => project.id === integration.projectId)?.name ||
-                      'Project unavailable'}
-                  </span>
-                </div>
-                {admin && (
-                  <div className="settings-connection-actions">
-                    <button
-                      className="button"
-                      disabled={!!busy}
-                      onClick={() => void sync(integration.id)}
-                    >
-                      <RefreshCw
-                        size={14}
-                        className={busy === integration.id ? 'settings-spin' : ''}
-                      />
-                      Sync
-                    </button>
-                    <button
-                      className="button ghost"
-                      title="Disconnect repository"
-                      aria-label={`Disconnect ${integration.name}`}
-                      onClick={() => setConfirmDelete(integration.id)}
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                )}
-              </div>
-              <p className="settings-sync-status">
-                {integration.lastError ? 'Last sync failed' : 'Last synced'} ·{' '}
-                {formatDate(integration.lastSyncedAt)}
-              </p>
-              {integration.lastError && (
-                <div className="settings-error">{integration.lastError}</div>
-              )}
-              {confirmDelete === integration.id && (
-                <div className="settings-confirm">
-                  <span>Disconnect this repository? Imported work items are kept.</span>
-                  <button className="button" onClick={() => setConfirmDelete('')}>
-                    Cancel
-                  </button>
-                  <button
-                    className="button settings-danger"
-                    disabled={!!busy}
-                    onClick={() => void disconnect(integration.id)}
-                  >
-                    Disconnect
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-        <p className="settings-helper">
-          Sync brings repository changes into Trestl. It does not post comments or modify the source
-          repository.
-        </p>
-      </section>
     </>
   );
 }

@@ -5,7 +5,6 @@ import { ProjectUpdates } from './ProjectUpdates';
 import { Select } from './Select';
 import { useState, type FormEvent } from 'react';
 import {
-  ArrowUpRight,
   Box,
   CalendarDays,
   Check,
@@ -31,6 +30,7 @@ import { patch, post, remove } from '../lib/api';
 import { Avatar, EmptyState, Modal, ProjectIcon, StatusIcon } from './ui';
 import ConfluenceSearch from './ConfluenceSearch';
 import GitIssueSearch from './GitIssueSearch';
+import ProjectRepositories from './ProjectRepositories';
 import { MarkdownBody } from './MarkdownBody';
 export function AllProjects() {
   const { data, createProject, editProject } = useApp();
@@ -499,6 +499,12 @@ export function Resources({ project }: { project: Project }) {
             here.
           </p>
         </div>
+      </div>
+      <ProjectRepositories key={project.id} project={project} />
+      <div className="resources-subheading">
+        <div>
+          <h3>Links</h3>
+        </div>
         <div className="resource-actions">
           <button className="button" onClick={() => setGitIssueOpen(true)}>
             <GitBranch size={15} />
@@ -582,17 +588,6 @@ export function Resources({ project }: { project: Project }) {
           }
         />
       )}
-      <div className="resource-sync-note">
-        <GitBranch size={20} />
-        <div>
-          <strong>Bring repository issues into this project</strong>
-          <p>Use a saved Git connection to import issues and keep source changes up to date.</p>
-        </div>
-        <button className="button" onClick={() => navigate('settings', undefined, 'integrations')}>
-          Manage integrations
-          <ArrowUpRight size={14} />
-        </button>
-      </div>
       {gitIssueOpen && (
         <GitIssueSearch projectId={project.id} onClose={() => setGitIssueOpen(false)} />
       )}

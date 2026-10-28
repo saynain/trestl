@@ -1023,13 +1023,13 @@ schemas.Integration = object({
 operation(
   '/integrations',
   'get',
-  'List repository connections (administrator only; returns an array)',
+  'List repository attachments across projects (administrator only; returns an array). Prefer /projects/{id}/repositories.',
   { type: 'array', items: ref('Integration') },
 );
 operation(
   '/integrations',
   'post',
-  'Connect a repository for inbound issue synchronization (administrator only)',
+  'Attach a repository as an inbound mirror (administrator only). Prefer /projects/{id}/repositories.',
   ref('Integration'),
   object(
     {
@@ -1069,6 +1069,114 @@ operation(
     updated: { type: 'integer' },
     comments: { type: 'integer' },
     integration: ref('Integration'),
+  }),
+);
+schemas.RepositoryAccess = object({
+  checkedAt: string,
+  private: { type: ['boolean', 'null'] },
+  issues: { type: 'boolean', description: 'The connection could read issues.' },
+  write: {
+    type: 'boolean',
+    description: 'Whether the credential could publish if a mode allowed it. Nothing writes yet.',
+  },
+  reason: { ...nullableString, description: 'Why publishing would be unavailable.' },
+});
+const repositoryMode = { type: 'string', enum: ['reference', 'inbound'] };
+schemas.ProjectRepository = object({
+  id: string,
+  projectId: uuid,
+  provider: { type: 'string', enum: ['github', 'gitea'] },
+  repository: string,
+  baseUrl: string,
+  webUrl: string,
+  mode: repositoryMode,
+  isDefault: { type: 'boolean' },
+  connection: {
+    type: ['object', 'null'],
+    properties: { id: string, name: string, shared: { type: 'boolean' } },
+  },
+  creatorId: uuid,
+  createdAt: string,
+  lastSyncedAt: nullableString,
+  lastError: nullableString,
+  lastErrorAt: nullableString,
+  syncing: { type: 'boolean' },
+  access: { oneOf: [ref('RepositoryAccess'), { type: 'null' }] },
+});
+const repositoryTarget = {
+  connectionId: { type: 'string', description: 'A Git connection you can use.' },
+  repository: { type: 'string', description: 'owner/repository' },
+};
+operation(
+  '/projects/{id}/repositories',
+  'get',
+  'List repositories attached to a project, without credentials',
+  object({ data: { type: 'array', items: ref('ProjectRepository') } }),
+);
+operation(
+  '/projects/{id}/repositories/verify',
+  'post',
+  'Check what a connection can read in a repository (project owner or administrator)',
+  object({
+    provider: { type: 'string', enum: ['github', 'gitea'] },
+    baseUrl: string,
+    repository: string,
+    remoteId: nullableString,
+    access: ref('RepositoryAccess'),
+    conflicts: object({ reference: nullableString, inbound: nullableString }),
+  }),
+  object(repositoryTarget, ['connectionId', 'repository']),
+  { browserOnly: true },
+);
+operation(
+  '/projects/{id}/repositories',
+  'post',
+  'Attach a repository as Reference or Inbound mirror (project owner or administrator)',
+  ref('ProjectRepository'),
+  object({ ...repositoryTarget, mode: repositoryMode, isDefault: { type: 'boolean' } }, [
+    'connectionId',
+    'repository',
+    'mode',
+  ]),
+  { created: true, browserOnly: true },
+);
+operation(
+  '/projects/{id}/repositories/{repositoryId}',
+  'patch',
+  'Change a repository mode or make it the default (project owner or administrator)',
+  ref('ProjectRepository'),
+  object({ mode: repositoryMode, isDefault: { type: 'boolean', enum: [true] } }),
+  { browserOnly: true },
+);
+operation(
+  '/projects/{id}/repositories/{repositoryId}',
+  'delete',
+  'Detach a repository and keep imported work (project owner or administrator)',
+  {},
+  undefined,
+  { noContent: true, browserOnly: true },
+);
+operation(
+  '/projects/{id}/repositories/{repositoryId}/sync',
+  'post',
+  'Fetch issues and comments for an inbound mirror without writing to the repository',
+  object({
+    imported: { type: 'integer' },
+    updated: { type: 'integer' },
+    comments: { type: 'integer' },
+    repository: ref('ProjectRepository'),
+  }),
+);
+operation(
+  '/git/connections/{id}/repositories',
+  'get',
+  'List the first page of repositories a Git connection can read',
+  object({
+    data: {
+      type: 'array',
+      items: object({ repository: string, private: { type: ['boolean', 'null'] } }),
+    },
+    more: { type: 'boolean' },
   }),
 );
 schemas.GitConnection = object({
@@ -1589,7 +1697,7 @@ export const openapi = {
     title: 'Trestl API',
     version: '0.4.0',
     description:
-      'Repository-independent project planning. Authenticate with a browser session or a scoped personal token. Core collection responses use data arrays; /integrations returns a direct array; item pagination uses opaque cursor values returned as nextCursor. Private project access is inherited by descendants. All dates are ISO YYYY-MM-DD and timestamps are UTC ISO 8601. The bootstrap endpoint is intended for small self-hosted workspaces. Repository imports require an admin account. Git and Confluence connections use individual credentials and explicit allowed origins. Work mutations never post to external providers; GitHub App authorization and refresh exchange credentials with GitHub.',
+      'Repository-independent project planning. Authenticate with a browser session or a scoped personal token. Core collection responses use data arrays; /integrations returns a direct array; item pagination uses opaque cursor values returned as nextCursor. Private project access is inherited by descendants. All dates are ISO YYYY-MM-DD and timestamps are UTC ISO 8601. The bootstrap endpoint is intended for small self-hosted workspaces. Project owners and administrators attach repositories to projects; credentials never leave the server. Git and Confluence connections use individual credentials and explicit allowed origins. Work mutations never post to external providers; GitHub App authorization and refresh exchange credentials with GitHub.',
   },
   servers: [{ url: '/api/v1' }],
   components: {
