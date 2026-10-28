@@ -1,3 +1,4 @@
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { watchAppearance } from './lib/themes';
 import CliLoginApproval from './components/CliLoginApproval';
 const WeeklyReview = lazy(() =>
@@ -13,10 +14,20 @@ import { formatShortcut, shortcuts, type ItemAction } from './lib/shortcuts';
 const RoadmapView = lazy(() => import('./components/Roadmap'));
 import ErrorBoundary from './components/ErrorBoundary';
 import { FavoriteButton } from './components/Favorites';
-import { ProjectSwitcher, SubprojectNavigation } from './components/ProjectNavigation';
+import {
+  ProjectPicker,
+  ProjectSwitcher,
+  SubprojectNavigation,
+} from './components/ProjectNavigation';
 import { projectAncestors } from './lib/navigation';
+import {
+  openProject,
+  projectDestination,
+  readProjectHistory,
+  recordProjectVisit,
+  saveProjectHistory,
+} from './lib/project-picker';
 import { applyBootstrapItems } from './lib/bootstrap';
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowRight,
   Box,
@@ -96,7 +107,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [route, setRoute] = useState<Route>(readRoute);
   const [command, setCommand] = useState(false);
-  const [commandMode, setCommandMode] = useState<'all' | 'items' | 'projects'>('all');
+  const [commandMode, setCommandMode] = useState<'all' | 'items'>('all');
   const [commandItemId, setCommandItemId] = useState<string>();
   const [help, setHelp] = useState(false);
   const [itemAction, setItemAction] = useState<ItemAction>();
@@ -138,6 +149,12 @@ export default function App() {
     action?: ToastAction;
   } | null>(null);
   const [projectMenu, setProjectMenu] = useState(false);
+  const [projectPicker, setProjectPicker] = useState<{
+    anchor: HTMLElement | null;
+    returnFocus: HTMLElement | null;
+  } | null>(null);
+  // Where focus lands once a project chosen in the picker has rendered.
+  const focusAfterNavigation = useRef<HTMLElement | null>(null);
   const [exportProject, setExportProject] = useState<Project | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -232,11 +249,14 @@ export default function App() {
           '',
           window.location.pathname + window.location.search + acceptedHash,
         );
+        focusAfterNavigation.current?.focus({ preventScroll: true });
+        focusAfterNavigation.current = null;
         return;
       }
       acceptedHash = window.location.hash;
       setRoute(readRoute());
       setProjectMenu(false);
+      setProjectPicker(null);
     };
     window.addEventListener('hashchange', fn);
     return () => window.removeEventListener('hashchange', fn);
@@ -267,6 +287,29 @@ export default function App() {
   }, [auth?.authenticated, refresh]);
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [route.page, route.id, route.tab]);
+  const visitedProject =
+    route.page === 'project' && !!data?.projects.some((project) => project.id === route.id);
+  useEffect(() => {
+    if (!data || !visitedProject || !route.id) return;
+    const history = readProjectHistory(data.user.id);
+    saveProjectHistory(data.user.id, recordProjectVisit(history, route.id, route.tab));
+  }, [data?.user.id, visitedProject, route.id, route.tab]);
+  useEffect(() => {
+    const target = focusAfterNavigation.current;
+    if (!target) return;
+    focusAfterNavigation.current = null;
+    let frame = 0;
+    // A switched project page remounts its header, so fall back to the new switcher.
+    const focus = (attempts: number) => {
+      const next = target.isConnected
+        ? target
+        : document.querySelector<HTMLElement>('.project-switcher');
+      if (next) next.focus({ preventScroll: true });
+      else if (attempts) frame = requestAnimationFrame(() => focus(attempts - 1));
+    };
+    focus(30);
+    return () => cancelAnimationFrame(frame);
   }, [route.page, route.id, route.tab]);
   useEffect(() => {
     const active = document.querySelector<HTMLElement>('.page-tabs .active');
@@ -320,7 +363,11 @@ export default function App() {
     },
     [data?.views, uiPreferences.itemLayout],
   );
-  const showCommands = (mode: 'all' | 'items' | 'projects' = 'all') => {
+  const showProjectPicker = (anchor: HTMLElement | null, returnFocus: HTMLElement | null) =>
+    setProjectPicker((current) =>
+      current && anchor && current.anchor === anchor ? null : { anchor, returnFocus },
+    );
+  const showCommands = (mode: 'all' | 'items' = 'all') => {
     setCommandMode(mode);
     const focused = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>(
       '[data-item-id]',
@@ -369,7 +416,19 @@ export default function App() {
         navigate('settings');
       },
       findItem: () => showCommands('items'),
-      findProject: () => showCommands('projects'),
+      findProject: () => {
+        const onScreen = (selector: string) => {
+          const element = document.querySelector<HTMLElement>(selector);
+          const rect = element?.getBoundingClientRect();
+          return rect && rect.width > 0 && rect.right > 0 && rect.left < window.innerWidth
+            ? element
+            : null;
+        };
+        showProjectPicker(
+          onScreen('.project-switcher') ?? onScreen('.sidebar [data-nav="projects"]'),
+          document.activeElement instanceof HTMLElement ? document.activeElement : null,
+        );
+      },
     },
     { enabled: !!data && route.tab !== 'roadmap-present' },
   );
@@ -469,6 +528,26 @@ export default function App() {
     route.tab === 'board' ||
     (view?.layout === 'board' &&
       !new URLSearchParams(location.hash.split('?')[1] || '').has('tab'));
+  const closeProjectPicker = (restoreFocus: boolean) => {
+    setProjectPicker(null);
+    if (restoreFocus) projectPicker?.returnFocus?.focus({ preventScroll: true });
+  };
+  const chooseProject = (projectId: string) => {
+    const returnFocus = projectPicker?.returnFocus ?? null;
+    setProjectPicker(null);
+    setMobileNav(false);
+    const before = window.location.hash;
+    focusAfterNavigation.current = returnFocus;
+    navigate(
+      'project',
+      projectId,
+      projectDestination(data, readProjectHistory(data.user.id), projectId),
+    );
+    if (window.location.hash === before) {
+      focusAfterNavigation.current = null;
+      returnFocus?.focus({ preventScroll: true });
+    }
+  };
   async function deleteProject() {
     if (!project) return;
     setDeleteBusy(true);
@@ -499,6 +578,8 @@ export default function App() {
         editProject,
         uiPreferences,
         updateUiPreferences,
+        projectPickerAnchor: projectPicker?.anchor,
+        openProjectPicker: (anchor = null) => showProjectPicker(anchor, anchor),
       }}
     >
       <div
@@ -551,7 +632,7 @@ export default function App() {
               <ChevronRight size={12} />
               {ancestors.map((parent) => (
                 <span className="breadcrumb-ancestor" key={parent.id}>
-                  <button onClick={() => navigate('project', parent.id)}>{parent.name}</button>
+                  <button onClick={() => openProject(data, parent.id)}>{parent.name}</button>
                   <ChevronRight size={12} />
                 </span>
               ))}
@@ -969,6 +1050,23 @@ export default function App() {
           />
         )}
         {help && <ShortcutHelp onClose={() => setHelp(false)} />}
+        {projectPicker && (
+          <ProjectPicker
+            anchor={projectPicker.anchor}
+            currentId={project?.id}
+            onSelect={chooseProject}
+            onBrowse={() => {
+              setProjectPicker(null);
+              setMobileNav(false);
+              navigate('projects');
+            }}
+            onCreate={() => {
+              closeProjectPicker(true);
+              createProject();
+            }}
+            onDismiss={closeProjectPicker}
+          />
+        )}
         {confirmDelete && project && (
           <Modal title="Delete project?" onClose={() => setConfirmDelete(false)}>
             <div className="simple-form">
