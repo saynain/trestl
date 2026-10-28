@@ -29,12 +29,27 @@ import {
 } from './lib/project-picker';
 import { applyBootstrapItems } from './lib/bootstrap';
 import {
+  navVariantsEnabled,
+  projectSection,
+  projectSectionLabels,
+  readNavVariant,
+  saveNavVariant,
+  type NavVariant,
+} from './lib/nav-variant';
+import {
+  NavVariantSwitch,
+  SlimProjectTabs,
+  WorkLayoutSwitch,
+  sidebarProject,
+} from './components/ProjectSidebar';
+import {
   ArrowRight,
   Box,
   CalendarDays,
   Check,
   ChevronDown,
   ChevronRight,
+  CirclePlay,
   FolderOpen,
   Download,
   Inbox,
@@ -54,6 +69,7 @@ import {
   Trash2,
   Archive,
   RefreshCw,
+  ScanEye,
 } from 'lucide-react';
 import type { Bootstrap, Project, Status, User, WorkItem } from '../shared/types';
 import { api, ApiError, fetchBootstrap, patch, remove } from './lib/api';
@@ -112,6 +128,8 @@ export default function App() {
   const [help, setHelp] = useState(false);
   const [itemAction, setItemAction] = useState<ItemAction>();
   const [mobileNav, setMobileNav] = useState(false);
+  const [navVariant, setNavVariant] = useState<NavVariant>(readNavVariant);
+  const exploring = navVariant !== 'current';
   const [profilePreferences, setProfilePreferences] = useState<{
     userId: string;
     value: UiPreferences;
@@ -425,7 +443,9 @@ export default function App() {
             : null;
         };
         showProjectPicker(
-          onScreen('.project-switcher') ?? onScreen('.sidebar [data-nav="projects"]'),
+          onScreen('.sidebar-project-picker') ??
+            onScreen('.project-switcher') ??
+            onScreen('.sidebar [data-nav="projects"]'),
           document.activeElement instanceof HTMLElement ? document.activeElement : null,
         );
       },
@@ -479,21 +499,25 @@ export default function App() {
     (itemPage && (pageItem?.identifier ?? 'Work item')) ||
     (route.page === 'people'
       ? 'People'
-      : route.page === 'notifications'
-        ? 'Notifications'
-        : route.page === 'home'
-          ? 'Home'
-          : route.page === 'projects'
-            ? 'All projects'
-            : route.page === 'my-work'
-              ? 'My work'
-              : route.page === 'settings'
-                ? 'Administration'
-                : route.page === 'account-settings'
-                  ? 'Account settings'
-                  : route.page === 'inbox'
-                    ? 'Inbox'
-                    : 'Work items');
+      : route.page === 'review' || route.page === 'ready'
+        ? route.page === 'review'
+          ? 'Review'
+          : 'Ready'
+        : route.page === 'notifications'
+          ? 'Notifications'
+          : route.page === 'home'
+            ? 'Home'
+            : route.page === 'projects'
+              ? 'All projects'
+              : route.page === 'my-work'
+                ? 'My work'
+                : route.page === 'settings'
+                  ? 'Administration'
+                  : route.page === 'account-settings'
+                    ? 'Account settings'
+                    : route.page === 'inbox'
+                      ? 'Inbox'
+                      : 'Work items');
   const description =
     route.page === 'projects'
       ? 'A little structure for everything you’re moving forward.'
@@ -590,6 +614,8 @@ export default function App() {
           command={() => showCommands()}
           onShortcuts={() => setHelp(true)}
           onDismiss={() => setMobileNav(false)}
+          variant={navVariant}
+          project={exploring ? sidebarProject(data, route) : undefined}
         />
         {mobileNav && (
           <button
@@ -637,6 +663,12 @@ export default function App() {
                 </span>
               ))}
               <span>{title}</span>
+              {exploring && navVariant !== 'c' && project && projectSection(route.tab) && (
+                <>
+                  <ChevronRight size={12} />
+                  <span>{projectSectionLabels[projectSection(route.tab)!]}</span>
+                </>
+              )}
             </div>
             <div className="topbar-actions">
               <NotificationBell />
@@ -690,6 +722,16 @@ export default function App() {
                 <Notifications key={`${data.user.id}:${data.workspace?.id}`} tab={route.tab} />
               ) : route.page === 'home' ? (
                 <Home tab={route.tab} />
+              ) : route.page === 'review' || route.page === 'ready' ? (
+                <EmptyState
+                  icon={route.page === 'review' ? <ScanEye size={26} /> : <CirclePlay size={26} />}
+                  title={title}
+                  description={
+                    route.page === 'review'
+                      ? 'Work handed back by teammates and coding agents, waiting for your review. Placeholder for the agent work queue (#85).'
+                      : 'Work that is ready for a teammate or a coding agent to claim. Placeholder for the agent work queue (#85).'
+                  }
+                />
               ) : itemPage ? (
                 <ItemDetail
                   key={route.itemId}
@@ -723,7 +765,15 @@ export default function App() {
                     </div>
                     <div className="page-title-block">
                       <h1>
-                        {project ? <ProjectSwitcher project={project} /> : title}
+                        {project ? (
+                          exploring ? (
+                            project.name
+                          ) : (
+                            <ProjectSwitcher project={project} />
+                          )
+                        ) : (
+                          title
+                        )}
                         {project?.visibility === 'private' && <LockKeyhole size={16} />}
                       </h1>
                       {description && <p>{description}</p>}
@@ -869,7 +919,18 @@ export default function App() {
                       </button>
                     </nav>
                   )}
-                  {route.page !== 'projects' && (
+                  {exploring && project && navVariant === 'c' && (
+                    <SlimProjectTabs project={project} route={route} />
+                  )}
+                  {exploring &&
+                    project &&
+                    navVariant !== 'c' &&
+                    projectSection(route.tab) === 'work' && (
+                      <div className="project-work-toolbar">
+                        <WorkLayoutSwitch project={project} tab={route.tab} />
+                      </div>
+                    )}
+                  {route.page !== 'projects' && !(exploring && project) && (
                     <nav className="page-tabs">
                       {project && (
                         <button
@@ -1086,6 +1147,15 @@ export default function App() {
           </Modal>
         )}
       </Suspense>
+      {navVariantsEnabled && (
+        <NavVariantSwitch
+          value={navVariant}
+          onChange={(variant) => {
+            saveNavVariant(variant);
+            setNavVariant(variant);
+          }}
+        />
+      )}
       {message && (
         <div
           role={message.kind === 'error' ? 'alert' : 'status'}
