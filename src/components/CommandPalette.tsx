@@ -15,6 +15,7 @@ import {
 import { useApp } from '../lib/context';
 import { itemActions, shortcuts, formatShortcut } from '../lib/shortcuts';
 import { navigate, itemSearchText, readRoute } from '../lib/model';
+import { openProject } from '../lib/project-picker';
 import { Modal, ProjectIcon, StatusIcon } from './ui';
 export default function CommandPalette({
   onClose,
@@ -24,7 +25,7 @@ export default function CommandPalette({
 }: {
   onClose: () => void;
   onHelp: () => void;
-  mode?: 'all' | 'items' | 'projects';
+  mode?: 'all' | 'items';
   itemId?: string;
 }) {
   const { data, openItem, createItem, createProject } = useApp();
@@ -109,9 +110,9 @@ export default function CommandPalette({
       label: p.name,
       hint: p.key,
       icon: <ProjectIcon project={p} />,
-      run: () => navigate('project', p.id),
+      run: () => openProject(data, p.id),
     }));
-  const items = (view === 'projects' ? [] : data.items)
+  const items = data.items
     .filter((i) => itemSearchText(i).includes(q))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, 15)
@@ -146,11 +147,7 @@ export default function CommandPalette({
           ref={input}
           autoFocus
           placeholder={
-            view === 'items'
-              ? 'Find work items…'
-              : view === 'projects'
-                ? 'Find projects…'
-                : 'Search projects, items, or commands…'
+            view === 'items' ? 'Find work items…' : 'Search projects, items, or commands…'
           }
           aria-label="Command search"
           value={query}

@@ -23,7 +23,7 @@ export const shortcuts = {
   projects: { keys: ['g p'], label: 'Go to All projects', group: 'Navigation' },
   settings: { keys: ['g s'], label: 'Go to Settings', group: 'Navigation' },
   findItem: { keys: ['o i'], label: 'Find a work item', group: 'Navigation' },
-  findProject: { keys: ['o p'], label: 'Find a project', group: 'Navigation' },
+  findProject: { keys: ['o p'], label: 'Switch project', group: 'Navigation' },
   listSearch: {
     keys: ['mod+f'],
     label: 'Search current list or board',

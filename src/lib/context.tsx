@@ -19,6 +19,10 @@ export interface AppContextValue {
   editProject: (project: Project) => void;
   uiPreferences: UiPreferences;
   updateUiPreferences: (changes: Partial<UiPreferences>) => void;
+  /** The element the project picker is anchored to; undefined while it is closed. */
+  projectPickerAnchor?: HTMLElement | null;
+  /** Opens the project picker below an anchor, or closes it when that anchor's picker is open. */
+  openProjectPicker: (anchor?: HTMLElement | null) => void;
 }
 export const AppContext = createContext<AppContextValue | null>(null);
 export function useApp() {

@@ -20,6 +20,7 @@ import {
 import { useApp } from '../lib/context';
 import { navigate, type Route, isDone } from '../lib/model';
 import { favoriteEntries } from '../lib/navigation';
+import { openProject } from '../lib/project-picker';
 import { FavoritesDialog } from './Favorites';
 import { Avatar, Brand, ProjectIcon } from './ui';
 import { post } from '../lib/api';
@@ -169,6 +170,7 @@ export default function Sidebar({
                 : undefined
             }
             onClick={() => go('projects')}
+            data-nav="projects"
             title="All projects (G then P)"
           >
             <FolderOpen size={18} />
@@ -205,7 +207,13 @@ export default function Sidebar({
                 aria-current={
                   route.page === favorite.kind && route.id === favorite.id ? 'page' : undefined
                 }
-                onClick={() => go(favorite.kind, favorite.id, favorite.view?.layout || 'overview')}
+                onClick={() => {
+                  if (favorite.view) go('view', favorite.id, favorite.view.layout);
+                  else {
+                    openProject(data, favorite.id);
+                    onDismiss();
+                  }
+                }}
               >
                 {favorite.project ? (
                   <ProjectIcon project={favorite.project} size={17} />
