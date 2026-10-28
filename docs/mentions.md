@@ -13,7 +13,7 @@ Project descriptions also support canvas references using `!`:
 
 Type a trigger at the start of a line or after a space, then choose a suggestion.
 Use the arrow keys and Enter or Tab, or click a suggestion. Escape dismisses the
-menu. Canvas suggestions include the project name to distinguish identical titles. Only people in the current workspace and projects/items you can access are
+menu. Canvas suggestions include the project name to distinguish identical titles. Only people in this installation and projects/items you can access are
 offered; canvas suggestions follow their project’s access rules. Code blocks, inline code, and existing links do not offer suggestions.
 
 Selected mentions are stored as Markdown links with stable IDs. The editor shows
