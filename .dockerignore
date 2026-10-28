@@ -5,6 +5,9 @@ extensions/raycast/node_modules
 .env.*
 !.env.example
 .data
+.data-backups
+*.trestl-backup
+*.trestl-backup.partial
 dist
 coverage
 playwright-report

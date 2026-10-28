@@ -91,7 +91,7 @@ async function main() {
     // Never inherit a developer's hosted deployment/database/authentication configuration.
     for (const key of Object.keys(process.env)) {
       if (
-        /^(DATABASE_URL|DATA_DIR|APP_|AUTH_|PROXY_|TRUST_PROXY|SECURE_COOKIES|INSTALLATION_|INTEGRATION_|GITHUB_)/.test(
+        /^(DATABASE_URL|DATA_DIR|BACKUP_DIR|APP_|AUTH_|PROXY_|TRUST_PROXY|SECURE_COOKIES|INSTALLATION_|INTEGRATION_|GITHUB_)/.test(
           key,
         )
       )
@@ -103,6 +103,7 @@ async function main() {
     const token = randomBytes(32).toString('hex');
     app = await createApp({
       dataDir: resolve(dataDir, 'database'),
+      backupDir: resolve(dataDir, 'backups'),
       proxyAuth: null,
       desktopToken: token,
     });

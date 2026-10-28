@@ -149,6 +149,7 @@ configuration outside the product repository.
 ## Documentation
 
 - [User guide](docs/user-guide.md)
+- [Back up and restore an installation](docs/backup.md)
 - [Transfer projects between installations](docs/project-transfer.md)
 - [Desktop app: downloads, local storage, and backups](docs/desktop.md)
 - [Development and checks](docs/development.md)
@@ -170,8 +171,9 @@ work. Kubernetes support is a deployment path, not a high-availability claim.
 
 Git issue synchronization is inbound. Email/push notification delivery and
 installation-wide JSON restore are not implemented. Project export/import supports
-portability but does not replace database backups. Database migrations run at
-startup; back up before upgrading and retain your `APP_SECRET`.
+portability but does not replace [installation backups](docs/backup.md).
+Database migrations run at startup, after an automatic backup for PGlite or when
+`BACKUP_DIR` is set; retain your `APP_SECRET`.
 
 The CLI and container image can be built from source or published through the release workflows. The CLI is distributed through GitHub Releases and GHCR, not the npm registry. This project does not provide a hosted SaaS.
 

@@ -39,6 +39,7 @@ Keep `.env` outside version control. Repository credentials in the database are 
 | `INTEGRATION_ALLOWED_ORIGINS`  | Comma-separated exact self-hosted Git service origins                   |
 | `CONFLUENCE_ALLOWED_ORIGINS`   | Comma-separated exact HTTPS origins for personal Confluence connections |
 | `INTEGRATION_SYNC_INTERVAL_MS` | Optional automatic sync; at least 60000, otherwise disabled when unset  |
+| `BACKUP_DIR`                   | Folder for [automatic pre-upgrade backups](../docs/backup.md#upgrades)  |
 
 Compose enables five-minute repository reconciliation by default. The `/health` endpoint reports process liveness. `/ready` checks database connectivity and returns 503 when it is unavailable. Neither endpoint requires authentication. Monitor integration sync status separately.
 
@@ -55,21 +56,19 @@ own deployment repository.
 
 ## Backup and restore
 
-For Compose's PostgreSQL service, create a consistent logical backup:
+Follow [back up and restore an installation](../docs/backup.md). It covers the
+backup command, restoring onto a new machine, automatic pre-upgrade backups, and
+rollback. For Compose's PostgreSQL service:
 
 ```sh
-docker compose exec -T db pg_dump -U trestl -d trestl -Fc > trestl.dump
+docker compose exec -T app node --import tsx server/backup-cli.ts create --output - > trestl.trestl-backup
 ```
 
-Store the dump encrypted alongside a separately secured copy of `APP_SECRET`. Database backups include account credentials, sessions, personal data, and integration ciphertext. To verify a backup, restore it into a **new empty database in an isolated environment**:
-
-```sh
-pg_restore --no-owner --dbname "$RESTORE_DATABASE_URL" trestl.dump
-```
-
-Use a separate application instance pointed at the restored database and the same `APP_SECRET`, with periodic synchronization disabled. Verify login, projects, private item visibility, comments, and integration configuration before adopting the backup as a recovery point. This repository does not yet automate restoration drills. To copy selected projects from PGlite into a PostgreSQL-backed installation, use [project export/import](../docs/project-transfer.md); this does not migrate server configuration or accounts.
-
-For a local PGlite installation, stop the application cleanly before copying the whole `.data` directory. Restore by placing the directory into a stopped, compatible installation and retaining its original integration encryption key. An API JSON export is useful for portability and inspection but does not contain all users' private data, credentials, or the database schema and cannot replace a database backup.
+Store the backup encrypted, alongside a separately secured copy of `APP_SECRET`.
+Backups include account credentials, sessions, personal data, and integration
+ciphertext. `pg_dump` also works, but its dumps only restore into PostgreSQL. To
+copy selected projects between installations, use [project export/import](../docs/project-transfer.md);
+this does not migrate server configuration or accounts.
 
 ### Existing database volumes
 

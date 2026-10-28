@@ -8,7 +8,8 @@ import { activityHeatmap } from '../shared/activity-heatmap.ts';
 import { addMentionRelations } from './mentions.ts';
 import { extractMentions } from '../shared/mentions.ts';
 import { authSettings, configuredProxy, registerAuthSettings } from './auth-settings.ts';
-import { registerServerVersion } from './version.ts';
+import { registerServerVersion, serverBuild, serverVersion } from './version.ts';
+import { recordInstallationVersion } from './upgrade.ts';
 import { createInstallation, installation, migrateInstallation } from './installation.ts';
 import {
   authenticateProxy,
@@ -251,6 +252,8 @@ export async function createApp(
     proxyAuth?: ProxyAuthConfig | null;
     desktopToken?: string;
     imageStorageLimitBytes?: number;
+    /** Folder for automatic pre-upgrade backups; defaults to BACKUP_DIR. */
+    backupDir?: string;
   } = {},
 ) {
   const environmentProxy =
@@ -283,9 +286,18 @@ export async function createApp(
     bodyLimit: 1024 * 1024,
     trustProxy: process.env.TRUST_PROXY === 'true',
   });
+  const version = serverVersion();
   const db = await openDatabase({
     databaseUrl: options.databaseUrl ?? process.env.DATABASE_URL,
     dataDir: options.dataDir ?? process.env.DATA_DIR,
+    upgrade: {
+      version,
+      commit: () => serverBuild().commit,
+      backupDir: options.backupDir ?? process.env.BACKUP_DIR,
+      secret: process.env.APP_SECRET,
+      // Never stdout: the desktop shell reads its launch line there.
+      log: options.logger ? app.log : { info: console.error, warn: console.warn },
+    },
   });
   await initializeCliLogin(db);
   const store = makeStore(db);
@@ -2209,5 +2221,7 @@ export async function createApp(
     await registerIntegrations(app, ctx);
     await registerConfluence(app, ctx);
   }
+  // Only a fully migrated database belongs to this release; see checkUpgrade.
+  await recordInstallationVersion(db, version);
   return app;
 }
