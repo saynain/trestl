@@ -84,10 +84,12 @@ test('inline milestones persist without assignment or relationships and enforce 
     assert.deepEqual((await api('GET', `/milestones/${referenced.id}`)).json().progress, {
       total: 0,
       done: 0,
+      canceled: 0,
     });
     assert.deepEqual((await api('GET', `/milestones/${assigned.id}`)).json().progress, {
       total: 1,
       done: 0,
+      canceled: 0,
     });
     assert.equal(
       (await api('PATCH', `/items/${item.id}`, { description: `Edited ${reference}` })).statusCode,

@@ -1,3 +1,4 @@
+import { workProgress } from '../../shared/progress';
 import type { Bootstrap, WorkItem } from '../../shared/types';
 
 /** Apply acknowledged writes without replacing unrelated work or regressing a newer revision. */
@@ -28,13 +29,11 @@ export function applyBootstrapItems(
       const linked = items.filter(
         (item) => item.milestoneId === milestone.id && item.projectId === milestone.projectId,
       );
+      const { total, done, canceled } = workProgress(linked);
       return {
         ...milestone,
         itemIds: linked.map((item) => item.id),
-        progress: {
-          total: linked.length,
-          done: linked.filter((item) => item.status === 'done').length,
-        },
+        progress: { total, done, canceled },
       };
     }),
   };

@@ -4,6 +4,7 @@ import {
   registerCliApproval,
 } from './cli-login.ts';
 import { compareProjectUpdates } from '../shared/project-updates.ts';
+import { workProgress } from '../shared/progress.ts';
 import { activityHeatmap } from '../shared/activity-heatmap.ts';
 import { addMentionRelations } from './mentions.ts';
 import { extractMentions } from '../shared/mentions.ts';
@@ -984,13 +985,11 @@ export async function createApp(
         const linked = (milestoneItems.get(milestone.id) ?? []).filter(
           (item) => item.projectId === milestone.projectId,
         );
+        const { total, done, canceled } = workProgress(linked);
         return {
           ...milestone,
           itemIds: linked.map((item) => item.id),
-          progress: {
-            total: linked.length,
-            done: linked.filter((item) => item.status === 'done').length,
-          },
+          progress: { total, done, canceled },
         };
       }),
     };

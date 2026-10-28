@@ -5,6 +5,7 @@ import type { Project, ProjectHealth, ProjectUpdate } from '../../shared/types';
 import { useApp } from '../lib/context';
 import { post } from '../lib/api';
 import { navigate, shortDate } from '../lib/model';
+import { progressLabel, projectProgress } from '../lib/progress';
 import {
   latestProjectUpdate,
   latestProjectUpdates,
@@ -277,6 +278,7 @@ export function WeeklyReview() {
               />
               <div className="review-project-facts">
                 <span>Owner: {owner?.name || 'Unassigned'}</span>
+                <span>Work: {progressLabel(projectProgress(data, project.id))}</span>
                 <span>
                   Target:{' '}
                   {shortDate(project.dueDate) ||

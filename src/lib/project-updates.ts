@@ -2,6 +2,7 @@ import { compareProjectUpdates } from '../../shared/project-updates';
 import { blockingRelations } from '../../shared/dependencies';
 import type { Bootstrap, Project, ProjectUpdate, WorkItem } from '../../shared/types';
 import { descendants, isDone } from './model';
+import { projectItems } from './progress';
 export const projectHealth = { on_track: 'On track', at_risk: 'At risk', off_track: 'Off track' };
 export function latestProjectUpdates(updates: ProjectUpdate[]) {
   const latest = new Map<string, ProjectUpdate>();
@@ -47,14 +48,7 @@ function calendarDay(date: Date) {
 /** Evidence is computed only from the caller's visible bootstrap records. */
 export function projectReviewEvidence(data: Bootstrap, projectId: string, now = Date.now()) {
   const projectIds = descendants(data.projects, projectId);
-  const linkedIds = new Set(
-    (data.projectRelations || [])
-      .filter((link) => projectIds.has(link.projectId))
-      .map((link) => link.itemId),
-  );
-  const items = data.items.filter(
-    (item) => (item.projectId && projectIds.has(item.projectId)) || linkedIds.has(item.id),
-  );
+  const items = projectItems(data, projectId);
   const itemIds = new Set(items.map((item) => item.id));
   const latest = latestProjectUpdate(data.projectUpdates || [], projectId);
   const since = latest ? Date.parse(latest.createdAt) : now - 7 * 86400000;

@@ -397,7 +397,7 @@ test('portable project transfer preserves content, isolates access, validates re
       newItems.find((i) => i.title === childItem.title)?.milestoneId,
       linkedMilestone.id,
     );
-    assert.deepEqual(linkedMilestone.progress, { total: 1, done: 0 });
+    assert.deepEqual(linkedMilestone.progress, { total: 1, done: 0, canceled: 0 });
     const importedReference = mentionMarkdown(
       { kind: 'milestone', id: linkedMilestone.id },
       'Launch',
