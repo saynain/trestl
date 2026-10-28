@@ -1,3 +1,4 @@
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { watchAppearance } from './lib/themes';
 import CliLoginApproval from './components/CliLoginApproval';
 const WeeklyReview = lazy(() =>
@@ -16,7 +17,6 @@ import { FavoriteButton } from './components/Favorites';
 import { ProjectSwitcher, SubprojectNavigation } from './components/ProjectNavigation';
 import { projectAncestors } from './lib/navigation';
 import { applyBootstrapItems } from './lib/bootstrap';
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowRight,
   Box,
