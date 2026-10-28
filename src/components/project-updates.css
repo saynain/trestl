@@ -36,6 +36,15 @@
 .update-stale {
   color: #a67419;
 }
+.update-health {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--text-sm, 12px);
+}
 .project-update-input {
   min-height: 190px;
   resize: vertical;
@@ -73,39 +82,107 @@
 .review-filters > .input {
   max-width: 340px;
 }
-.review-projects {
-  display: grid;
-  gap: 16px;
-}
-.review-project {
-  min-width: 0;
+.review-scan {
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 22px 24px;
-  background: var(--bg);
+  border-radius: 7px;
+  overflow: hidden;
 }
-.review-project-heading {
-  display: flex;
+/* The header shares the row grid, so columns line up beside the Update button. */
+.review-scan-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px;
+  align-items: center;
+  gap: 8px;
+  padding-right: 12px;
+}
+.review-scan-head,
+.review-scan-row {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1.5fr) 152px minmax(0, 1fr) 96px minmax(0, 1.2fr)
+    84px;
+  align-items: center;
   gap: 16px;
-  justify-content: space-between;
-  align-items: center;
-}
-.review-project-name {
-  display: flex;
-  align-items: center;
-  text-align: left;
-  gap: 12px;
   min-width: 0;
+  text-align: left;
 }
-.review-project-name strong {
-  font-size: var(--text-body, 14px);
-  overflow-wrap: anywhere;
+.review-scan-head-line {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
 }
-.review-project-name small {
-  display: block;
+.review-scan-head {
+  padding: 10px 0 10px 14px;
   color: var(--muted);
   font-size: var(--text-sm, 12px);
-  margin-top: 4px;
+}
+.review-scan-entry + .review-scan-entry {
+  border-top: 1px solid var(--border);
+}
+.review-scan-entry > .review-scan-line:hover,
+.review-scan-entry.open > .review-scan-line {
+  background: var(--surface);
+}
+.review-scan-row {
+  width: 100%;
+  padding: 10px 0 10px 14px;
+  font-size: var(--text-ui, 13px);
+}
+.review-scan-row > span {
+  min-width: 0;
+}
+.review-scan-project {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.review-scan-chevron {
+  flex-shrink: 0;
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+.review-scan-entry.open .review-scan-chevron {
+  transform: rotate(90deg);
+}
+.review-scan-project > span:last-child,
+.review-scan-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.review-scan-project strong,
+.review-scan-stack > span,
+.review-scan-owner > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.review-scan-project strong {
+  font-weight: 550;
+}
+.review-scan-project small,
+.review-scan-stack > small {
+  color: var(--muted);
+  font-size: var(--text-sm, 12px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.review-scan-owner {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.review-scan-blockers {
+  color: var(--danger);
+  font-weight: 500;
+}
+.review-scan-update {
+  justify-content: center;
+}
+.review-scan-detail {
+  padding: 2px 24px 22px 50px;
+  border-top: 1px solid var(--border);
 }
 .review-project-facts {
   display: flex;
@@ -195,14 +272,49 @@
   .weekly-review {
     padding: 20px 16px;
   }
-  .review-project {
-    padding: 18px;
-  }
   .review-filters {
     flex-wrap: wrap;
   }
-  .review-project-heading {
-    align-items: flex-start;
+  .review-scan-line {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding-right: 10px;
+  }
+  .review-scan-head-line {
+    display: none;
+  }
+  /* Project and health, then next milestone and blockers; open a row for the rest. */
+  .review-scan-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 10px;
+    padding-left: 10px;
+  }
+  .review-scan-row > :nth-child(3),
+  .review-scan-row > :nth-child(4) {
+    display: none;
+  }
+  .review-scan-row > :nth-child(5) {
+    flex-direction: row;
+    gap: 6px;
+    padding-left: 23px;
+  }
+  .review-scan-row > :nth-child(5) > small {
+    flex-shrink: 0;
+  }
+  .review-scan-row .update-health {
+    flex-direction: column;
+    align-items: flex-end;
+  }
+  .review-scan-row .project-health svg {
+    display: none;
+  }
+  .review-scan-row > :nth-child(6) {
+    justify-self: end;
+  }
+  .review-scan-update > span {
+    display: none;
+  }
+  .review-scan-detail {
+    padding: 2px 14px 18px;
   }
   .review-evidence-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

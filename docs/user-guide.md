@@ -182,6 +182,6 @@ New-item, item-edit, and comment drafts recover when you reopen the form in the 
 
 ## Review evidence and roadmap delivery
 
-Weekly review shows visible work completed since the latest update (or the last seven days), overdue and upcoming work, unresolved dependencies, and overdue milestones. Expand the evidence to open the underlying work. Draft from evidence prepares editable update text; project health remains your explicit choice.
+Weekly review lists active projects everyone can see in a compact table: health and update age, owner, lifecycle, next milestone, and open blockers. Private projects, and projects inside them, are left out and counted as omitted; row counts include only work shared with everyone who can see the project. Select a row to see visible work completed since the latest update (or the last seven days), overdue and upcoming work, unresolved dependencies, and overdue milestones. Expand the evidence to open the underlying work. Draft from evidence prepares editable update text; project health remains your explicit choice.
 
 Roadmap features can link projects, milestones, and individual work items. Delivery progress and risks are calculated from the linked work you can access. These links do not replace the feature's editorial status. Export/import preserves links within the exported project tree; links to work outside the package are omitted.

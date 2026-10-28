@@ -1,7 +1,7 @@
 import { MilestoneItems, MilestoneProgress } from './MilestoneItems';
 import ActivityHeatmap from './ActivityHeatmap';
 import './people.css';
-import { ProjectUpdates } from './ProjectUpdates';
+import { ProjectUpdates, UpdateHealth } from './ProjectUpdates';
 import { Select } from './Select';
 import { useState, type FormEvent } from 'react';
 import {
@@ -29,6 +29,7 @@ import type { Project, ResourceLink } from '../../shared/types';
 import { useApp } from '../lib/context';
 import { descendants, isDone, isOverdue, navigate, shortDate, statuses, today } from '../lib/model';
 import { progressLabel, projectItems, projectProgress } from '../lib/progress';
+import { latestProjectUpdates } from '../lib/project-updates';
 import { patch, post, remove } from '../lib/api';
 import { Avatar, EmptyState, Modal, ProjectIcon, StatusIcon } from './ui';
 import ConfluenceSearch from './ConfluenceSearch';
@@ -38,6 +39,7 @@ export function AllProjects() {
   const { data, createProject, editProject } = useApp();
   const [showArchived, setShowArchived] = useState(false);
   const projects = data.projects.filter((p) => showArchived || p.status !== 'archived');
+  const updates = latestProjectUpdates(data.projectUpdates || []);
   return (
     <div className="projects-content">
       <div className="section-title">
@@ -54,6 +56,7 @@ export function AllProjects() {
       <div className="projects-table">
         <div className="projects-table-head">
           <span>Project</span>
+          <span>Health</span>
           <span>Status / lifecycle</span>
           <span>Work</span>
           <span>Target date</span>
@@ -81,6 +84,7 @@ export function AllProjects() {
                     </small>
                   </span>
                 </span>
+                <UpdateHealth update={updates.get(project.id)} />
                 <span className="lifecycle-badge">
                   <span className={`tiny-dot ${project.status}`} aria-hidden="true" />
                   <strong>

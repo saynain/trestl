@@ -60,10 +60,14 @@ above the project description; expand **Previous updates** to read its history.
 Health is independent of the project's lifecycle status.
 
 Open **All projects → Weekly review** for projects whose status is **Active**, including
-active subprojects. The review shows the latest update, author, owner, and target date,
-with off-track and at-risk projects first. Search by project name or key, filter by health,
-or choose **Needs update** for missing updates and those at least seven days old.
-You can write an update directly from the review. Existing project permissions apply.
+active subprojects. A compact table shows each project's health and update age, owner,
+lifecycle, next milestone, and open blockers, with off-track and at-risk projects first.
+Select a row for the latest update and delivery evidence, or use **Update** to write one.
+Search by project name or key, filter by health, or choose **Needs update** for missing
+updates and those at least seven days old. The review is meant for a shared screen: it lists
+only projects everyone can see, and notes how many private projects it omitted.
+**All projects** also shows each project's latest health and its age. Existing project
+permissions apply.
 
 Updates are stored in the installation database and included in portable project transfers.
 Imported updates retain their original health, text, date, and author name, labeled as imported history.

@@ -1689,7 +1689,7 @@ textarea::placeholder {
 .projects-table-head,
 .project-table-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 125px 150px 110px 50px;
+  grid-template-columns: minmax(0, 1fr) 130px 115px 140px 95px 50px;
   align-items: center;
   gap: 20px;
   padding: 13px 15px;
@@ -2408,7 +2408,7 @@ textarea::placeholder {
   }
   .project-table-row,
   .projects-table-head {
-    grid-template-columns: minmax(0, 1fr) 100px 100px 80px 25px;
+    grid-template-columns: minmax(0, 1fr) 115px 100px 100px 80px 25px;
     gap: 12px;
   }
   .progress-track {
@@ -2485,10 +2485,10 @@ textarea::placeholder {
   }
   .project-table-row,
   .projects-table-head {
-    grid-template-columns: minmax(0, 1fr) 100px 80px 24px;
+    grid-template-columns: minmax(0, 1fr) 115px 100px 80px 24px;
   }
-  .project-table-row > :nth-child(3),
-  .projects-table-head > :nth-child(3) {
+  .project-table-row > :nth-child(4),
+  .projects-table-head > :nth-child(4) {
     display: none;
   }
   .resource-sync-note {
@@ -2798,17 +2798,22 @@ textarea::placeholder {
   }
   .project-table-row,
   .projects-table-head {
-    grid-template-columns: minmax(0, 1fr) 85px;
+    grid-template-columns: minmax(0, 1fr) 90px;
     gap: 10px;
     padding: 14px 11px;
+  }
+  .project-table-row .project-health svg {
+    display: none;
   }
   .projects-table-head {
     padding-right: 59px;
   }
-  .project-table-row > :nth-child(4),
+  .project-table-row > :nth-child(3),
   .project-table-row > :nth-child(5),
-  .projects-table-head > :nth-child(4),
-  .projects-table-head > :nth-child(5) {
+  .project-table-row > :nth-child(6),
+  .projects-table-head > :nth-child(3),
+  .projects-table-head > :nth-child(5),
+  .projects-table-head > :nth-child(6) {
     display: none;
   }
   .project-table-name {

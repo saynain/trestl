@@ -11,6 +11,9 @@ import {
   projectReviewEvidence,
   projectEvidenceDraft,
   projectDraftEvidence,
+  projectReviewSummary,
+  updateAge,
+  workspaceReviewProjects,
 } from '../src/lib/project-updates.ts';
 
 test('updates persist with authenticated authors, validate content, respect project access and clean up', async () => {
@@ -435,5 +438,122 @@ test('latest update index retains chronology and imported tie-break order withou
   assert.deepEqual(
     reviewProjects(projects, latest, Date.parse('2026-09-03T00:00:00Z')).map((p) => p.id),
     ['two', 'one'],
+  );
+});
+
+test('update age stays compact for scan tables', () => {
+  const now = Date.parse('2026-10-29T12:00:00Z');
+  const at = (createdAt: string) => updateAge({ createdAt } as ProjectUpdate, now);
+  assert.equal(at('2026-10-29T01:00:00Z'), 'today');
+  assert.equal(at('2026-10-30T01:00:00Z'), 'today');
+  assert.equal(at('2026-10-28T11:00:00Z'), '1d ago');
+  assert.equal(at('2026-10-26T12:00:00Z'), '3d ago');
+  assert.equal(at('2026-10-16T12:00:00Z'), '13d ago');
+  assert.equal(at('2026-10-15T12:00:00Z'), '2w ago');
+  assert.equal(at('2026-08-01T12:00:00Z'), '2mo ago');
+});
+
+test('weekly review scan omits private projects and their work from shared rows', () => {
+  const project = (id: string, changes: Partial<Project> = {}) =>
+    ({
+      id,
+      name: id,
+      key: id.toUpperCase(),
+      parentId: null,
+      status: 'active',
+      visibility: 'workspace',
+      ownerId: 'lead',
+      ...changes,
+    }) as Project;
+  const item = (id: string, projectId: string, changes: Partial<WorkItem> = {}) =>
+    ({
+      id,
+      identifier: id,
+      title: id,
+      projectId,
+      parentId: null,
+      status: 'todo',
+      visibility: 'workspace',
+      creatorId: 'lead',
+      dueDate: null,
+      ...changes,
+    }) as WorkItem;
+  const data = {
+    projects: [
+      project('platform'),
+      project('public-child', { parentId: 'platform' }),
+      project('secret-child', { parentId: 'platform', visibility: 'private' }),
+      project('secret', { visibility: 'private' }),
+      project('under-secret', { parentId: 'secret' }),
+      project('planned', { status: 'planned', visibility: 'private' }),
+    ],
+    items: [
+      item('waiting', 'platform'),
+      item('blocker', 'public-child'),
+      item('secret-waiting', 'secret-child'),
+      item('secret-blocker', 'secret-child'),
+      item('private-waiting', 'platform', { visibility: 'private' }),
+      item('open-blocker', 'platform'),
+    ],
+    relations: [
+      { id: 'shared', itemId: 'blocker', targetId: 'waiting', kind: 'blocks' },
+      { id: 'in-secret', itemId: 'secret-blocker', targetId: 'secret-waiting', kind: 'blocks' },
+      { id: 'secret-endpoint', itemId: 'secret-blocker', targetId: 'waiting', kind: 'blocks' },
+      { id: 'private-item', itemId: 'open-blocker', targetId: 'private-waiting', kind: 'blocks' },
+    ],
+    milestones: [
+      { id: 'undated', projectId: 'platform', title: 'Undated', dueDate: null, completed: false },
+      { id: 'done', projectId: 'platform', title: 'Done', dueDate: '2026-10-01', completed: true },
+      {
+        id: 'hidden',
+        projectId: 'secret-child',
+        title: 'Hidden',
+        dueDate: '2026-10-02',
+        completed: false,
+      },
+      {
+        id: 'slipped',
+        projectId: 'public-child',
+        title: 'Slipped',
+        dueDate: '2026-10-20',
+        completed: false,
+      },
+      {
+        id: 'later',
+        projectId: 'platform',
+        title: 'Later',
+        dueDate: '2026-11-20',
+        completed: false,
+      },
+    ],
+    projectUpdates: [],
+  } as unknown as Bootstrap;
+  const now = Date.parse('2026-10-29T12:00:00Z');
+  const { projects, omittedPrivate } = workspaceReviewProjects(data, [], now);
+  assert.deepEqual(
+    projects.map((p) => p.id),
+    ['platform', 'public-child'],
+  );
+  // The private project, its public-looking child and the private subproject; not the planned one.
+  assert.equal(omittedPrivate, 3);
+  const summary = projectReviewSummary(data, 'platform', now);
+  assert.equal(summary.blockers, 1);
+  assert.equal(summary.omittedRestricted, true);
+  assert.equal(summary.nextMilestone?.id, 'slipped');
+  // The viewer still sees restricted evidence when they open the row.
+  assert.deepEqual(summary.evidence.blockers.map((link) => link.relation.id).sort(), [
+    'in-secret',
+    'private-item',
+    'secret-endpoint',
+    'shared',
+  ]);
+  assert.equal(projectReviewSummary(data, 'public-child', now).nextMilestone?.id, 'slipped');
+  assert.equal(
+    projectReviewSummary(
+      { ...data, milestones: data.milestones.filter((m) => m.dueDate === null) },
+      'platform',
+      now,
+    ).nextMilestone?.id,
+    'undated',
   );
 });
