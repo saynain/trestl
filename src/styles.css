@@ -2230,6 +2230,59 @@ textarea::placeholder {
   margin-top: auto;
   padding-top: 20px;
 }
+.setup-steps {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 26px;
+}
+.setup-steps span {
+  width: 28px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+}
+.setup-steps span.done {
+  background: var(--accent);
+}
+.setup-next {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+.setup-next a {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: var(--text-ui);
+  font-weight: 500;
+  text-decoration: none;
+}
+.setup-next a:hover {
+  background: var(--surface-hover);
+}
+.setup-next svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--accent);
+}
+.setup-next small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 400;
+}
+.setup-skip {
+  margin-top: 18px;
+}
+.auth-card > .auth-submit {
+  width: 100%;
+}
 .loading-screen {
   display: flex;
   min-height: 100vh;

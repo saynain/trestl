@@ -81,6 +81,7 @@ const Resources = lazy(() =>
 const ItemDetail = lazy(() => import('./components/ItemDetail'));
 const ItemForm = lazy(() => import('./components/ItemForm'));
 const ProjectForm = lazy(() => import('./components/ProjectForm'));
+const Welcome = lazy(() => import('./components/Welcome'));
 import ProjectAccess from './components/ProjectAccess';
 import { ExportProject, ImportProject } from './components/ProjectTransfer';
 const Settings = lazy(() => import('./components/Settings'));
@@ -399,11 +400,21 @@ export default function App() {
         proxy={auth.authMode === 'proxy'}
         mode={auth.authMode}
         installationName={auth.installationName}
-        onSuccess={() => void checkAuth()}
+        onSuccess={() => {
+          // First-run setup continues with a first project.
+          if (auth.needsSetup) navigate('welcome');
+          void checkAuth();
+        }}
       />
     );
   if (!data) return null;
   if (route.page === 'cli-login') return <CliLoginApproval email={data.user.email} />;
+  if (route.page === 'welcome')
+    return (
+      <Suspense fallback={null}>
+        <Welcome refresh={refresh} />
+      </Suspense>
+    );
   const project =
     route.page === 'project' ? data.projects.find((p) => p.id === route.id) : undefined;
   const view = route.page === 'view' ? data.views.find((v) => v.id === route.id) : undefined;
