@@ -1,8 +1,7 @@
 import { createHash, createHmac } from 'node:crypto';
 import { once } from 'node:events';
-import { createWriteStream } from 'node:fs';
-import { access, mkdir, rename, unlink } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { access, mkdir, open, rename, unlink } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { pipeline, type Readable, type Writable } from 'node:stream';
 import { pipeline as pipelineAsync } from 'node:stream/promises';
 import { StringDecoder } from 'node:string_decoder';
@@ -19,6 +18,10 @@ import { compareVersions } from './version.ts';
 export const backupExtension = '.trestl-backup';
 const formatVersion = 1;
 type Engine = 'pglite' | 'postgres';
+class BackupError extends Error {}
+function invalid(message: string): never {
+  throw new BackupError(`Invalid backup: ${message}`);
+}
 const header = z.object({
   format: z.literal('trestl-backup'),
   formatVersion: z.number().int(),
@@ -33,30 +36,80 @@ const header = z.object({
   secretCheck: z.string().nullable(),
 });
 export type BackupHeader = z.infer<typeof header>;
+const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
+/**
+ * Restoring runs these definitions as SQL, so a backup may only contain the small
+ * language Trestl's schema uses: identifiers, literals, casts, comparisons, JSON
+ * field access and a few functions. No statement separators, comments, backslashes,
+ * dollar quoting or other function calls. Backups apply the same rules, so they fail
+ * instead of writing a file that cannot be restored.
+ */
+const functions = new Set(['coalesce', 'lower', 'upper', 'now']);
+// Words that precede a parenthesis without calling a function.
+const keywords = new Set(['key', 'unique', 'check', 'in', 'where', 'and', 'or', 'not']);
+const token =
+  /\s+|'(?:[^'\\]|'')*'|"(?:[^"\\]|"")+"|[A-Za-z_][A-Za-z0-9_]*|-?\d+(?:\.\d+)?|->>|->|::|<>|<=|>=|[=<>(),.]/y;
+export function safeExpression(sql: string): boolean {
+  token.lastIndex = 0;
+  const seen: string[] = [];
+  while (token.lastIndex < sql.length) {
+    const match = token.exec(sql);
+    if (!match) return false;
+    const value = match[0];
+    if (!value.trim()) continue;
+    const previous = seen.at(-1) ?? '';
+    if (value === '(' && /^[A-Za-z_"]/.test(previous)) {
+      const word = previous.replaceAll('"', '').toLowerCase();
+      const referenced =
+        seen.at(-2)?.toLowerCase() === 'references' ||
+        (seen.at(-2) === '.' && seen.at(-4)?.toLowerCase() === 'references');
+      if (!functions.has(word) && !referenced && !(previous[0] !== '"' && keywords.has(word)))
+        return false;
+    }
+    seen.push(value);
+  }
+  return true;
+}
+const name = '"(?:[^"]|"")+"|[a-z_][a-z0-9_$]*';
+const indexDefinition = new RegExp(
+  `^CREATE (UNIQUE )?INDEX (?:${name}) ON (?:(?:${name})\\.)?(${name}) USING (btree|gin|gist|hash|brin) (\\(.*)$`,
+  's',
+);
+const unquote = (value: string) =>
+  value.startsWith('"') ? value.slice(1, -1).replaceAll('""', '"') : value;
+/** Rebuild an index for the given table from a validated definition, or return null. */
+function indexStatement(tableName: string, index: { name: string; definition: string }) {
+  const match = indexDefinition.exec(index.definition);
+  if (!match || unquote(match[2]!) !== tableName || !safeExpression(match[4]!)) return null;
+  return `CREATE ${match[1] ?? ''}INDEX ${quote(index.name)} ON ${quote(tableName)} USING ${match[3]} ${match[4]}`;
+}
 const identifier = z.string().min(1).max(63);
-const table = z.object({
-  name: identifier,
-  columns: z
-    .array(
+const table = z
+  .object({
+    name: identifier,
+    columns: z
+      .array(
+        z.object({
+          name: identifier,
+          type: z.string().regex(/^[a-z][a-z ]*(\(\d+(,\d+)?\))?(\[\])?$/),
+          notNull: z.boolean(),
+          default: z.string().refine(safeExpression).nullable(),
+        }),
+      )
+      .min(1),
+    constraints: z.array(
       z.object({
         name: identifier,
-        type: z.string().regex(/^[a-z][a-z0-9 _(),[\]]*$/),
-        notNull: z.boolean(),
-        default: z.string().nullable(),
+        type: z.enum(['p', 'u', 'c', 'f']),
+        definition: z
+          .string()
+          .regex(/^(PRIMARY KEY|UNIQUE|CHECK|FOREIGN KEY) \(/)
+          .refine(safeExpression),
       }),
-    )
-    .min(1),
-  constraints: z.array(
-    z.object({
-      name: identifier,
-      type: z.enum(['p', 'u', 'c', 'f', 'x']),
-      definition: z.string().regex(/^(PRIMARY KEY|UNIQUE|CHECK|FOREIGN KEY|EXCLUDE)\b/),
-    }),
-  ),
-  indexes: z.array(
-    z.object({ name: identifier, definition: z.string().regex(/^CREATE (UNIQUE )?INDEX /) }),
-  ),
-});
+    ),
+    indexes: z.array(z.object({ name: identifier, definition: z.string() })),
+  })
+  .refine((schema) => schema.indexes.every((index) => indexStatement(schema.name, index)));
 type TableSchema = z.infer<typeof table>;
 const tableEnd = z.object({ name: identifier, rows: z.number().int(), sha256: z.string() });
 const end = z.object({ tables: z.number().int(), rows: z.number().int(), sha256: z.string() });
@@ -66,7 +119,6 @@ export interface BackupSummary {
   rows: number;
 }
 
-const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
 // Text is every type's lossless interchange format; fix the settings that shape it.
 const sessionSettings = [
   "SET LOCAL DateStyle = 'ISO, YMD'",
@@ -85,7 +137,7 @@ export function secretCheck(secret: string | undefined): string | null {
 
 export async function installationVersion(db: Database): Promise<string | null> {
   const exists = (
-    await db.query<{ name: string | null }>(`SELECT to_regclass('public.entities')::text AS name`)
+    await db.query<{ name: string | null }>(`SELECT to_regclass('entities')::text AS name`)
   ).rows[0]?.name;
   if (!exists) return null;
   return (
@@ -97,14 +149,38 @@ export async function installationVersion(db: Database): Promise<string | null> 
   );
 }
 
-async function readSchema(db: Database): Promise<(TableSchema & { key: string[] })[]> {
+/** Trestl's tables live wherever `entities` resolves through the search path. */
+async function trestlSchema(db: Database): Promise<string> {
+  const schema = (
+    await db.query<{ schema: string }>(
+      `SELECT n.nspname AS schema FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+       WHERE c.oid=to_regclass('entities')`,
+    )
+  ).rows[0]?.schema;
+  if (!schema)
+    throw new BackupError(
+      'No Trestl database was found: it has no entities table. Check DATABASE_URL or DATA_DIR.',
+    );
+  return schema;
+}
+
+async function readSchema(
+  db: Database,
+  namespace: string,
+): Promise<(TableSchema & { key: string[] })[]> {
   const tables = (
     await db.query<{ oid: string; name: string }>(
       `SELECT c.oid::text AS oid, c.relname AS name FROM pg_class c
        JOIN pg_namespace n ON n.oid=c.relnamespace
-       WHERE n.nspname='public' AND c.relkind='r' ORDER BY c.relname`,
+       WHERE n.nspname=$1 AND c.relkind='r' ORDER BY c.relname`,
+      [namespace],
     )
   ).rows;
+  // Like pg_dump: a concurrent rewrite (TRUNCATE, ALTER) must wait instead of emptying the snapshot.
+  if (tables.length)
+    await db.query(
+      `LOCK TABLE ${tables.map((t) => `${quote(namespace)}.${quote(t.name)}`).join(', ')} IN ACCESS SHARE MODE`,
+    );
   const result = [];
   for (const { oid, name } of tables) {
     const columns = (
@@ -113,24 +189,28 @@ async function readSchema(db: Database): Promise<(TableSchema & { key: string[] 
         type: string;
         notNull: boolean;
         default: string | null;
-        generated: boolean;
+        supported: boolean;
       }>(
         `SELECT a.attname AS name, format_type(a.atttypid, a.atttypmod) AS type,
            a.attnotnull AS "notNull", pg_get_expr(d.adbin, d.adrelid) AS "default",
-           (a.attidentity <> '' OR a.attgenerated <> '') AS generated
-         FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum
+           a.attidentity = '' AND a.attgenerated = ''
+             AND COALESCE(e.typtype, t.typtype) = 'b'
+             AND COALESCE(e.typnamespace, t.typnamespace) = 'pg_catalog'::regnamespace AS supported
+         FROM pg_attribute a JOIN pg_type t ON t.oid=a.atttypid
+         LEFT JOIN pg_type e ON e.oid=t.typelem AND t.typcategory='A'
+         LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum
          WHERE a.attrelid=$1::oid AND a.attnum>0 AND NOT a.attisdropped ORDER BY a.attnum`,
         [oid],
       )
     ).rows;
     // Fail loudly instead of writing a backup that cannot be restored faithfully.
     for (const column of columns)
-      if (column.generated || /\bnextval\(/.test(column.default ?? ''))
-        throw new Error(
-          `Backups do not support sequence or generated column ${name}.${column.name}`,
+      if (!column.supported || /\bnextval\(/.test(column.default ?? ''))
+        throw new BackupError(
+          `Backups do not support column ${name}.${column.name}: only built-in types without sequences or generated values.`,
         );
     const constraints = (
-      await db.query<{ name: string; type: 'p' | 'u' | 'c' | 'f' | 'x'; definition: string }>(
+      await db.query<{ name: string; type: 'p' | 'u' | 'c' | 'f'; definition: string }>(
         `SELECT conname AS name, contype::text AS type, pg_get_constraintdef(oid) AS definition
          FROM pg_constraint WHERE conrelid=$1::oid AND contype IN ('p','u','c','f','x')
          ORDER BY contype, conname`,
@@ -141,8 +221,9 @@ async function readSchema(db: Database): Promise<(TableSchema & { key: string[] 
       await db.query<{ name: string; definition: string }>(
         `SELECT i.relname AS name, pg_get_indexdef(x.indexrelid) AS definition
          FROM pg_index x JOIN pg_class i ON i.oid=x.indexrelid
-         WHERE x.indrelid=$1::oid
-           AND NOT EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conindid=x.indexrelid)
+         WHERE x.indrelid=$1::oid AND NOT EXISTS (
+           SELECT 1 FROM pg_constraint c
+           WHERE c.conindid=x.indexrelid AND c.conrelid=x.indrelid AND c.contype IN ('p','u','x'))
          ORDER BY i.relname`,
         [oid],
       )
@@ -158,17 +239,18 @@ async function readSchema(db: Database): Promise<(TableSchema & { key: string[] 
     ).rows.map((row) => row.name);
     const schema = table.safeParse({
       name,
-      columns: columns.map(({ generated: _, ...column }) => column),
+      columns: columns.map(({ supported: _, ...column }) => column),
       constraints,
       indexes,
     });
-    if (!schema.success) throw new Error(`Backups do not support the definition of table ${name}`);
+    if (!schema.success)
+      throw new BackupError(`Backups do not support the definition of table ${name}.`);
     result.push({ ...schema.data, key });
   }
   return result;
 }
 
-/** Stream a consistent snapshot of every table in the public schema. */
+/** Stream a consistent snapshot of every table in Trestl's schema. */
 export async function writeBackup(
   db: Database,
   output: Writable,
@@ -209,7 +291,7 @@ export async function writeBackup(
       await emit(backupHeader, overall);
       const tables: Record<string, number> = {};
       let total = 0;
-      for (const { key, ...schema } of await readSchema(tx)) {
+      for (const { key, ...schema } of await readSchema(tx, await trestlSchema(tx))) {
         await emit({ table: schema }, overall);
         const digest = createHash('sha256');
         const columns = schema.columns
@@ -289,19 +371,35 @@ export async function writeBackupFile(
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
   const partial = `${path}.partial`;
+  // Another backup may be writing the same name; only clean up a file this call created.
+  const handle = await open(partial, 'wx', 0o600);
   try {
-    const summary = await writeBackup(
-      db,
-      createWriteStream(partial, { flags: 'wx', mode: 0o600, flush: true }),
-      info,
-    );
+    // The stream syncs and closes the handle once everything is written.
+    const summary = await writeBackup(db, handle.createWriteStream({ flush: true }), info);
     await rename(partial, path);
     return summary;
   } catch (error) {
+    await handle.close().catch(() => {});
     await unlink(partial).catch(() => {});
     throw error;
   }
 }
+
+/** A path in the folder that no backup uses yet: `name`, or `name` with `-2`, `-3`, … */
+export async function unusedBackupPath(directory: string, name: string) {
+  for (let attempt = 1; ; attempt++) {
+    const path = join(
+      directory,
+      attempt === 1 ? name : name.replace(backupExtension, `-${attempt}${backupExtension}`),
+    );
+    if (!(await exists(path)) && !(await exists(`${path}.partial`))) return path;
+  }
+}
+const exists = (path: string) =>
+  access(path).then(
+    () => true,
+    () => false,
+  );
 
 export function backupFileName(version: string | null, date = new Date(), suffix = '') {
   const stamp = date
@@ -309,34 +407,35 @@ export function backupFileName(version: string | null, date = new Date(), suffix
     .replace(/\.\d+Z$/, 'Z')
     .replaceAll(/[-:]/g, '')
     .replace('T', '-');
-  return `trestl-${stamp}-${version ?? 'unknown'}${suffix}${backupExtension}`;
-}
-
-class BackupError extends Error {}
-function invalid(message: string): never {
-  throw new BackupError(`Invalid backup: ${message}`);
+  // Versions come from the database; never let one choose another folder.
+  const label = version && /^[\w.+-]+$/.test(version) ? version : 'unknown';
+  return `trestl-${stamp}-${label}${suffix}${backupExtension}`;
 }
 
 async function* lines(input: Readable): AsyncGenerator<string> {
   // Errors from the source or decompression end the iteration with that error.
   const gunzip = pipeline(input, createGunzip(), () => {});
   const decoder = new StringDecoder('utf8');
-  let buffered = '';
+  // Collect pieces of a long record instead of rescanning one growing string.
+  let pending: string[] = [];
   try {
     for await (const chunk of gunzip) {
-      buffered += decoder.write(chunk as Buffer);
+      const text = decoder.write(chunk as Buffer);
+      let start = 0;
       let index;
-      while ((index = buffered.indexOf('\n')) >= 0) {
-        yield buffered.slice(0, index);
-        buffered = buffered.slice(index + 1);
+      while ((index = text.indexOf('\n', start)) >= 0) {
+        pending.push(text.slice(start, index));
+        yield pending.join('');
+        pending = [];
+        start = index + 1;
       }
+      if (start < text.length) pending.push(text.slice(start));
     }
   } catch (error) {
     if (!String((error as NodeJS.ErrnoException).code).startsWith('Z_')) throw error;
     invalid(`the file is incomplete or damaged (${(error as Error).message}).`);
   }
-  buffered += decoder.end();
-  if (buffered) invalid('the file ends in the middle of a record.');
+  if (pending.join('') + decoder.end()) invalid('the file ends in the middle of a record.');
 }
 
 /** Validate the complete stream; handlers run for each record in order. */
@@ -450,19 +549,25 @@ export async function restoreBackup(
 ): Promise<BackupSummary> {
   return db.transaction(async (tx) => {
     for (const setting of sessionSettings) await tx.query(setting);
+    // Tables are created unqualified, in the first schema of the search path.
     const existing = (
-      await tx.query<{ name: string }>(
-        `SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-         WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','S','f') LIMIT 1`,
+      await tx.query<{ name: string | null }>(
+        `SELECT (SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+           WHERE n.nspname=current_schema() AND c.relkind IN ('r','p','v','m','S','f') LIMIT 1)
+         AS name, current_schema() IS NULL AS missing`,
       )
-    ).rows[0];
-    if (existing)
+    ).rows[0] as { name: string | null; missing: boolean };
+    if (existing.missing)
+      throw new BackupError('The target database has no schema to restore into.');
+    if (existing.name)
       throw new BackupError(
         `The target database is not empty (it contains ${existing.name}). Restore into a new, empty database.`,
       );
     let batch: (string | null)[][] = [];
     let batchSize = 0;
-    const deferred: string[] = [];
+    // Indexes before references: a foreign key needs the referenced unique index.
+    const indexes: string[] = [];
+    const references: string[] = [];
     async function flush(schema: TableSchema) {
       if (!batch.length) return;
       const width = schema.columns.length;
@@ -515,10 +620,10 @@ export async function restoreBackup(
         await tx.query(`CREATE TABLE ${quote(schema.name)} (${definitions.join(', ')})`);
         // References and secondary indexes are cheaper and order-independent after loading.
         for (const c of schema.constraints.filter((c) => c.type === 'f'))
-          deferred.push(
+          references.push(
             `ALTER TABLE ${quote(schema.name)} ADD CONSTRAINT ${quote(c.name)} ${c.definition}`,
           );
-        for (const index of schema.indexes) deferred.push(index.definition);
+        for (const index of schema.indexes) indexes.push(indexStatement(schema.name, index)!);
       },
       async row(schema, values) {
         batch.push(values);
@@ -537,7 +642,7 @@ export async function restoreBackup(
           throw new BackupError(`Restored ${count} of ${rows} rows into ${schema.name}.`);
       },
     }).then(async (summary) => {
-      for (const statement of deferred) await tx.query(statement);
+      for (const statement of [...indexes, ...references]) await tx.query(statement);
       return summary;
     });
   });

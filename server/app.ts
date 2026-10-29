@@ -299,14 +299,20 @@ export async function createApp(
       log: options.logger ? app.log : { info: console.error, warn: console.warn },
     },
   });
-  await initializeCliLogin(db);
   const store = makeStore(db);
-  await store.put('system', { id: 'mutation-lock' });
-  await migrateWorkspaces(db);
-  await migrateInstallation(db);
-  await db.query(
-    "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS auth_method TEXT NOT NULL DEFAULT 'local'",
-  );
+  try {
+    await initializeCliLogin(db);
+    await store.put('system', { id: 'mutation-lock' });
+    await migrateWorkspaces(db);
+    await migrateInstallation(db);
+    await db.query(
+      "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS auth_method TEXT NOT NULL DEFAULT 'local'",
+    );
+  } catch (error) {
+    // Release the database (and its PGlite lock) so a corrected start can open it.
+    await db.close();
+    throw error;
+  }
   app.decorateRequest('user', null);
   app.decorateRequest('authMode', 'local');
   app.decorateRequest('sessionMethod', null);

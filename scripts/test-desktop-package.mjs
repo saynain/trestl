@@ -40,9 +40,11 @@ async function start() {
       () => reject(new Error(`Desktop startup timed out: ${errors}`)),
       60000,
     );
-    input.once('line', (line) => {
+    input.on('line', (line) => {
+      const message = JSON.parse(line);
+      if (message.status) return; // Progress during one-time startup work.
       clearTimeout(timeout);
-      accept(JSON.parse(line));
+      accept(message);
     });
     child.once('exit', (code) => {
       clearTimeout(timeout);

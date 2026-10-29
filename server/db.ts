@@ -3,7 +3,7 @@ import pg from 'pg';
 import { migrateItemIdentifiers } from './item-identifiers.ts';
 import { checkUpgrade, type UpgradeOptions } from './upgrade.ts';
 import { existsSync } from 'node:fs';
-import { mkdir, open, readFile, unlink } from 'node:fs/promises';
+import { mkdir, open, readFile, stat, unlink, utimes } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -25,20 +25,29 @@ const running = (pid: number) => {
  * PGlite does not stop a second process from opening the same folder, and two writers
  * corrupt it. The lock lives inside the folder, created only once PostgreSQL has
  * initialized it, because PGlite 0.3 refuses to initialize a folder containing files.
+ * On this host a lock is stale once its process has gone. A lock from another host (such
+ * as another container on the same volume) is kept fresh by its owner and only becomes
+ * stale when that stops.
  */
+export const lockTiming = { heartbeat: 10_000, staleAfter: 60_000, wait: 5_000 };
 const lockedHere = new Set<string>();
 async function lockDataDir(dataDir: string): Promise<() => Promise<void>> {
   const path = join(dataDir, 'trestl.lock');
   const owner = `${process.pid} ${hostname()}`;
-  // A restarting development server may still be closing; give it a moment.
-  const deadline = Date.now() + 5000;
+  const started = Date.now();
   for (;;) {
     try {
       const handle = await open(path, 'wx', 0o600);
       await handle.writeFile(owner);
       await handle.close();
       lockedHere.add(path);
+      const heartbeat = setInterval(() => {
+        const now = new Date();
+        utimes(path, now, now).catch(() => {});
+      }, lockTiming.heartbeat);
+      heartbeat.unref();
       return async () => {
+        clearInterval(heartbeat);
         lockedHere.delete(path);
         if ((await readFile(path, 'utf8').catch(() => '')) === owner)
           await unlink(path).catch(() => {});
@@ -47,25 +56,38 @@ async function lockDataDir(dataDir: string): Promise<() => Promise<void>> {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     }
     const holder = await readFile(path, 'utf8').catch(() => '');
+    const age = await stat(path).then(
+      (info) => Date.now() - info.mtimeMs,
+      () => 0,
+    );
     const [pid, host] = holder.split(' ');
-    // An empty lock is still being written by its owner, unless it stays empty. Our own
-    // PID can be left over from a crash: containers restart their server as PID 1.
-    const stale = holder
-      ? host !== hostname() ||
-        !(Number(pid) > 0) ||
-        (Number(pid) === process.pid ? !lockedHere.has(path) : !running(Number(pid)))
-      : Date.now() > deadline;
+    const foreign = !!host && host !== hostname();
+    // An empty lock is still being written, unless it stays empty. Our own PID can be left
+    // over from a crash: containers restart their server as PID 1.
+    const stale = !holder
+      ? age > lockTiming.wait
+      : foreign
+        ? age > lockTiming.staleAfter
+        : !(Number(pid) > 0) ||
+          (Number(pid) === process.pid ? !lockedHere.has(path) : !running(Number(pid)));
     if (stale) {
       if ((await readFile(path, 'utf8').catch(() => '')) === holder)
-        await unlink(path).catch(() => {});
+        await unlink(path).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== 'ENOENT') throw error;
+        });
       continue;
     }
-    if (Date.now() > deadline)
+    // A restarting development server may still be closing; wait a moment, or until a
+    // lock from another host would have gone stale.
+    if (
+      Date.now() - started >
+      (foreign ? lockTiming.staleAfter + lockTiming.wait : lockTiming.wait)
+    )
       throw new Error(
-        `The database in ${dataDir} is in use by process ${pid}. Stop that Trestl process first. ` +
-          `If no Trestl process is running, delete ${path}.`,
+        `The database in ${dataDir} is in use by process ${pid}${foreign ? ` on ${host}` : ''}. ` +
+          `Stop that Trestl process first. If no Trestl process is running, delete ${path}.`,
       );
-    await new Promise((accept) => setTimeout(accept, 100));
+    await new Promise((accept) => setTimeout(accept, foreign ? 1000 : 100));
   }
 }
 
@@ -132,6 +154,7 @@ export async function openDatabase(
       await engine.waitReady;
       if (dataDir && !unlock) unlock = await lockDataDir(dataDir);
     } catch (error) {
+      await engine.close().catch(() => {});
       await unlock?.();
       throw error;
     }

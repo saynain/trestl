@@ -79,6 +79,38 @@ fn external(url: &tauri::Url) {
     }
 }
 
+/// Reads the service's launch message. Progress lines keep the wait open during one-time
+/// work such as a pre-upgrade backup; a silent service still times out after `quiet`.
+fn launch_message(
+    stdout: impl std::io::Read + Send + 'static,
+    quiet: Duration,
+    limit: Duration,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
+        loop {
+            let mut line = String::new();
+            let result = reader.read_line(&mut line).map(|_| line);
+            let progress = matches!(&result, Ok(line) if line.starts_with("{\"status\""));
+            let _ = tx.send(result);
+            if !progress {
+                break;
+            }
+        }
+        // Drain stdout without logging the launch credential.
+        let _ = std::io::copy(&mut reader, &mut std::io::sink());
+    });
+    let deadline = Instant::now() + limit;
+    loop {
+        let line = rx.recv_timeout(quiet)??;
+        let value: serde_json::Value = serde_json::from_str(&line)?;
+        if value.get("status").is_none() || Instant::now() > deadline {
+            return Ok(value);
+        }
+    }
+}
+
 fn start(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let data = app.path().app_data_dir()?;
     std::fs::create_dir_all(&data)?;
@@ -140,17 +172,11 @@ fn start(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         "{}",
         serde_json::json!({"dataDir": data, "resources": resources})
     )?;
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        let mut reader = BufReader::new(stdout);
-        let mut line = String::new();
-        let result = reader.read_line(&mut line).map(|_| line);
-        let _ = tx.send(result);
-        // Drain stdout without logging the launch credential.
-        let _ = std::io::copy(&mut reader, &mut std::io::sink());
-    });
-    let line = rx.recv_timeout(Duration::from_secs(90))??;
-    let ready: serde_json::Value = serde_json::from_str(&line)?;
+    let ready = launch_message(
+        stdout,
+        Duration::from_secs(90),
+        Duration::from_secs(60 * 60),
+    )?;
     let url: tauri::Url = ready["url"]
         .as_str()
         .ok_or("Missing desktop launch URL")?
@@ -351,4 +377,27 @@ fn main() {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn launch_message_waits_through_progress_lines() {
+        let output = "{\"status\":\"starting\"}\n{\"status\":\"starting\"}\n{\"url\":\"http://127.0.0.1:9/x\"}\nlater\n";
+        let message = launch_message(
+            std::io::Cursor::new(output),
+            Duration::from_secs(5),
+            Duration::from_secs(60),
+        )
+        .unwrap();
+        assert_eq!(message["url"], "http://127.0.0.1:9/x");
+        assert!(launch_message(
+            std::io::Cursor::new(""),
+            Duration::from_secs(5),
+            Duration::from_secs(60)
+        )
+        .is_err());
+    }
 }

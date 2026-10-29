@@ -16,11 +16,14 @@ A backup contains:
 
 It does not contain `APP_SECRET` or other environment configuration, such as
 `.env` or your Compose or Kubernetes files. Keep `APP_SECRET` in a separate
-secret store. If you restore without it, everything else is recovered, but you
-have to reconnect integrations.
+secret store; for the desktop app, that is the `app-secret` file in its data
+folder. If you restore without it, everything else is recovered, but you have to
+reconnect integrations.
 
 Backups hold personal data, private work, and password hashes. Store them
-encrypted, with the same access restrictions as the database itself.
+encrypted, with the same access restrictions as the database itself. Only
+restore backups you trust: restoring validates every table definition, but it
+recreates whatever the file contains.
 
 ## Backup or project transfer?
 
@@ -64,8 +67,9 @@ From a source checkout, run `pnpm -s backup create`.
 
 ### PGlite
 
-Stop Trestl first. A PGlite folder can only be opened by one process, and the
-command refuses to read a folder that a running server holds.
+Stop Trestl first. A PGlite folder can only be opened by one process, including
+a server in another container that shares the volume. The command refuses to
+read a folder that a running server holds.
 
 ```sh
 pnpm -s backup create
@@ -77,6 +81,10 @@ folder with `--output`.
 
 The desktop app backs itself up before each upgrade. For a manual backup,
 follow [the desktop guide](desktop.md#local-data-and-backups).
+
+Trestl backs up the schema that holds its tables, normally `public`. Keep other
+applications' tables out of that schema: a table with a sequence, an identity
+or generated column, or a custom type stops the backup.
 
 ### Check a backup
 
@@ -110,6 +118,23 @@ restored installation works, then restore into the original path.
 
 To restore into PostgreSQL instead, set `DATABASE_URL` to a new, empty
 database. A backup restores into either engine, whichever engine created it.
+
+### Desktop app
+
+Restoring needs a source checkout of the same Trestl release as the installed
+app (`git checkout v<version>`, then `pnpm install --frozen-lockfile`). Quit
+Trestl and rename its `database` folder in the
+[data folder](desktop.md#local-data-and-backups). Then restore into a new
+`database` folder with the app's own key:
+
+```sh
+cd <checkout>
+DATA="<data folder>"
+APP_SECRET="$(cat "$DATA/app-secret")" pnpm -s backup restore \
+  "$DATA/backups/<backup file>" --data-dir "$DATA/database"
+```
+
+Start Trestl. Keep the renamed folder until you have checked the restored data.
 
 ### Docker Compose on a new machine
 
@@ -157,6 +182,11 @@ If the backup cannot be written, Trestl stops before changing anything. Free up
 space or set `BACKUP_DIR`, then start Trestl again. Old backups are never
 deleted automatically.
 
+If a migration fails after the backup, Trestl stops and records the unfinished
+upgrade. Later starts of the same release reuse that first backup instead of
+copying partly migrated data, and older releases refuse to start. Fix the cause
+and start the new release again, or restore the backup into a new database.
+
 PostgreSQL installations without `BACKUP_DIR` log a warning and upgrade without
 a backup. Back up before you upgrade, or set `BACKUP_DIR` to a persistent volume.
 For Docker Compose, add this in a `compose.override.yaml`:
@@ -165,12 +195,16 @@ For Docker Compose, add this in a `compose.override.yaml`:
 services:
   app:
     environment:
-      BACKUP_DIR: /backups
+      BACKUP_DIR: /data/backups
     volumes:
-      - backups:/backups
+      - trestl-backups:/data
 volumes:
-  backups:
+  trestl-backups:
 ```
+
+Mount the volume at a folder that the image's `node` user owns, such as
+`/data`. Docker creates a volume at a new path owned by `root`, and Trestl
+cannot write there.
 
 ## Versions and rollback
 

@@ -197,7 +197,7 @@ export async function verifyRestored(
 export async function tableContents(database: Database) {
   const tables = (
     await database.query<{ name: string }>(
-      `SELECT tablename AS name FROM pg_tables WHERE schemaname='public' ORDER BY tablename`,
+      `SELECT tablename AS name FROM pg_tables WHERE schemaname=current_schema() ORDER BY tablename`,
     )
   ).rows.map((row) => row.name);
   const contents: Record<string, string[]> = {};

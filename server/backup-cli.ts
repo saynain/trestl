@@ -11,6 +11,7 @@ import {
   secretStatus,
   writeBackup,
   writeBackupFile,
+  unusedBackupPath,
   type BackupSummary,
 } from './backup.ts';
 import { openDatabase } from './db.ts';
@@ -95,7 +96,7 @@ async function create(values: Parameters<typeof target>[0] & { output?: string }
       process.env.BACKUP_DIR ??
       (database.engine === 'pglite' ? `${database.dataDir}-backups` : '.');
     if (!values.output || (existsSync(path) && (await stat(path)).isDirectory()))
-      path = join(path, backupFileName(build.version));
+      path = await unusedBackupPath(path, backupFileName(build.version));
     const summary = await writeBackupFile(db, resolve(path), info);
     console.error(`Backed up ${summary.rows} rows from ${database.label} to ${resolve(path)}.`);
     if (!summary.header.secretCheck)

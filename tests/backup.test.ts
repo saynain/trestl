@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough, Readable, Writable } from 'node:stream';
@@ -12,7 +12,8 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 import pg from 'pg';
 import { createApp } from '../server/app.ts';
 import { readBackup, restoreBackup, writeBackup } from '../server/backup.ts';
-import { openDatabase } from '../server/db.ts';
+import { lockTiming, openDatabase } from '../server/db.ts';
+import { checkUpgrade } from '../server/upgrade.ts';
 import { serverVersion } from '../server/version.ts';
 import {
   contentsOf,
@@ -224,6 +225,15 @@ test('restore refuses unsafe targets and keeps them unchanged', async (t) => {
   assert.equal(missing.code, 1);
   assert.match(missing.stderr, /No Trestl database was found/);
   assert.equal(existsSync(join(directory, 'absent')), false);
+  // A database without Trestl's tables (such as a mistyped DATABASE_URL) is not backed up.
+  const unrelated = join(directory, 'unrelated');
+  await (await openDatabase({ dataDir: unrelated, initialize: false })).close();
+  const empty = await backupCli(['create', '--output', join(directory, 'empty.trestl-backup')], {
+    DATA_DIR: unrelated,
+  });
+  assert.equal(empty.code, 1);
+  assert.match(empty.stderr, /it has no entities table/);
+  assert.equal(existsSync(join(directory, 'empty.trestl-backup')), false);
 });
 
 test('backups detect damage, truncation and incompatible releases', async () => {
@@ -286,6 +296,27 @@ test('backups detect damage, truncation and incompatible releases', async () => 
     ),
     /newer Trestl release/,
   );
+  // Restoring runs definitions as SQL; a crafted file must not run anything else.
+  const entities = lines.findIndex((line) => line.startsWith('{"table":{"name":"entities"'));
+  const crafted = (change: (table: any) => void) =>
+    variant(
+      replace(entities, (line) => {
+        const record = JSON.parse(line);
+        change(record.table);
+        return JSON.stringify(record);
+      }),
+    );
+  for (const change of [
+    (t: any) => (t.indexes[0].definition += `; COPY (SELECT 1) TO PROGRAM 'id'`),
+    (t: any) => (t.indexes[0].definition = t.indexes[0].definition.replace('USING', '-- USING')),
+    (t: any) =>
+      t.constraints.push({ name: 'x', type: 'c', definition: "CHECK (pg_read_file('x') <> '')" }),
+    (t: any) => (t.columns[0].type = 'text CHECK (length(concat(chr(47))) > 0)'),
+    (t: any) => (t.columns[0].default = "pg_read_file('x')"),
+    (t: any) => (t.columns[0].default = '"pg_read_file"(\'x\')'),
+    (t: any) => (t.indexes[0].definition = t.indexes[0].definition.replace(' ON ', ' ON other.')),
+  ])
+    await assert.rejects(readBackup(crafted(change)), /table definition is not supported/);
   const newer = variant(
     replace(0, (line) => line.replace(/"version":(null|"[^"]*")}/, '"version":"999.0.0"}')),
   );
@@ -300,6 +331,37 @@ test('backups detect damage, truncation and incompatible releases', async () => 
       [],
     );
   } finally {
+    await target.close();
+  }
+});
+
+test('backups keep foreign keys and refuse columns they cannot restore', async () => {
+  const backup = async (db: Awaited<ReturnType<typeof openDatabase>>) => {
+    const chunks: Buffer[] = [];
+    const output = new PassThrough();
+    output.on('data', (chunk) => chunks.push(chunk));
+    await writeBackup(db, output, { engine: 'pglite', createdBy: { version, commit: null } });
+    return Buffer.concat(chunks);
+  };
+  const source = await openDatabase({ dataDir: ':memory:' });
+  const target = await openDatabase({ dataDir: ':memory:', initialize: false });
+  try {
+    // A reference to a plain unique index, from a table that sorts before it.
+    await source.query(`CREATE TABLE zone (code text NOT NULL)`);
+    await source.query(`CREATE UNIQUE INDEX zone_code ON zone (code)`);
+    await source.query(`CREATE TABLE area (zone text REFERENCES zone(code))`);
+    await source.query(`INSERT INTO zone VALUES ('north')`);
+    await source.query(`INSERT INTO area VALUES ('north')`);
+    await restoreBackup(target, Readable.from([await backup(source)]), { appVersion: version });
+    await assert.rejects(
+      target.query(`INSERT INTO area VALUES ('south')`),
+      /violates foreign key constraint/,
+    );
+    await source.query(`CREATE TYPE mood AS ENUM ('calm')`);
+    await source.query(`CREATE TABLE feelings (mood mood)`);
+    await assert.rejects(backup(source), /do not support column feelings\.mood/);
+  } finally {
+    await source.close();
     await target.close();
   }
 });
@@ -378,6 +440,44 @@ test('startup backs up before an upgrade and refuses a database from a newer rel
   );
   assert.equal(await marker('0.0.1'), '0.0.1', 'Nothing was migrated');
 
+  // A start that fails after its backup keeps that backup; later starts add no partial copies,
+  // and an older release refuses the partly migrated data.
+  const installationId = process.env.INSTALLATION_ID;
+  delete process.env.INSTALLATION_ID;
+  t.after(() => {
+    if (installationId !== undefined) process.env.INSTALLATION_ID = installationId;
+  });
+  const legacy = await openDatabase({ dataDir, initialize: false });
+  await legacy.query(
+    `INSERT INTO entities VALUES ('workspaces','second','{"id":"second","name":"Second","kind":"shared","ownerId":"x"}')`,
+  );
+  await legacy.query(`DELETE FROM entities WHERE collection='system' AND id='installation'`);
+  await legacy.close();
+  await marker('0.0.1');
+  const before = (await readdir(backups)).length;
+  for (let attempt = 0; attempt < 2; attempt++) await assert.rejects(start(), /INSTALLATION_ID/);
+  assert.equal((await readdir(backups)).length, before + 1);
+  const pending = await openDatabase({ dataDir, initialize: false });
+  try {
+    await assert.rejects(
+      checkUpgrade(pending, 'pglite', dataDir, { version: '0.0.1' }),
+      new RegExp(`upgrade to Trestl ${version.replaceAll('.', '\\.')} started .* did not finish`),
+    );
+  } finally {
+    await pending.close();
+  }
+  process.env.INSTALLATION_ID = 'default';
+  await start();
+  assert.equal(await marker(version), version);
+  const finished = await openDatabase({ dataDir, initialize: false });
+  const data = (
+    await finished.query<{ data: object }>(
+      `SELECT data FROM entities WHERE collection='system' AND id='installation-version'`,
+    )
+  ).rows[0]!.data;
+  await finished.close();
+  assert.equal('upgrade' in data, false, 'Finishing the upgrade clears it');
+
   await marker('999.0.0');
   await assert.rejects(start(), /last used by Trestl 999\.0\.0, which is newer/);
   assert.equal(await marker('999.0.0'), '999.0.0');
@@ -386,6 +486,9 @@ test('startup backs up before an upgrade and refuses a database from a newer rel
 test('one process at a time owns a PGlite folder', async (t) => {
   const dataDir = await mkdtemp(join(tmpdir(), 'trestl-lock-'));
   t.after(() => rm(dataDir, { recursive: true, force: true }));
+  const timing = { ...lockTiming };
+  Object.assign(lockTiming, { staleAfter: 600, wait: 200 });
+  t.after(() => Object.assign(lockTiming, timing));
   const first = await openDatabase({ dataDir });
   await assert.rejects(openDatabase({ dataDir, initialize: false }), /in use by process/);
   await first.close();
@@ -394,11 +497,33 @@ test('one process at a time owns a PGlite folder', async (t) => {
   const exited = spawn(process.execPath, ['-e', '']);
   await new Promise((accept) => exited.once('close', accept));
   // Our own PID is left over from an earlier run, as in a restarted container.
-  const leftovers = [`${exited.pid} ${hostname()}`, `${process.pid} ${hostname()}`, '1 elsewhere'];
-  for (const owner of leftovers) {
-    await writeFile(join(dataDir, 'trestl.lock'), owner);
+  const lock = join(dataDir, 'trestl.lock');
+  for (const owner of [`${exited.pid} ${hostname()}`, `${process.pid} ${hostname()}`]) {
+    await writeFile(lock, owner);
     const reopened = await openDatabase({ dataDir });
     await reopened.close();
+  }
+  // Another host's process (such as another container on the volume) cannot be checked
+  // by PID: its lock holds while the owner keeps it fresh, and goes stale when it stops.
+  await writeFile(lock, '1 elsewhere');
+  const fresh = setInterval(() => utimes(lock, new Date(), new Date()).catch(() => {}), 50);
+  try {
+    await assert.rejects(openDatabase({ dataDir }), /in use by process 1 on elsewhere/);
+  } finally {
+    clearInterval(fresh);
+  }
+  const old = new Date(Date.now() - 60_000);
+  await utimes(lock, old, old);
+  await (await openDatabase({ dataDir })).close();
+  // A stale lock that cannot be removed fails instead of spinning.
+  if (process.platform !== 'win32' && process.getuid?.() !== 0) {
+    await writeFile(lock, `${exited.pid} ${hostname()}`);
+    await chmod(dataDir, 0o555);
+    try {
+      await assert.rejects(openDatabase({ dataDir }), /EACCES|permission denied/i);
+    } finally {
+      await chmod(dataDir, 0o755);
+    }
   }
 });
 
@@ -467,6 +592,33 @@ async function crossEngine(t: TestContext, direction: 'into' | 'from') {
 
 test('PGlite backups restore into PostgreSQL', (t) => crossEngine(t, 'into'));
 test('PostgreSQL backups restore into PGlite', (t) => crossEngine(t, 'from'));
+
+test('PostgreSQL backups follow the schema Trestl uses', async (t) => {
+  const source = await postgres(t);
+  const target = await postgres(t);
+  if (!source || !target) return;
+  const client = new pg.Client({ connectionString: source });
+  await client.connect();
+  await client.query('CREATE SCHEMA work');
+  await client.end();
+  const scoped = new URL(source);
+  scoped.searchParams.set('options', '-c search_path=work');
+  await (await createApp({ databaseUrl: scoped.toString(), integrations: false })).close();
+  const directory = await mkdtemp(join(tmpdir(), 'trestl-backup-schema-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const file = join(directory, 'scoped.trestl-backup');
+  const created = await backupCli(['create', '--output', file], {
+    DATABASE_URL: scoped.toString(),
+  });
+  assert.equal(created.code, 0, created.stderr);
+  const restored = await backupCli(['restore', file], { DATABASE_URL: target });
+  assert.equal(restored.code, 0, restored.stderr);
+  assert.deepEqual(
+    await contentsOf({ databaseUrl: target }),
+    await contentsOf({ databaseUrl: scoped.toString() }),
+  );
+  assert.ok(Object.keys(await contentsOf({ databaseUrl: target })).includes('entities'));
+});
 
 test('PostgreSQL upgrades without BACKUP_DIR warn and continue', async (t) => {
   const databaseUrl = await postgres(t);
