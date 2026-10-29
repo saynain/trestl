@@ -26,7 +26,9 @@ ARG TRESTL_BUILD_ID=""
 ARG TRESTL_BUILD_DATE=""
 ENV TRESTL_BUILD_COMMIT=$TRESTL_BUILD_COMMIT TRESTL_BUILD_REF=$TRESTL_BUILD_REF
 ENV TRESTL_BUILD_ID=$TRESTL_BUILD_ID TRESTL_BUILD_DATE=$TRESTL_BUILD_DATE
-ENV NODE_ENV=production HOST=0.0.0.0 PORT=4317
+# Without DATABASE_URL, mount a volume at /data. It holds the embedded database and
+# its generated key, and leaves room beside the database for upgrades and backups.
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=4317 DATA_DIR=/data/database
 WORKDIR /app
 # tsx is a production dependency; compilers and other development tools stay out.
 COPY --from=production-dependencies --chown=node:node /app/node_modules ./node_modules
@@ -35,7 +37,7 @@ COPY --chown=node:node LICENSE ./LICENSE
 COPY --from=build --chown=node:node /app/server ./server
 COPY --from=build --chown=node:node /app/shared ./shared
 COPY --from=build --chown=node:node /app/dist ./dist
-RUN mkdir -p /app/.data && chown node:node /app/.data
+RUN mkdir -p /data && chown node:node /data
 USER node
 EXPOSE 4317
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD node -e "fetch('http://127.0.0.1:4317/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
