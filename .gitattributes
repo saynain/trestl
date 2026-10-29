@@ -1,0 +1,2 @@
+# Backup fixtures carry SHA-256 digests of their exact lines; never convert line endings.
+tests/fixtures/*.jsonl text eol=lf
