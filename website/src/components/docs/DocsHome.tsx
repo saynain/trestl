@@ -18,7 +18,7 @@ export const homeToc = [
 const starters = [
   {
     title: 'Quick start',
-    text: 'Run locally and create your first account.',
+    text: 'Run Trestl with Docker in five minutes.',
     href: '/docs/quick-start/',
     Icon: Rocket,
   },

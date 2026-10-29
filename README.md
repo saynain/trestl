@@ -70,12 +70,12 @@ Imported updates retain their original health, text, date, and author name, labe
 
 ## Choose how to run it
 
-| Mode                                      | Best for                                     | Data                                     |
-| ----------------------------------------- | -------------------------------------------- | ---------------------------------------- |
-| [Desktop app](docs/desktop.md)            | A native, offline workspace on your computer | PGlite in the OS app-data folder         |
-| [Development server](docs/development.md) | Local use and development with hot reload    | PGlite in `.data/`, or PostgreSQL        |
-| [Docker Compose](deploy/README.md)        | A packaged self-hosted installation          | PostgreSQL in a persistent Docker volume |
-| [Kubernetes](deploy/kubernetes/README.md) | Running on an existing cluster               | External PostgreSQL                      |
+| Mode                                      | Best for                                     | Data                                        |
+| ----------------------------------------- | -------------------------------------------- | ------------------------------------------- |
+| [Docker](docs/quick-start.md)             | A self-hosted installation in five minutes   | PGlite in a volume, or PostgreSQL (Compose) |
+| [Desktop app](docs/desktop.md)            | A native, offline workspace on your computer | PGlite in the OS app-data folder            |
+| [Development server](docs/development.md) | Local use and development with hot reload    | PGlite in `.data/`, or PostgreSQL           |
+| [Kubernetes](deploy/kubernetes/README.md) | Running on an existing cluster               | External PostgreSQL                         |
 
 ### Local development
 
@@ -116,21 +116,19 @@ See [installation setup and authentication](docs/installation.md), [proxy deploy
 
 Existing data is preserved. Startup selects the sole existing shared workspace, or the sole workspace if only one exists. If several legacy workspaces are candidates, startup stops and asks the operator to set `INSTALLATION_ID` to the intended existing workspace ID. Selection does not merge, delete, or expose other workspaces' data. Back up first; export any other needed data using the previous version before upgrading. Do not run an older version against the migrated database.
 
-### Docker Compose
+### Docker
 
-With Docker and the Compose plugin installed:
+Try Trestl in one container with its embedded database:
 
 ```sh
-cp .env.example .env
-# Generate two independent values with: openssl rand -hex 32
-# Put them in APP_SECRET and POSTGRES_PASSWORD in .env.
-docker compose up --build -d
+docker run -d --name trestl -p 127.0.0.1:4317:4317 -v trestl-data:/data ghcr.io/saynain/trestl:v0.6.0
 ```
 
-Open **http://localhost:4317**. Compose starts the application and PostgreSQL;
-its database is separate from your development `.data/` directory. If you
-already have a `.env`, edit it instead of overwriting it. See the
-[self-hosting guide](deploy/README.md) for HTTPS, configuration, and backups.
+Open **http://localhost:4317**, create your administrator account, and create
+your first project. For a team, the [quick start](docs/quick-start.md) runs
+Trestl with PostgreSQL using Docker Compose in four commands, and covers HTTPS
+and upgrades. See the [self-hosting guide](deploy/README.md) for every setting
+and for backups.
 
 ### Kubernetes
 
@@ -148,6 +146,7 @@ configuration outside the product repository.
 
 ## Documentation
 
+- [Quick start](docs/quick-start.md)
 - [User guide](docs/user-guide.md)
 - [Transfer projects between installations](docs/project-transfer.md)
 - [Desktop app: downloads, local storage, and backups](docs/desktop.md)

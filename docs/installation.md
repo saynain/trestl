@@ -4,13 +4,15 @@ Trestl runs as one installation with one name and one user account per person. T
 
 ## First visit
 
-Start with a persistent data directory or PostgreSQL database. Visit the installation URL, give it a name, and create the setup administrator's name, email, and password (at least ten characters). Example projects are optional and off by default. Setup is transactional and cannot be repeated once initialized. Complete it before making a fresh server generally accessible.
+Start Trestl as described in the [quick start](quick-start.md). Visit the installation URL, give it a name, and create the setup administrator's name, email, and password (at least ten characters). Example projects are optional and off by default. Setup is transactional and cannot be repeated once initialized. Complete it before making a fresh server generally accessible: until then, anyone who can reach it can become its administrator.
+
+Setup continues with your first project: a name and the identifier prefix its work items use, such as `WEB-01`. You can skip this step. It ends with links to connect GitHub or Gitea and to add your team in **Administration**; both can wait.
 
 The administrator opens **Administration** from the sidebar. General changes the installation name; People manages roles and account access. Account settings and logout are in the bottom account menu. Private means hidden from other users in the application; it is not protection against a server operator who can read the database.
 
 ## Authentication
 
-Set a durable random `APP_SECRET` of at least 32 characters before storing provider or integration secrets. They are encrypted at rest with this key. Back it up privately with your deployment configuration. Use HTTPS, set `APP_ORIGIN` to the exact external origin, and enable `SECURE_COOKIES` in production.
+Set a durable random `APP_SECRET` of at least 32 characters before storing provider or integration secrets. They are encrypted at rest with this key. With the embedded database and no `APP_SECRET`, Trestl generates one beside the data directory. Back it up privately with your deployment configuration. Use HTTPS and set `APP_ORIGIN` to the exact external origin; session cookies are then Secure automatically.
 
 Select a mode in **Administration → Authentication**:
 
