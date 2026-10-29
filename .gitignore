@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .data/
+# Generated beside .data: the PGlite key, backups and upgrade folders.
+.data-*
 .env
 .env.*
 !.env.example

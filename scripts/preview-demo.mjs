@@ -17,7 +17,8 @@ const child = spawn(process.execPath, ['--import', 'tsx', 'server/index.ts'], {
     DATA_DIR: dataDir,
     DATABASE_URL: '',
     AUTH_MODE: 'local',
-    APP_SECRET: 'local-trestl-demo-preview-only',
+    // Empty: the server generates a key inside the isolated preview data directory.
+    APP_SECRET: '',
     APP_ORIGIN: origin,
     PORT: port,
     HOST: '127.0.0.1',
