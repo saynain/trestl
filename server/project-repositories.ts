@@ -26,6 +26,8 @@ import {
   type RepositoryAttachment,
 } from './repository-attachments.ts';
 import { sameWorkspace } from './workspaces.ts';
+import { readOnlyConnection, twoWayPreview } from './repository-policy.ts';
+import { mirrors, outboundFields } from '../shared/repository-sync.ts';
 
 interface SyncEngine {
   sync(attachment: RepositoryAttachment): Promise<SyncResult>;
@@ -41,6 +43,9 @@ const target = z
   })
   .strict();
 const mode = z.enum(attachmentModes);
+const publication = z
+  .object({ comments: z.boolean(), status: z.boolean(), assignee: z.boolean() })
+  .strict();
 
 /** Project owners attach repositories using credentials an administrator configured. */
 export async function registerProjectRepositories(
@@ -214,7 +219,7 @@ export async function registerProjectRepositories(
     if (nextMode !== modeOf(existing) && engine.syncing(existing.id))
       ctx.fail(409, 'Wait for the running synchronization before changing the repository mode.');
     let access = existing.access;
-    if (nextMode === 'inbound' && modeOf(existing) !== 'inbound') {
+    if (nextMode === 'inbound' && !mirrors(modeOf(existing))) {
       if (!existing.connectionId)
         ctx.fail(409, 'Attach this repository again with a saved connection.');
       const checked = await inspect(user, existing.connectionId, existing.repository);
@@ -238,6 +243,11 @@ export async function registerProjectRepositories(
         ...(access ? { access } : {}),
         updatedAt: ctx.now(),
       };
+      // Leaving two-way withdraws consent; enabling it again needs a new preview.
+      if (nextMode !== 'two_way') {
+        delete next.publish;
+        delete next.twoWay;
+      }
       if (nextMode !== modeOf(current)) {
         const blocked = await conflict(project, { ...next, mode: nextMode }, store);
         if (blocked) ctx.fail(409, blocked);
@@ -270,6 +280,78 @@ export async function registerProjectRepositories(
       await ensureDefault(store, project.id);
     });
     return reply.code(204).send();
+  });
+
+  /** Two-way consent is a person's decision: browser sessions only, never API tokens. */
+  async function previewTwoWay(request: FastifyRequest<{ Params: AttachmentParams }>) {
+    const { user, project } = await manager(request, request.params.projectId);
+    if (request.tokenScope) ctx.fail(403, 'Enable two-way sync from a signed-in browser session.');
+    const body = (request.body ?? {}) as { publish?: unknown };
+    const publish = publication.safeParse(body.publish);
+    if (!publish.success || !outboundFields.some((field) => publish.data[field]))
+      ctx.fail(400, 'Choose at least one field to publish: replies, status or assignee.');
+    const existing = await attachment(project.id, request.params.id);
+    if (!existing.connectionId)
+      ctx.fail(409, 'Attach this repository again with a saved connection.');
+    const checked = await inspect(user, existing.connectionId, existing.repository);
+    if (!checked.access.write || readOnlyConnection(checked.connection))
+      ctx.fail(400, `Two-way sync is unavailable. ${checked.access.reason}`);
+    if (!checked.access.issues)
+      ctx.fail(400, `This connection cannot read issues in ${existing.repository}.`);
+    return {
+      user,
+      project,
+      existing,
+      checked,
+      publish: publish.data,
+      preview: twoWayPreview(existing, checked.connection, checked.access, publish.data, user.id),
+    };
+  }
+
+  app.post<{ Params: AttachmentParams }>(
+    `${base}/:id/two-way/preview`,
+    async (request) => (await previewTwoWay(request)).preview,
+  );
+
+  app.post<{ Params: AttachmentParams }>(`${base}/:id/two-way`, async (request) => {
+    const confirmation = z
+      .object({ confirmation: z.string().min(1).max(200) })
+      .safeParse(request.body ?? {});
+    if (!confirmation.success) ctx.fail(400, 'Review the two-way preview and confirm it.');
+    const { user, project, existing, checked, publish, preview } = await previewTwoWay(request);
+    if (preview.confirmation !== confirmation.data.confirmation)
+      ctx.fail(409, 'What two-way sync would publish has changed. Review the preview again.');
+    if (engine.syncing(existing.id))
+      ctx.fail(409, 'Wait for the running synchronization before changing the repository mode.');
+    const saved = await ctx.db.transaction(async (db) => {
+      const store = makeStore(db);
+      await db.query(
+        "SELECT id FROM entities WHERE collection='system' AND id='mutation-lock' FOR UPDATE",
+      );
+      const current = await store.get<RepositoryAttachment>('integrations', existing.id);
+      if (!current || current.projectId !== project.id) ctx.fail(404, 'Repository not found.');
+      if (!(await canManageRepositories(ctx, user, project.id, store)))
+        ctx.fail(
+          403,
+          'Only the project owner or a workspace administrator can manage repositories.',
+        );
+      if (current.connectionId !== checked.connection.id)
+        ctx.fail(409, 'The repository connection changed. Review the preview again.');
+      const blocked = await conflict(project, { ...current, mode: 'two_way' }, store);
+      if (blocked) ctx.fail(409, blocked);
+      const now = ctx.now();
+      const next: RepositoryAttachment = {
+        ...current,
+        mode: 'two_way',
+        access: checked.access,
+        publish,
+        twoWay: { activatedAt: now, activatedBy: user.id },
+        updatedAt: now,
+      };
+      await store.put('integrations', next);
+      return next;
+    });
+    return present(user, saved);
   });
 
   app.post<{ Params: AttachmentParams }>(`${base}/:id/sync`, async (request) => {

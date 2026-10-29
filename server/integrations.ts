@@ -30,6 +30,7 @@ import {
   type RepositoryAttachment as Integration,
 } from './repository-attachments.ts';
 import { registerProjectRepositories } from './project-repositories.ts';
+import { mirrors } from '../shared/repository-sync.ts';
 
 interface ImportedIssue {
   id: string;
@@ -178,7 +179,7 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
       );
       if (!locked.rows.length)
         ctx.fail(404, 'The repository connection was removed during synchronization.');
-      if (modeOf(locked.rows[0]!.data) !== 'inbound')
+      if (!mirrors(modeOf(locked.rows[0]!.data)))
         ctx.fail(409, 'The repository mode changed during synchronization.');
       if (locked.rows[0]!.data.connectionId !== credential.id)
         ctx.fail(
@@ -336,7 +337,7 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
   }
 
   async function sync(integration: Integration): Promise<SyncResult> {
-    if (modeOf(integration) !== 'inbound')
+    if (!mirrors(modeOf(integration)))
       ctx.fail(400, 'Reference repositories are linked to the project without importing issues.');
     if (syncing)
       ctx.fail(409, 'A repository synchronization is already running. Please retry shortly.');
@@ -471,7 +472,7 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
         const project = projects.get(connection.projectId);
         return (
           project &&
-          modeOf(connection) === 'inbound' &&
+          mirrors(modeOf(connection)) &&
           sameWorkspace(user, project) &&
           identity(connection) === identity(source)
         );
@@ -558,7 +559,7 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
       try {
         for (const integration of await ctx.store.list<Integration>('integrations')) {
           if (stopped || syncing) break;
-          if (modeOf(integration) !== 'inbound' || !(await syncActor(integration))) continue;
+          if (!mirrors(modeOf(integration)) || !(await syncActor(integration))) continue;
           try {
             await sync(integration);
           } catch {

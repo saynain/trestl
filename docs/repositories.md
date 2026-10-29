@@ -6,13 +6,15 @@ live on the project's **Resources** tab; credentials stay in
 
 ## Who can do what
 
-| Action                                                  | Who                                    |
-| ------------------------------------------------------- | -------------------------------------- |
-| Add, replace, or disconnect a shared Git connection     | Workspace administrators               |
-| Attach or detach a repository, change its mode, default | The project owner and workspace admins |
-| Sync an inbound mirror now                              | The project owner and workspace admins |
-| See attached repositories, their mode and sync health   | Everyone who can access the project    |
-| See credentials                                         | Nobody; secrets never leave the server |
+| Action                                                  | Who                                                  |
+| ------------------------------------------------------- | ---------------------------------------------------- |
+| Add, replace, or disconnect a shared Git connection     | Workspace administrators                             |
+| Attach or detach a repository, change its mode, default | The project owner and workspace admins               |
+| Sync an inbound mirror now                              | The project owner and workspace admins               |
+| See attached repositories, their mode and sync health   | Everyone who can access the project                  |
+| Enable two-way after reviewing its preview              | The project owner and workspace admins, in a browser |
+| Publish an opted-in field once two-way exists           | The project owner, project members and admins        |
+| See credentials                                         | Nobody; secrets never leave the server               |
 
 Attaching uses a connection the person attaching can already use: a shared
 connection in their installation or their own legacy personal connection.
@@ -37,18 +39,78 @@ work can follow renames and transfers.
 | -------------- | ----------------------------------------------------------------------------------------------- |
 | Reference      | The repository is linked to the project. Issues are not imported.                               |
 | Inbound mirror | Issues and comments are imported into the project and kept up to date. Nothing is written back. |
-| Two-way        | Not available yet. It stays disabled until publication rules and the sync journal exist.        |
+| Two-way        | An inbound mirror where the fields the project opts into may flow back. Off by default.         |
 
-A repository can mirror issues into one project per installation, because each
-issue becomes one work item. It can be attached as Reference to any number of
-projects. Switching an inbound mirror to Reference, or detaching it, keeps the
-imported items in the project and marks them disconnected. Switching back
+Attachments are read-only unless a project owner enables two-way. A repository
+can mirror issues (inbound or two-way) into one project per installation,
+because each issue becomes one work item. It can be attached as Reference to
+any number of projects. Switching a mirror to Reference, or detaching it, keeps
+the imported items in the project and marks them disconnected. Switching back
 reconnects the same items instead of importing duplicates.
 
 When access is checked, Trestl also explains when a credential could never
-publish to the repository, for example a GitHub App installation that only
-requests read access to issues, or a token with read-only access to the
-repository. The two-way option shows that reason.
+publish to the repository, for example a GitHub App connection, which Trestl
+always uses read-only, or a token with read-only access to the repository. The
+two-way option shows that reason instead of failing later.
+
+## Field ownership
+
+The server enforces the two-way column. Everything not opted into stays in
+Trestl.
+
+| Field                                  | Reference       | Inbound mirror      | Two-way                                           |
+| -------------------------------------- | --------------- | ------------------- | ------------------------------------------------- |
+| Link to the repository                 | Shown           | Shown               | Shown                                             |
+| Title and description                  | Not imported    | Repository          | Repository                                        |
+| Open or closed state                   | Not imported    | Repository          | Repository                                        |
+| Repository comments                    | Not imported    | Repository → Trestl | Repository → Trestl                               |
+| Replies                                | Never published | Never published     | Trestl → repository when opted in                 |
+| Status                                 | Trestl          | Trestl              | Trestl; closes or reopens the issue when opted in |
+| Assignee                               | Trestl          | Trestl              | Trestl; published when opted in                   |
+| Priority, dates, labels and follow-ups | Trestl          | Trestl              | Trestl, never published                           |
+| Internal notes and private items       | Trestl          | Trestl              | Trestl, never published                           |
+
+## Enabling two-way
+
+Only the project owner or a workspace administrator can enable two-way, from a
+signed-in browser session; API tokens cannot. In the repository's settings,
+choose **Two-way**, pick what may flow back (replies, status, assignee), and
+select **Preview**. The preview shows:
+
+- the destination repository and whether it is private or public,
+- which connection publishes (a shared connection publishes on everyone's
+  behalf; a personal one publishes as its owner),
+- who can read published content,
+- every field and who owns it, with the published ones highlighted, and
+- what is never published.
+
+Two-way is enabled only after you confirm that exact preview. If the
+repository, connection, visibility or selection changes, the confirmation no
+longer matches and you review the preview again. Switching back to inbound
+mirror or Reference withdraws consent; enabling two-way again needs a new
+preview.
+
+In this version two-way records the project's choice. Trestl does not write to
+GitHub or Gitea yet. Replies and field sync will publish through the rules
+below when they arrive.
+
+## Publication rules
+
+Every outbound operation passes one server-side check, and is rejected unless
+all of these hold:
+
+1. The repository is in two-way mode and the project opted into that field
+   (replies, status or assignee).
+2. The connection can publish. GitHub App connections never can, and the last
+   access check must have found write access.
+3. The person is the project owner, a project member, or a workspace
+   administrator. Being able to see a workspace project is not enough, so a
+   shared credential never lets every workspace member publish.
+4. A personal connection publishes only for its owner.
+5. The token is not read-only.
+6. The item follows this repository, is connected, and is not private.
+7. A reply is the person's own comment, written after two-way was enabled.
+   Earlier notes, imported comments and internal notes are never published.
 
 ## Default repository
 

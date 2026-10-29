@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Project, User, WorkItem } from '../shared/types.ts';
+import { noPublication, type Publication, type SyncMode } from '../shared/repository-sync.ts';
 import type { AppContext } from './context.ts';
 import { makeStore, type Store } from './db.ts';
 import type { GitConnection } from './git-connections.ts';
@@ -8,8 +9,10 @@ import { repositoryWebUrl, type Provider, type RepositoryAccess } from './integr
 /**
  * Reference links a repository to a project. Inbound mirror imports its issues and
  * comments, which is how every repository import before attachments behaved.
+ * Two-way is only reachable through an explicit, previewed activation.
  */
-export type AttachmentMode = 'reference' | 'inbound';
+export type AttachmentMode = SyncMode;
+/** Modes that can be chosen directly; two-way needs the activation preview. */
 export const attachmentModes = ['reference', 'inbound'] as const;
 
 export interface AttachmentAccess {
@@ -45,6 +48,10 @@ export interface RepositoryAttachment {
   /** Provider repository ID, recorded when access is verified. */
   remoteId?: string | null;
   access?: AttachmentAccess;
+  /** Fields the project opted into publishing. Only honoured in two-way mode. */
+  publish?: Publication;
+  /** Who confirmed the two-way preview, and when. Earlier local content is never published. */
+  twoWay?: { activatedAt: string; activatedBy: string } | null;
 }
 
 export const modeOf = (attachment: Pick<RepositoryAttachment, 'mode'>): AttachmentMode =>
@@ -128,6 +135,9 @@ export function publicAttachment(
     lastErrorAt: attachment.lastErrorAt ?? null,
     syncing,
     access: attachment.access ?? null,
+    publish:
+      modeOf(attachment) === 'two_way' ? (attachment.publish ?? noPublication) : noPublication,
+    twoWay: modeOf(attachment) === 'two_way' ? (attachment.twoWay ?? null) : null,
   };
 }
 export type PublicAttachment = ReturnType<typeof publicAttachment>;
