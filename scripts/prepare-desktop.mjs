@@ -131,15 +131,19 @@ const result = await build({
     'import.meta.url': '__trestlBundleUrl',
   },
   banner: { js: "const __trestlBundleUrl = require('node:url').pathToFileURL(__filename).href;" },
-  external: ['@electric-sql/pglite', 'pg-native'],
+  external: ['@electric-sql/pglite', 'pglite-0.3', 'pg-native'],
   metafile: true,
 });
-// Keep PGlite's WASM/data files and relative loaders intact.
-const pglite = resolve(dirname(fileURLToPath(import.meta.resolve('@electric-sql/pglite'))), '..');
-const destination = resolve(resources, 'node_modules/@electric-sql/pglite');
-await rm(destination, { recursive: true, force: true });
-await cp(pglite, destination, { recursive: true, dereference: true });
-const packages = new Set([pglite]);
+// Keep PGlite's WASM/data files and relative loaders intact. The older engine reads data
+// folders from earlier releases so they can be moved to the current one.
+const packages = new Set();
+for (const name of ['@electric-sql/pglite', 'pglite-0.3']) {
+  const pglite = resolve(dirname(fileURLToPath(import.meta.resolve(name))), '..');
+  const destination = resolve(resources, 'node_modules', name);
+  await rm(destination, { recursive: true, force: true });
+  await cp(pglite, destination, { recursive: true, dereference: true });
+  packages.add(pglite);
+}
 for (const input of [...Object.keys(result.metafile.inputs), ...frontendModules]) {
   if (!input.includes('node_modules')) continue;
   let directory = dirname(resolve(input));

@@ -13,6 +13,18 @@ const png = Buffer.from(
 const owner = { email: 'owner@backup.test', password: 'correct-horse-battery' };
 const member = { name: 'Member', email: 'member@backup.test', password: 'member-horse-battery' };
 
+export async function withSecret<T>(secret: string | undefined, fn: () => Promise<T>) {
+  const previous = process.env.APP_SECRET;
+  if (secret === undefined) delete process.env.APP_SECRET;
+  else process.env.APP_SECRET = secret;
+  try {
+    return await fn();
+  } finally {
+    if (previous === undefined) delete process.env.APP_SECRET;
+    else process.env.APP_SECRET = previous;
+  }
+}
+
 /** A fake Gitea that records the credentials Trestl sends. */
 export async function fakeGitea() {
   const authorizations: string[] = [];

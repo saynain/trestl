@@ -21,6 +21,7 @@ import {
   populate,
   testSecret,
   verifyRestored,
+  withSecret,
   type Fixture,
 } from './backup-fixture.ts';
 
@@ -43,18 +44,6 @@ function backupCli(args: string[], env: Record<string, string>, stdin?: Buffer) 
   return new Promise<{ code: number | null; stdout: Buffer; stderr: string }>((accept) =>
     child.once('close', (code) => accept({ code, stdout: Buffer.concat(stdout), stderr })),
   );
-}
-
-async function withSecret<T>(secret: string | undefined, fn: () => Promise<T>) {
-  const previous = process.env.APP_SECRET;
-  if (secret === undefined) delete process.env.APP_SECRET;
-  else process.env.APP_SECRET = secret;
-  try {
-    return await fn();
-  } finally {
-    if (previous === undefined) delete process.env.APP_SECRET;
-    else process.env.APP_SECRET = previous;
-  }
 }
 
 /** A populated, closed PGlite installation and its backup. */

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm, readdir } from 'node:fs/promises';
+import { execFileSync, spawn } from 'node:child_process';
+import { mkdtemp, readFile, rm, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { once } from 'node:events';
@@ -17,7 +17,7 @@ const binary = process.env.TRESTL_DESKTOP_TEST_BINARY
       (await readdir('src-tauri/binaries')).find((name) => name.startsWith('trestl-node-')),
     );
 let child;
-async function start() {
+async function start(dataDir = data) {
   let errors = '';
   child = spawn(binary, [join(resources, 'server.cjs')], {
     cwd: tmpdir(),
@@ -52,7 +52,7 @@ async function start() {
     });
     child.once('error', reject);
   });
-  child.stdin.write(JSON.stringify({ dataDir: data, resources }) + '\n');
+  child.stdin.write(JSON.stringify({ dataDir, resources }) + '\n');
   const { url } = await ready;
   const origin = new URL(url).origin;
   assert.equal((await fetch(origin + '/api/v1/auth/status')).status, 403);
@@ -160,8 +160,31 @@ try {
   assert.equal((await earlyExit)[0], 0);
   clearTimeout(timer);
   assert.ok(!(await readdir(data)).includes('desktop.lock'));
+  // Data from Trestl 0.6 (PGlite 0.3) moves to the current engine with the bundled older one.
+  const legacy = await mkdtemp(join(tmpdir(), 'trestl-desktop-legacy-'));
+  try {
+    execFileSync(process.execPath, [
+      '--import',
+      'tsx',
+      'tests/release-fixture.ts',
+      join(legacy, 'database'),
+    ]);
+    await writeFile(join(legacy, 'app-secret'), 'backup-test-secret-0123456789abcdef0123456789');
+    const moved = await start(legacy);
+    await moved.api('/auth/login', {
+      email: 'owner@backup.test',
+      password: 'correct-horse-battery',
+    });
+    assert.ok(JSON.stringify(await moved.api('/items')).includes('Personal follow-up'));
+    await stop();
+    assert.equal((await readFile(join(legacy, 'database', 'PG_VERSION'), 'utf8')).trim(), '18');
+    assert.ok((await readdir(legacy)).includes('database-pglite-0.3'));
+    assert.equal((await readdir(join(legacy, 'backups'))).length, 1);
+  } finally {
+    await rm(legacy, { recursive: true, force: true });
+  }
   console.log(
-    'Packaged desktop runtime: setup, isolation, persistence, pre-upgrade backup, stable secret, and shutdown passed.',
+    'Packaged desktop runtime: setup, isolation, persistence, pre-upgrade backup, PGlite 0.3 move, stable secret, and shutdown passed.',
   );
 } finally {
   if (child?.exitCode === null) {

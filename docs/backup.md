@@ -187,6 +187,33 @@ upgrade. Later starts of the same release reuse that first backup instead of
 copying partly migrated data, and older releases refuse to start. Fix the cause
 and start the new release again, or restore the backup into a new database.
 
+### PGlite 0.5 (PostgreSQL 18)
+
+Trestl 0.6 and earlier stored PGlite data with PostgreSQL 17 (PGlite 0.3). Later
+releases use PostgreSQL 18 (PGlite 0.5), which cannot open those folders. On the
+first start after the upgrade, Trestl moves the data:
+
+1. The bundled older engine writes the pre-upgrade backup.
+2. The current engine restores it into `<data folder>-pglite-upgrade`, and every
+   table is compared with the backup.
+3. The original folder is renamed to `<data folder>-pglite-0.3`, and the new one
+   takes its place.
+
+For the desktop app these are `database-pglite-0.3/` and `backups/` in its data
+folder; for development, `.data-pglite-0.3/` and `.data-backups/`. The move needs
+free disk space of about twice the data folder and takes about half a minute
+per gigabyte. If any step
+fails, the original folder stays in place and nothing changes. If Trestl stops
+between the two renames, the next start completes the move.
+
+Keep the original folder until you have checked the upgraded installation; then
+you can delete it. To go back to Trestl 0.6, stop Trestl, move the new data
+folder aside, rename `<data folder>-pglite-0.3` back, and install 0.6. Changes made
+after the upgrade are not in the original folder. Trestl 0.6 cannot open the
+upgraded folder: it stops at startup without changing it.
+
+### PostgreSQL
+
 PostgreSQL installations without `BACKUP_DIR` log a warning and upgrade without
 a backup. Back up before you upgrade, or set `BACKUP_DIR` to a persistent volume.
 For Docker Compose, add this in a `compose.override.yaml`:

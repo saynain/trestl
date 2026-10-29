@@ -2,7 +2,14 @@ import { PGlite } from '@electric-sql/pglite';
 import pg from 'pg';
 import { migrateItemIdentifiers } from './item-identifiers.ts';
 import { checkUpgrade, type UpgradeOptions } from './upgrade.ts';
-import { existsSync } from 'node:fs';
+import {
+  engineFor,
+  folderMajor,
+  pgliteMajor,
+  recoverFolderUpgrade,
+  upgradeFolder,
+} from './pglite-upgrade.ts';
+import { serverVersion } from './version.ts';
 import { mkdir, open, readFile, stat, unlink, utimes } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -91,6 +98,33 @@ async function lockDataDir(dataDir: string): Promise<() => Promise<void>> {
   }
 }
 
+export function pgliteDatabase(engine: PGlite, release?: () => Promise<void> | undefined) {
+  const db: Database = {
+    query: async <T>(sql: string, params?: unknown[]) => ({
+      rows: (await engine.query<T>(sql, params)).rows,
+    }),
+    transaction: (fn) =>
+      engine.transaction(async (raw) => {
+        const tx: Database = {
+          query: async <T>(sql: string, params?: unknown[]) => ({
+            rows: (await raw.query<T>(sql, params)).rows,
+          }),
+          transaction: async (inner) => inner(tx),
+          close: async () => {},
+        };
+        return fn(tx);
+      }),
+    close: async () => {
+      try {
+        await engine.close();
+      } finally {
+        await release?.();
+      }
+    },
+  };
+  return db;
+}
+
 export async function openDatabase(
   options: {
     databaseUrl?: string;
@@ -143,44 +177,33 @@ export async function openDatabase(
     };
   } else {
     dataDir = options.dataDir === ':memory:' ? undefined : resolve(options.dataDir ?? '.data');
-    let unlock: (() => Promise<void>) | undefined;
-    const initialized = !!dataDir && existsSync(join(dataDir, 'PG_VERSION'));
-    if (dataDir && !initialized && options.mustExist)
+    if (dataDir) await recoverFolderUpgrade(dataDir);
+    let major = dataDir ? await folderMajor(dataDir) : null;
+    if (dataDir && !major && options.mustExist)
       throw new Error(`No Trestl database was found in ${dataDir}.`);
     if (dataDir) await mkdir(dataDir, { recursive: true });
-    if (dataDir && initialized) unlock = await lockDataDir(dataDir);
-    const engine = new PGlite(dataDir);
+    let unlock = dataDir && major ? await lockDataDir(dataDir) : undefined;
+    let engine: PGlite | undefined;
     try {
+      // Startup moves a folder from an earlier PGlite; reading it for a backup does not.
+      if (dataDir && major && major !== pgliteMajor && options.initialize !== false) {
+        await upgradeFolder(dataDir, major, options.upgrade ?? { version: serverVersion() }, (e) =>
+          pgliteDatabase(e),
+        );
+        await unlock?.();
+        major = await folderMajor(dataDir);
+        await mkdir(dataDir, { recursive: true });
+        unlock = major ? await lockDataDir(dataDir) : undefined;
+      }
+      engine = new (await engineFor(major))(dataDir);
       await engine.waitReady;
       if (dataDir && !unlock) unlock = await lockDataDir(dataDir);
     } catch (error) {
-      await engine.close().catch(() => {});
+      await engine?.close().catch(() => {});
       await unlock?.();
       throw error;
     }
-    db = {
-      query: async <T>(sql: string, params?: unknown[]) => ({
-        rows: (await engine.query<T>(sql, params)).rows,
-      }),
-      transaction: (fn) =>
-        engine.transaction(async (raw) => {
-          const tx: Database = {
-            query: async <T>(sql: string, params?: unknown[]) => ({
-              rows: (await raw.query<T>(sql, params)).rows,
-            }),
-            transaction: async (inner) => inner(tx),
-            close: async () => {},
-          };
-          return fn(tx);
-        }),
-      close: async () => {
-        try {
-          await engine.close();
-        } finally {
-          await unlock?.();
-        }
-      },
-    };
+    db = pgliteDatabase(engine, () => unlock?.());
   }
   if (options.initialize === false) return db;
   if (options.upgrade)

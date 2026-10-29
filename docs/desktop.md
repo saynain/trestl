@@ -91,8 +91,10 @@ testing signed/notarized installers and public GitHub downloads on each platform
 | Linux   | `${XDG_DATA_HOME:-~/.local/share}/app.trestl.desktop/` |
 
 The folder contains `database/`, `app-secret`, `port`, and `desktop.log`, and
-`backups/` after the first upgrade. `desktop.lock` exists while the database is
-running. The persistent `app-secret`
+`backups/` after the first upgrade. Updating from Trestl 0.6 also keeps the
+previous database as `database-pglite-0.3/`; see
+[PGlite 0.5](backup.md#pglite-05-postgresql-18). `desktop.lock` exists while the
+database is running. The persistent `app-secret`
 encrypts integration credentials: back it up together with the database. The
 webview also retains account cookies and appearance preferences in its own
 operating-system storage. The desktop database is separate from development

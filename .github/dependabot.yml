@@ -10,9 +10,8 @@ updates:
       application:
         update-types: [minor, patch]
     ignore:
-      # PGlite 0.4 changes the default database and 0.5 moves to PostgreSQL 18;
-      # existing data folders need a migration before either upgrade.
-      - dependency-name: '@electric-sql/pglite'
+      # Reads PGlite 0.3 (PostgreSQL 17) folders from Trestl 0.6 and earlier; it must stay on 0.3.
+      - dependency-name: 'pglite-0.3'
         update-types: ['version-update:semver-minor', 'version-update:semver-major']
       # Node.js type definitions follow the Node 22 runtime, not the newest Node.
       - dependency-name: '@types/node'

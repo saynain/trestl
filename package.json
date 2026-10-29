@@ -37,7 +37,7 @@
     "desktop:version": "node scripts/desktop-release.mjs verify"
   },
   "dependencies": {
-    "@electric-sql/pglite": "^0.3.14",
+    "@electric-sql/pglite": "^0.5.13",
     "@excalidraw/excalidraw": "^0.18.1",
     "@fastify/cookie": "^11.1.3",
     "@fastify/rate-limit": "^11.2.1",
@@ -51,6 +51,7 @@
     "mermaid": "11.17.2",
     "openid-client": "^6.8.8",
     "pg": "^8.23.1",
+    "pglite-0.3": "npm:@electric-sql/pglite@0.3.16",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-markdown": "^10.1.0",

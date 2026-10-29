@@ -14,7 +14,10 @@ Create the first administrator through the setup screen. There are no default
 credentials. You can choose an empty workspace or disposable example data.
 
 Data persists in `.data/` using embedded PGlite. No Docker, external database,
-or integration credentials are required. Existing local data stays in place.
+or integration credentials are required. Existing local data stays in place: a
+`.data/` folder from Trestl 0.6 moves to PGlite 0.5 on the first start, keeping
+the original as `.data-pglite-0.3/` and a backup in `.data-backups/` (see
+[PGlite 0.5](backup.md#pglite-05-postgresql-18)).
 For integration configuration, copy `.env.example` to `.env` and fill in only
 the settings you need. The development launcher loads it; shell variables
 take precedence. Never replace an existing `.env` or encryption key casually.
