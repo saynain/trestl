@@ -30,8 +30,8 @@ API token.
    connection. Trestl only sends GET requests.
 4. Choose a mode and attach.
 
-Trestl records the provider's repository ID when it checks access, so later
-work can follow renames and transfers.
+Trestl records the provider's repository ID when it checks access, so it can
+follow renames and transfers.
 
 ## Modes
 
@@ -120,10 +120,52 @@ oldest remaining repository. **Find Git issue** starts from the default.
 
 ## Sync health
 
-Each repository shows its mode, the connection it uses, and its last
-successful sync or last error. Inbound mirrors sync when they are attached,
-when someone selects **Sync**, and every `INTEGRATION_SYNC_INTERVAL_MS` if it
-is set to at least 60000 milliseconds.
+Each repository shows its mode, the connection it uses, its last successful
+sync or last error, and any pending work: queued events not yet applied,
+changes not yet published, and changes that could not be published. Mirrors
+sync when they are attached, when someone selects **Sync**, and every
+`INTEGRATION_SYNC_INTERVAL_MS` if it is set to at least 60000 milliseconds.
+Different repositories can synchronize at the same time; each repository runs
+one synchronization at a time.
+
+## Sync journal
+
+Repository sync keeps durable state in three tables next to the entity
+documents. They are part of every database backup.
+
+| Table              | Holds                                                                       |
+| ------------------ | --------------------------------------------------------------------------- |
+| `sync_inbox`       | Received events, unique per repository and delivery ID                      |
+| `sync_outbox`      | Outbound operations, written in the same transaction as the local change    |
+| `sync_field_state` | The last value both sides agreed on for each synced field, stored as a hash |
+
+**Identity.** Issues and comments are matched by the provider's own IDs, scoped
+to the workspace and server, never by repository path. Each attachment stores
+the provider repository ID; every sync looks the repository up by that ID
+first, so a rename or transfer updates the repository path, item links and
+source labels without creating a second identity. Credentials that cannot read
+repository metadata, such as Gitea tokens scoped to issues, keep working with
+the saved path. Mappings created by earlier versions are re-keyed the first
+time their issue or comment is seen.
+
+**Inbox.** An event is acknowledged only after it is stored. A repeated
+delivery ID is ignored. Payloads are treated as hints: Trestl re-reads the
+named issues, or the whole repository when an event names none. Failed events
+stay queued and are retried with backoff.
+
+**Outbox.** An outbound operation is stored in the same transaction as the
+local change, after the publication rules allow it, and checked again when it
+is sent. Operations for one item go to the provider one at a time, in order.
+If the process stops after the local commit, the operation is still pending on
+restart. If it stops during a provider call, or the provider's answer is lost,
+the operation becomes uncertain: Trestl looks for its hidden marker
+(`<!-- trestl:<operationId> -->`) before ever sending it again.
+
+**Echo suppression.** When Trestl's own published comment comes back from the
+provider, its marker links it to the local comment instead of importing a copy,
+and settles the operation if it was uncertain. Other comments, including
+automated ones from bots, import as usual. Published field values are recorded
+as the last common value, so their echoes are not treated as remote changes.
 
 ## Upgrading
 

@@ -67,6 +67,21 @@ export function repositoryIdentity(
     .digest('hex');
 }
 
+/**
+ * Stable identity for a remote issue or comment: the provider's own ID on one server,
+ * scoped to the workspace. Unlike the path-based identity, it survives renames.
+ */
+export function remoteKey(
+  workspaceId: string,
+  source: Pick<RepositoryAttachment, 'provider' | 'baseUrl'>,
+  kind: 'issue' | 'comment',
+  remoteId: string,
+): string {
+  return createHash('sha256')
+    .update(['v2', workspaceId, source.provider, source.baseUrl, kind, remoteId].join('\n'))
+    .digest('hex');
+}
+
 /** Project owners and workspace administrators manage a project's repositories. */
 export async function canManageRepositories(
   ctx: AppContext,
@@ -107,6 +122,7 @@ export function publicAttachment(
   viewer: User,
   connection: GitConnection | null,
   syncing = false,
+  pending = { inbound: 0, outbound: 0, failed: 0 },
 ) {
   return {
     id: attachment.id,
@@ -134,6 +150,8 @@ export function publicAttachment(
     lastError: attachment.lastError,
     lastErrorAt: attachment.lastErrorAt ?? null,
     syncing,
+    /** Unprocessed webhook events, unpublished operations, and operations that gave up. */
+    pending,
     access: attachment.access ?? null,
     publish:
       modeOf(attachment) === 'two_way' ? (attachment.publish ?? noPublication) : noPublication,

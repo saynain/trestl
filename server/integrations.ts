@@ -17,15 +17,26 @@ import { makeStore, type Store } from './db.ts';
 import {
   encryptToken,
   fetchRepository,
+  repositoryWebUrl,
+  resolveRepository,
   validateSource,
   ProviderRequestError,
   type SourceIssue,
 } from './integration-provider.ts';
+import { createRepositorySync } from './repository-sync.ts';
+import {
+  markedOperation,
+  migrateSyncJournal,
+  outboxOperation,
+  recordFieldState,
+  settleOutbox,
+} from './sync-journal.ts';
 import {
   canManageRepositories,
   detachAttachments,
   migrateRepositoryAttachments,
   modeOf,
+  remoteKey,
   repositoryIdentity as identity,
   type RepositoryAttachment as Integration,
 } from './repository-attachments.ts';
@@ -43,6 +54,8 @@ interface ImportedComment {
   id: string;
   itemId: string;
   activityId: string;
+  /** A reply Trestl published; the activity is locally authored and never overwritten. */
+  local?: boolean;
 }
 export interface SyncResult {
   imported: number;
@@ -130,10 +143,11 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
     .map((value) => value.trim())
     .filter(Boolean);
   const secret = () => process.env.APP_SECRET ?? '';
-  let syncing = false;
+  // One synchronization per repository at a time; different repositories may overlap.
   const active = new Set<string>();
   await migrateGitConnections(ctx);
   await migrateRepositoryAttachments(ctx);
+  await migrateSyncJournal(ctx.db);
   await registerGitConnections(app, ctx);
   await backfillIssueSources(ctx);
   /** The attachment's creator acts for synchronization and must still manage the project. */
@@ -166,6 +180,7 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
     integration: Integration,
     remote: SourceIssue[],
     credential: GitConnection,
+    resolved: { repository: string; remoteId: string | null },
   ): Promise<SyncResult> {
     return ctx.db.transaction(async (db) => {
       const store = makeStore(db);
@@ -197,17 +212,62 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
       const actor = await syncActor(integration, store);
       if (!actor) ctx.fail(403, 'The connection owner no longer has access to this project.');
       const { project, owner } = actor;
+      const workspace = workspaceOf(project);
+      const stored = locked.rows[0]!.data;
+      // A rename or transfer keeps the provider ID: update paths, never create a second identity.
+      const renamed = resolved.repository !== stored.repository;
+      if (renamed) {
+        const oldUrl = repositoryWebUrl(stored);
+        const newUrl = repositoryWebUrl({ ...stored, repository: resolved.repository });
+        for (const item of await store.list<WorkItem>('items')) {
+          if (item.source?.integrationId !== stored.id) continue;
+          const moved = (url: string | null | undefined) =>
+            url?.startsWith(`${oldUrl}/`) ? `${newUrl}${url.slice(oldUrl.length)}` : url;
+          await store.put('items', {
+            ...item,
+            externalUrl: moved(item.externalUrl) ?? null,
+            source: {
+              ...item.source,
+              repository: resolved.repository,
+              url: moved(item.source.url)!,
+            },
+          });
+        }
+      }
+      /** Stable keys first; mappings made before them are re-keyed on first sight. */
+      async function mapped<T extends { id: string }>(
+        collection: string,
+        key: string,
+        legacy: string,
+        sameWorkspace: (row: T) => Promise<boolean>,
+      ) {
+        const current = await store.get<T>(collection, key);
+        if (current) return current;
+        const old = await store.get<T>(collection, legacy);
+        if (!old || !(await sameWorkspace(old))) return null;
+        await store.remove(collection, legacy);
+        return old;
+      }
+      const inWorkspace = async (row: { itemId: string }) => {
+        const item = await store.get<WorkItem>('items', row.itemId);
+        return !!item && workspaceOf(item) === workspace;
+      };
       const result = { imported: 0, updated: 0, comments: 0 };
       for (const issue of remote) {
-        const mappingId = identity(integration, issue.id);
-        const mapping = await store.get<ImportedIssue>('importedIssues', mappingId);
+        const mappingId = remoteKey(workspace, integration, 'issue', issue.id);
+        const mapping = await mapped<ImportedIssue>(
+          'importedIssues',
+          mappingId,
+          identity(stored, issue.id),
+          inWorkspace,
+        );
         let item = mapping ? await store.get<WorkItem>('items', mapping.itemId) : null;
         if (item && !(await ctx.canItem(owner, item.id, store))) continue;
         const now = ctx.now();
         const source: NonNullable<WorkItem['source']> = {
           provider: integration.provider,
           integrationId: integration.id,
-          repository: integration.repository,
+          repository: resolved.repository,
           number: issue.number,
           url: issue.externalUrl,
           state: issue.closed ? 'closed' : 'open',
@@ -247,7 +307,7 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
             userId: integration.creatorId,
             kind: 'event',
             importedFrom: { authorName: `${integration.provider} repository import` },
-            body: `Imported from ${integration.provider === 'github' ? 'GitHub' : 'Gitea'} · ${integration.repository} #${issue.number}. Repository updates own the title and description; planning fields stay local.`,
+            body: `Imported from ${integration.provider === 'github' ? 'GitHub' : 'Gitea'} · ${resolved.repository} #${issue.number}. Repository updates own the title and description; planning fields stay local.`,
             createdAt: now,
           };
           await store.put('activity', event);
@@ -270,6 +330,13 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
         }
         item = { ...item, source };
         await store.put('items', item);
+        // The repository owns these fields, so after applying them both sides agree.
+        await recordFieldState(db, {
+          itemId: item.id,
+          attachmentId: integration.id,
+          fields: { title: issue.title, description: issue.description, state: source.state },
+          now,
+        });
         await store.put<ImportedIssue>('importedIssues', {
           id: mappingId,
           integrationId: integration.id,
@@ -279,9 +346,38 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
         });
         const received = new Set<string>();
         for (const comment of issue.comments) {
-          const commentId = identity(integration, `comment:${comment.id}`);
+          const commentId = remoteKey(workspace, integration, 'comment', comment.id);
           received.add(commentId);
-          const existing = await store.get<ImportedComment>('importedComments', commentId);
+          const existing = await mapped<ImportedComment>(
+            'importedComments',
+            commentId,
+            identity(stored, `comment:${comment.id}`),
+            inWorkspace,
+          );
+          if (existing?.local) {
+            await store.put<ImportedComment>('importedComments', { ...existing, id: commentId });
+            continue;
+          }
+          // Our own published reply coming back is linked by its operation marker, not copied.
+          const operationId = markedOperation(comment.body);
+          const echo = operationId && (await outboxOperation(db, operationId));
+          if (
+            echo &&
+            echo.attachmentId === integration.id &&
+            echo.itemId === item.id &&
+            echo.kind === 'comment.create' &&
+            typeof echo.payload.activityId === 'string'
+          ) {
+            await store.put<ImportedComment>('importedComments', {
+              id: commentId,
+              itemId: item.id,
+              activityId: echo.payload.activityId,
+              local: true,
+            });
+            if (echo.status !== 'done')
+              await settleOutbox(db, echo.id, now, { status: 'done', remoteId: comment.id });
+            continue;
+          }
           const activityId = existing?.activityId ?? ctx.id();
           const body = comment.body;
           const activity: Activity = {
@@ -318,14 +414,21 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
         ).rows.map((row) => row.data);
         for (const comment of priorComments) {
           if (!received.has(comment.id)) {
-            await store.remove('activity', comment.activityId);
+            if (!comment.local) await store.remove('activity', comment.activityId);
             await store.remove('importedComments', comment.id);
           }
         }
       }
       // Commit sync status with the items so disconnect cannot resurrect an import.
-      const updated = {
-        ...locked.rows[0]!.data,
+      const updated: Integration = {
+        ...stored,
+        ...(renamed
+          ? {
+              repository: resolved.repository,
+              name: stored.name === stored.repository ? resolved.repository : stored.name,
+            }
+          : {}),
+        remoteId: resolved.remoteId ?? stored.remoteId ?? null,
         lastSyncedAt: ctx.now(),
         lastError: null,
         lastErrorAt: null,
@@ -336,12 +439,14 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
     });
   }
 
-  async function sync(integration: Integration): Promise<SyncResult> {
+  async function sync(
+    integration: Integration,
+    options: { numbers?: number[] } = {},
+  ): Promise<SyncResult> {
     if (!mirrors(modeOf(integration)))
       ctx.fail(400, 'Reference repositories are linked to the project without importing issues.');
-    if (syncing)
-      ctx.fail(409, 'A repository synchronization is already running. Please retry shortly.');
-    syncing = true;
+    if (active.has(integration.id))
+      ctx.fail(409, 'This repository is already synchronizing. Please retry shortly.');
     active.add(integration.id);
     try {
       let credential = await ownGitConnection(
@@ -366,14 +471,27 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
         );
       }
       let issues: SourceIssue[];
+      const requestOptions = {
+        allowedOrigins: credential.shared
+          ? [...allowedOrigins, new URL(credential.baseUrl).origin]
+          : allowedOrigins,
+        ...(credential.githubApp || credential.githubInstallation
+          ? { fetch: ctx.githubFetch }
+          : {}),
+      };
+      // Follow the provider ID to the current path. Credentials that cannot read
+      // repository metadata keep working with the saved path, as before.
+      let info: Awaited<ReturnType<typeof resolveRepository>> = null;
       try {
-        issues = await fetchRepository(integration, token, {
-          allowedOrigins: credential.shared
-            ? [...allowedOrigins, new URL(credential.baseUrl).origin]
-            : allowedOrigins,
-          ...(credential.githubApp || credential.githubInstallation
-            ? { fetch: ctx.githubFetch }
-            : {}),
+        info = await resolveRepository(integration, integration.remoteId, token, requestOptions);
+      } catch {
+        info = null;
+      }
+      const repository = info?.repository ?? integration.repository;
+      try {
+        issues = await fetchRepository({ ...integration, repository }, token, {
+          ...requestOptions,
+          ...(options.numbers ? { numbers: options.numbers } : {}),
         });
       } catch (error) {
         if (
@@ -392,7 +510,10 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
       const current = await ctx.store.get<Integration>('integrations', integration.id);
       if (!current)
         throw new Error('The repository connection was removed during synchronization.');
-      return await applyIssues(current, issues, credential);
+      return await applyIssues(current, issues, credential, {
+        repository,
+        remoteId: info?.id ?? issues.find((issue) => issue.repositoryId)?.repositoryId ?? null,
+      });
     } catch (error) {
       // Only known error text is persisted; provider response bodies and token values are never logged.
       const text = error instanceof Error ? error.message : 'Repository synchronization failed.';
@@ -410,11 +531,13 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
         );
       ctx.fail(502, message);
     } finally {
-      syncing = false;
       active.delete(integration.id);
     }
   }
-  await registerProjectRepositories(app, ctx, { sync, syncing: (id) => active.has(id) });
+  const engine = { sync, syncing: (id: string) => active.has(id) };
+  const journal = createRepositorySync(app, ctx, engine);
+  app.decorate('repositorySync', journal);
+  await registerProjectRepositories(app, ctx, engine);
 
   app.get('/api/v1/integrations', async (request) => {
     const user = admin(request);
@@ -532,7 +655,7 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
   app.delete<{ Params: { id: string } }>('/api/v1/integrations/:id', async (request, reply) => {
     const user = admin(request);
     await authorized(user, request.params.id);
-    if (syncing)
+    if (active.has(request.params.id))
       ctx.fail(
         409,
         'Wait for the running repository synchronization before removing a connection.',
@@ -555,11 +678,16 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
   if (Number.isFinite(intervalMs) && intervalMs >= 60_000) {
     let stopped = false;
     const timer = setInterval(async () => {
-      if (stopped || syncing) return;
+      if (stopped) return;
       try {
         for (const integration of await ctx.store.list<Integration>('integrations')) {
-          if (stopped || syncing) break;
-          if (!mirrors(modeOf(integration)) || !(await syncActor(integration))) continue;
+          if (stopped) break;
+          if (
+            active.has(integration.id) ||
+            !mirrors(modeOf(integration)) ||
+            !(await syncActor(integration))
+          )
+            continue;
           try {
             await sync(integration);
           } catch {

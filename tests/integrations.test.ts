@@ -280,6 +280,11 @@ test('Gitea sync is idempotent, preserves local planning and reconciles source c
     assert.equal(request.method, 'GET');
     assert.equal(request.headers.authorization, 'token secret-access-token');
     const url = new URL(request.url!, 'http://local.test');
+    if (['/api/v1/repos/team/platform', '/api/v1/repositories/77'].includes(url.pathname)) {
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify({ id: 77, full_name: 'team/platform', private: true }));
+      return;
+    }
     const isComments = url.pathname.endsWith('/comments');
     assert.equal(url.searchParams.get('limit'), isComments ? null : '100');
     if (url.pathname.endsWith('/comments') && failComments) {

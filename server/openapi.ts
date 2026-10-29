@@ -1110,6 +1110,11 @@ schemas.ProjectRepository = object({
   lastError: nullableString,
   lastErrorAt: nullableString,
   syncing: { type: 'boolean' },
+  pending: object({
+    inbound: { type: 'integer', description: 'Received events not yet applied.' },
+    outbound: { type: 'integer', description: 'Changes not yet published.' },
+    failed: { type: 'integer', description: 'Changes that could not be published.' },
+  }),
   access: { oneOf: [ref('RepositoryAccess'), { type: 'null' }] },
 });
 const repositoryTarget = {

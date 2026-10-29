@@ -30,6 +30,8 @@ export interface SourceIssue {
   externalUrl: string;
   labels: string[];
   comments: SourceComment[];
+  /** The provider repository ID, when the issue payload names it (Gitea does). */
+  repositoryId?: string;
 }
 
 function key(secret: string): Buffer {
@@ -111,6 +113,8 @@ interface FetchOptions {
   timeoutMs?: number;
   maxPages?: number;
   pageSize?: number;
+  /** Re-read only these issues, as for a webhook hint, instead of listing every issue. */
+  numbers?: number[];
 }
 type JsonRecord = Record<string, unknown>;
 function record(value: unknown): JsonRecord {
@@ -182,6 +186,37 @@ export async function fetchRepository(
   const repo = source.repository.split('/').map(encodeURIComponent).join('/');
   const prefix = `${base}/repos/${repo}/issues`;
   try {
+    async function get(url: URL) {
+      const response = await request(url, {
+        method: 'GET',
+        redirect: 'error',
+        signal: controller.signal,
+        headers: {
+          Accept: 'application/json',
+          Authorization: `${source.provider === 'gitea' ? 'token' : 'Bearer'} ${token}`,
+          'User-Agent': 'Trestl/0.1',
+          ...(source.provider === 'github' ? { 'X-GitHub-Api-Version': '2022-11-28' } : {}),
+        },
+      });
+      if (!response.ok) {
+        await response.body?.cancel();
+        throw new ProviderRequestError(
+          response.status,
+          `Provider request failed (HTTP ${response.status}). Check repository access, token permissions, and rate limits.`,
+        );
+      }
+      return { response, body: await readJson(response) };
+    }
+    /** A single issue; missing, transferred or inaccessible issues are skipped, never removed. */
+    async function single(number: number): Promise<JsonRecord[]> {
+      try {
+        return [record((await get(new URL(`${prefix}/${number}`))).body)];
+      } catch (error) {
+        if (error instanceof ProviderRequestError && [404, 410].includes(error.providerStatus))
+          return [];
+        throw error;
+      }
+    }
     async function pages(path: string, issues: boolean): Promise<JsonRecord[]> {
       const all: JsonRecord[] = [];
       // Gitea's per-issue comments endpoint returns the entire collection and ignores
@@ -205,25 +240,7 @@ export async function fetchRepository(
             url.searchParams.set('direction', 'asc');
           }
         }
-        const response = await request(url, {
-          method: 'GET',
-          redirect: 'error',
-          signal: controller.signal,
-          headers: {
-            Accept: 'application/json',
-            Authorization: `${source.provider === 'gitea' ? 'token' : 'Bearer'} ${token}`,
-            'User-Agent': 'Trestl/0.1',
-            ...(source.provider === 'github' ? { 'X-GitHub-Api-Version': '2022-11-28' } : {}),
-          },
-        });
-        if (!response.ok) {
-          await response.body?.cancel();
-          throw new ProviderRequestError(
-            response.status,
-            `Provider request failed (HTTP ${response.status}). Check repository access, token permissions, and rate limits.`,
-          );
-        }
-        const body = await readJson(response);
+        const { response, body } = await get(url);
         if (!Array.isArray(body))
           throw new Error('Provider returned an unexpected response; an array was required.');
         totalBytes += Buffer.byteLength(JSON.stringify(body));
@@ -240,7 +257,9 @@ export async function fetchRepository(
         `Provider pagination exceeded ${maxPages} pages; synchronization was not applied.`,
       );
     }
-    const remoteIssues = await pages(prefix, true);
+    const remoteIssues = options.numbers
+      ? (await Promise.all([...new Set(options.numbers)].map(single))).flat()
+      : await pages(prefix, true);
     const results: SourceIssue[] = [];
     for (const issue of remoteIssues) {
       if (issue.pull_request) continue;
@@ -271,6 +290,9 @@ export async function fetchRepository(
           body: string(comment.body).slice(0, 200_000),
           createdAt: date(comment.created_at),
         })),
+        ...(record(issue.repository).id !== undefined
+          ? { repositoryId: sourceId(record(issue.repository).id) }
+          : {}),
       });
     }
     return results;
@@ -542,4 +564,33 @@ export function repositoryWebUrl(source: RepositorySource): string {
       ? 'https://github.com'
       : source.baseUrl.replace(/\/api\/(v1|v3)$/, '');
   return `${web}/${repoPath(source)}`;
+}
+
+/**
+ * Finds the repository's current path from its stable provider ID, so renames and
+ * transfers keep one identity. Returns null when the credential cannot read metadata.
+ */
+export async function resolveRepository(
+  sourceInput: RepositorySource,
+  remoteId: string | null | undefined,
+  token: string,
+  options: FetchOptions = {},
+): Promise<RepositoryInfo | null> {
+  const source = validateSource(sourceInput, options.allowedOrigins);
+  try {
+    const body = (
+      await providerGet(
+        source,
+        remoteId ? `/repositories/${encodeURIComponent(remoteId)}` : `/repos/${repoPath(source)}`,
+        token,
+        options,
+      )
+    ).body;
+    const info = repositoryInfo(body);
+    return info && (!remoteId || info.id === remoteId) ? info : null;
+  } catch (error) {
+    if (error instanceof ProviderRequestError && [403, 404].includes(error.providerStatus))
+      return null;
+    throw error;
+  }
 }

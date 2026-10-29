@@ -37,6 +37,8 @@ export interface Repository {
   lastError: string | null;
   lastErrorAt: string | null;
   syncing: boolean;
+  /** Queued webhook events, unpublished changes, and changes that could not be published. */
+  pending: { inbound: number; outbound: number; failed: number };
   access: Access | null;
   publish: Publication;
   twoWay: { activatedAt: string; activatedBy: string } | null;
@@ -77,9 +79,17 @@ const published = (publish: Publication) =>
 function health(repository: Repository) {
   if (repository.syncing) return 'Syncing…';
   if (repository.mode === 'reference') return 'Linked for reference';
+  const { inbound, outbound, failed } = repository.pending;
+  const queued = [
+    inbound + outbound ? `${inbound + outbound} pending` : '',
+    failed ? `${failed} not published` : '',
+  ]
+    .filter(Boolean)
+    .map((part) => ` · ${part}`)
+    .join('');
   if (repository.lastError)
-    return `Sync failed${repository.lastErrorAt ? ` ${when(repository.lastErrorAt)}` : ''}`;
-  return repository.lastSyncedAt ? `Synced ${when(repository.lastSyncedAt)}` : 'Not synced yet';
+    return `Sync failed${repository.lastErrorAt ? ` ${when(repository.lastErrorAt)}` : ''}${queued}`;
+  return `${repository.lastSyncedAt ? `Synced ${when(repository.lastSyncedAt)}` : 'Not synced yet'}${queued}`;
 }
 
 function ModeChoice({
@@ -764,7 +774,11 @@ export default function ProjectRepositories({ project }: { project: Project }) {
                     {modeName[repository.mode]}
                     {repository.mode === 'two_way' && ` (${published(repository.publish)})`}
                     {repository.connection && <> · {repository.connection.name}</>} ·{' '}
-                    <span className={repository.lastError ? 'danger-text' : ''}>
+                    <span
+                      className={
+                        repository.lastError || repository.pending.failed ? 'danger-text' : ''
+                      }
+                    >
                       {syncing === repository.id ? 'Syncing…' : health(repository)}
                     </span>
                   </small>
