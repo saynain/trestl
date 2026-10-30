@@ -25,6 +25,12 @@ function git(...args: string[]): string | null {
   }
 }
 
+/** The version alone, without the git lookups that build metadata needs. */
+export function serverVersion(): string {
+  if (typeof __TRESTL_BUNDLED_BUILD__ !== 'undefined') return __TRESTL_BUNDLED_BUILD__.version;
+  return JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+}
+
 /** Read the installed server package, never a version baked into the browser bundle. */
 export function serverBuild(): ServerBuild {
   if (typeof __TRESTL_BUNDLED_BUILD__ !== 'undefined') return __TRESTL_BUNDLED_BUILD__;

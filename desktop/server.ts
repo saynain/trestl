@@ -50,6 +50,7 @@ async function main() {
   let stopping = false;
   let initializing = true;
   let requestedExit: number | undefined;
+  let stopProgress = () => {};
   async function stop(code = 0) {
     if (initializing) {
       requestedExit = code;
@@ -91,7 +92,7 @@ async function main() {
     // Never inherit a developer's hosted deployment/database/authentication configuration.
     for (const key of Object.keys(process.env)) {
       if (
-        /^(DATABASE_URL|DATA_DIR|APP_|AUTH_|PROXY_|TRUST_PROXY|SECURE_COOKIES|INSTALLATION_|INTEGRATION_|GITHUB_)/.test(
+        /^(DATABASE_URL|DATA_DIR|BACKUP_DIR|APP_|AUTH_|PROXY_|TRUST_PROXY|SECURE_COOKIES|INSTALLATION_|INTEGRATION_|GITHUB_)/.test(
           key,
         )
       )
@@ -101,8 +102,12 @@ async function main() {
     process.env.SECURE_COOKIES = 'false';
     process.env.NODE_ENV = 'production';
     const token = randomBytes(32).toString('hex');
+    // One-time work before the launch line, such as a pre-upgrade backup, can take minutes.
+    const progress = setInterval(() => process.stdout.write('{"status":"starting"}\n'), 30_000);
+    stopProgress = () => clearInterval(progress);
     app = await createApp({
       dataDir: resolve(dataDir, 'database'),
+      backupDir: resolve(dataDir, 'backups'),
       proxyAuth: null,
       desktopToken: token,
     });
@@ -130,6 +135,7 @@ async function main() {
       origin = await app.listen({ host: '127.0.0.1', port: 0 });
     }
     await writeFile(portPath, new URL(origin).port, { mode: 0o600 });
+    stopProgress();
     initializing = false;
     if (requestedExit !== undefined) {
       await stop(requestedExit);
@@ -139,6 +145,7 @@ async function main() {
       JSON.stringify({ url: `${origin}/__desktop/launch?token=${token}` }) + '\n',
     );
   } catch (error) {
+    stopProgress();
     initializing = false;
     console.error(error instanceof Error ? error.message : 'Desktop service failed');
     await stop(1);

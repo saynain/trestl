@@ -118,10 +118,12 @@ have been exercised. Each resource should have a single Argo CD owner.
   on failure. The startup probe allows up to five minutes for initialization.
 - Logs go to stdout; SIGTERM closes the server and database connection.
 - Database migrations run before the HTTP listener starts. Back up before
-  upgrades. Reverting an image does not undo schema/data migrations; verify
-  compatibility or restore into an isolated database before recovery.
+  upgrades, or set `BACKUP_DIR` to a persistent volume for automatic
+  pre-upgrade backups. An older image refuses to start against a database that a
+  newer one migrated; to roll back, restore the pre-upgrade backup into a new
+  database. See [upgrades and rollback](../../docs/backup.md#upgrades).
 - Secret and environment changes require a pod restart; references alone do
   not reload running processes.
-- Follow [backup and restore](../README.md#backup-and-restore), including
+- Follow [backup and restore](../../docs/backup.md), including
   retaining `APP_SECRET`. Replicas and persistent volumes do not replace a
   tested backup.

@@ -8,7 +8,8 @@ import { activityHeatmap } from '../shared/activity-heatmap.ts';
 import { addMentionRelations } from './mentions.ts';
 import { extractMentions } from '../shared/mentions.ts';
 import { authSettings, configuredProxy, registerAuthSettings } from './auth-settings.ts';
-import { registerServerVersion } from './version.ts';
+import { registerServerVersion, serverBuild, serverVersion } from './version.ts';
+import { recordInstallationVersion } from './upgrade.ts';
 import { createInstallation, installation, migrateInstallation } from './installation.ts';
 import {
   authenticateProxy,
@@ -251,6 +252,8 @@ export async function createApp(
     proxyAuth?: ProxyAuthConfig | null;
     desktopToken?: string;
     imageStorageLimitBytes?: number;
+    /** Folder for automatic pre-upgrade backups; defaults to BACKUP_DIR. */
+    backupDir?: string;
   } = {},
 ) {
   const environmentProxy =
@@ -283,18 +286,33 @@ export async function createApp(
     bodyLimit: 1024 * 1024,
     trustProxy: process.env.TRUST_PROXY === 'true',
   });
+  const version = serverVersion();
   const db = await openDatabase({
     databaseUrl: options.databaseUrl ?? process.env.DATABASE_URL,
     dataDir: options.dataDir ?? process.env.DATA_DIR,
+    upgrade: {
+      version,
+      commit: () => serverBuild().commit,
+      backupDir: options.backupDir ?? process.env.BACKUP_DIR,
+      secret: process.env.APP_SECRET,
+      // Never stdout: the desktop shell reads its launch line there.
+      log: options.logger ? app.log : { info: console.error, warn: console.warn },
+    },
   });
-  await initializeCliLogin(db);
   const store = makeStore(db);
-  await store.put('system', { id: 'mutation-lock' });
-  await migrateWorkspaces(db);
-  await migrateInstallation(db);
-  await db.query(
-    "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS auth_method TEXT NOT NULL DEFAULT 'local'",
-  );
+  try {
+    await initializeCliLogin(db);
+    await store.put('system', { id: 'mutation-lock' });
+    await migrateWorkspaces(db);
+    await migrateInstallation(db);
+    await db.query(
+      "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS auth_method TEXT NOT NULL DEFAULT 'local'",
+    );
+  } catch (error) {
+    // Release the database (and its PGlite lock) so a corrected start can open it.
+    await db.close();
+    throw error;
+  }
   app.decorateRequest('user', null);
   app.decorateRequest('authMode', 'local');
   app.decorateRequest('sessionMethod', null);
@@ -565,6 +583,7 @@ export async function createApp(
     );
     reply.setCookie('trestl_session', secret, cookieOptions);
   };
+  let unreadableProxySecret = false;
   app.addHook('onRequest', async (request, reply) => {
     if (!request.url.startsWith('/api/')) return;
     const route = request.url.split('?')[0];
@@ -573,7 +592,17 @@ export async function createApp(
     const proxyAuth = site
       ? configured
         ? configured.mode === 'proxy'
-          ? await configuredProxy(store, configured)
+          ? // With another APP_SECRET (a lost key, or a restore without it) the proxy secret
+            // cannot be checked. Trust no proxy identity headers, but keep the setup
+            // administrator's local sign-in so the secret can be entered again.
+            await configuredProxy(store, configured).catch(() => {
+              if (!unreadableProxySecret)
+                app.log.warn(
+                  'The trusted proxy secret cannot be decrypted with this APP_SECRET. Proxy sign-in is off until an administrator enters it again in Administration → Authentication.',
+                );
+              unreadableProxySecret = true;
+              return null;
+            })
           : null
         : environmentProxy
           ? { ...environmentProxy, installationId: site.workspaceId }
@@ -2209,5 +2238,7 @@ export async function createApp(
     await registerIntegrations(app, ctx);
     await registerConfluence(app, ctx);
   }
+  // Only a fully migrated database belongs to this release; see checkUpgrade.
+  await recordInstallationVersion(db, version);
   return app;
 }

@@ -74,6 +74,8 @@ test('legacy installation migration preserves memberships, data and token scope 
     }
   } finally {
     await rm(dataDir, { recursive: true, force: true });
+    // Legacy data is backed up before its first migration.
+    await rm(`${dataDir}-backups`, { recursive: true, force: true });
   }
 });
 

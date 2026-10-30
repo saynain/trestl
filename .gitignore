@@ -12,6 +12,9 @@ test-results/
 *.tgz
 
 .backups/
+.data-backups/
+*.trestl-backup
+*.trestl-backup.partial
 .pnpm-store/
 .playwright-mcp/
 playwright-report/

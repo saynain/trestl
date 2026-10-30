@@ -76,6 +76,25 @@ async function compose(...args) {
     );
   });
 }
+/** Run a command in the image, with binary standard input and output. */
+async function composeData(args, input) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('docker', [...composeArgs, ...args], {
+      cwd: root,
+      env: environment,
+      stdio: ['pipe', 'pipe', 'inherit'],
+    });
+    const output = [];
+    child.stdout.on('data', (chunk) => output.push(chunk));
+    child.stdin.end(input);
+    child.once('error', reject);
+    child.once('exit', (code) =>
+      code === 0
+        ? resolve(Buffer.concat(output))
+        : reject(new Error(`Compose ${args[0]} exited ${code}`)),
+    );
+  });
+}
 async function ready() {
   for (let attempt = 0; attempt < 60; attempt++) {
     try {
@@ -158,8 +177,39 @@ try {
   await compose('start', 'db');
   await ready();
   await api(`/items/${item.id}`);
+  // The documented backup commands work in the shipped image, while the app runs.
+  const backupCli = ['node', '--import', 'tsx', 'server/backup-cli.ts'];
+  const backup = await composeData(['exec', '-T', 'app', ...backupCli, 'create', '--output', '-']);
+  const verified = (
+    await composeData(['exec', '-T', 'app', ...backupCli, 'verify', '-'], backup)
+  ).toString();
+  assert.match(verified, /APP_SECRET: +matches this APP_SECRET/);
+  await compose('exec', '-T', 'db', 'createdb', '-U', 'trestl', 'trestl_restored');
+  const restoredUrl = `postgresql://trestl:${environment.POSTGRES_PASSWORD}@db:5432/trestl_restored`;
+  await composeData(
+    ['run', '--rm', '-T', '-e', `DATABASE_URL=${restoredUrl}`, 'app', ...backupCli, 'restore', '-'],
+    backup,
+  );
+  const again = await composeData([
+    'run',
+    '--rm',
+    '-T',
+    '-e',
+    `DATABASE_URL=${restoredUrl}`,
+    'app',
+    ...backupCli,
+    'create',
+    '--output',
+    '-',
+  ]);
+  const contents = (summary) => summary.split('\n').filter((line) => /^ {2}\w+: \d+$/.test(line));
+  const restoredSummary = (
+    await composeData(['exec', '-T', 'app', ...backupCli, 'verify', '-'], again)
+  ).toString();
+  assert.deepEqual(contents(restoredSummary), contents(verified));
+  assert.ok(contents(verified).some((line) => /entities: [1-9]/.test(line)));
   console.log(
-    'Docker smoke passed: frontend, setup, activity heatmap, persistence, session, DB outage and recovery.',
+    'Docker smoke passed: frontend, setup, activity heatmap, persistence, session, DB outage and recovery, backup and restore.',
   );
 } catch (error) {
   await compose('logs', '--no-color', '--tail', '80', 'app').catch(() => {});

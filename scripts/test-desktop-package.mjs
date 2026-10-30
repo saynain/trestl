@@ -6,6 +6,7 @@ import { resolve, join } from 'node:path';
 import { once } from 'node:events';
 import { createServer } from 'node:net';
 import { createInterface } from 'node:readline';
+import { PGlite } from '@electric-sql/pglite';
 
 const data = await mkdtemp(join(tmpdir(), 'trestl-desktop-'));
 const resources = resolve(process.env.TRESTL_DESKTOP_TEST_RESOURCES || 'src-tauri/resources');
@@ -39,9 +40,11 @@ async function start() {
       () => reject(new Error(`Desktop startup timed out: ${errors}`)),
       60000,
     );
-    input.once('line', (line) => {
+    input.on('line', (line) => {
+      const message = JSON.parse(line);
+      if (message.status) return; // Progress during one-time startup work.
       clearTimeout(timeout);
-      accept(JSON.parse(line));
+      accept(message);
     });
     child.once('exit', (code) => {
       clearTimeout(timeout);
@@ -122,6 +125,21 @@ try {
   assert.equal(await readFile(join(data, 'app-secret'), 'utf8'), secret);
   await stop(true); // Parent pipe closure must also flush and exit on every OS.
   assert.ok(!(await readdir(data)).includes('desktop.lock'));
+  assert.ok(!(await readdir(join(data, 'database'))).includes('trestl.lock'));
+  // An update backs up the database before migrating it; the launch line stays first.
+  const database = new PGlite(join(data, 'database'));
+  await database.query(
+    `UPDATE entities SET data=jsonb_set(data,'{version}','"0.0.1"') WHERE collection='system' AND id='installation-version'`,
+  );
+  await database.close();
+  const upgraded = await start();
+  await upgraded.api('/auth/login', {
+    email: 'desktop@example.test',
+    password: 'desktop-test-password',
+  });
+  assert.ok(JSON.stringify(await upgraded.api('/items')).includes('Survives a desktop restart'));
+  await stop();
+  assert.match((await readdir(join(data, 'backups'))).join(), /-0\.0\.1-before-.+\.trestl-backup$/);
   // Never attach to an unrelated process when the remembered port is occupied.
   const occupied = createServer();
   occupied.listen(Number(new URL(second.origin).port), '127.0.0.1');
@@ -143,7 +161,7 @@ try {
   clearTimeout(timer);
   assert.ok(!(await readdir(data)).includes('desktop.lock'));
   console.log(
-    'Packaged desktop runtime: setup, isolation, persistence, stable secret, and shutdown passed.',
+    'Packaged desktop runtime: setup, isolation, persistence, pre-upgrade backup, stable secret, and shutdown passed.',
   );
 } finally {
   if (child?.exitCode === null) {

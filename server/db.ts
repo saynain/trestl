@@ -1,18 +1,109 @@
 import { PGlite } from '@electric-sql/pglite';
 import pg from 'pg';
 import { migrateItemIdentifiers } from './item-identifiers.ts';
-import { mkdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { checkUpgrade, type UpgradeOptions } from './upgrade.ts';
+import { existsSync } from 'node:fs';
+import { mkdir, open, readFile, stat, unlink, utimes } from 'node:fs/promises';
+import { hostname } from 'node:os';
+import { join, resolve } from 'node:path';
 
 export interface Database {
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<{ rows: T[] }>;
   transaction<T>(fn: (db: Database) => Promise<T>): Promise<T>;
   close(): Promise<void>;
 }
+
+const running = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+};
+/**
+ * PGlite does not stop a second process from opening the same folder, and two writers
+ * corrupt it. The lock lives inside the folder, created only once PostgreSQL has
+ * initialized it, because PGlite 0.3 refuses to initialize a folder containing files.
+ * On this host a lock is stale once its process has gone. A lock from another host (such
+ * as another container on the same volume) is kept fresh by its owner and only becomes
+ * stale when that stops.
+ */
+export const lockTiming = { heartbeat: 10_000, staleAfter: 60_000, wait: 5_000 };
+const lockedHere = new Set<string>();
+async function lockDataDir(dataDir: string): Promise<() => Promise<void>> {
+  const path = join(dataDir, 'trestl.lock');
+  const owner = `${process.pid} ${hostname()}`;
+  const started = Date.now();
+  for (;;) {
+    try {
+      const handle = await open(path, 'wx', 0o600);
+      await handle.writeFile(owner);
+      await handle.close();
+      lockedHere.add(path);
+      const heartbeat = setInterval(() => {
+        const now = new Date();
+        utimes(path, now, now).catch(() => {});
+      }, lockTiming.heartbeat);
+      heartbeat.unref();
+      return async () => {
+        clearInterval(heartbeat);
+        lockedHere.delete(path);
+        if ((await readFile(path, 'utf8').catch(() => '')) === owner)
+          await unlink(path).catch(() => {});
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    }
+    const holder = await readFile(path, 'utf8').catch(() => '');
+    const age = await stat(path).then(
+      (info) => Date.now() - info.mtimeMs,
+      () => 0,
+    );
+    const [pid, host] = holder.split(' ');
+    const foreign = !!host && host !== hostname();
+    // An empty lock is still being written, unless it stays empty. Our own PID can be left
+    // over from a crash: containers restart their server as PID 1.
+    const stale = !holder
+      ? age > lockTiming.wait
+      : foreign
+        ? age > lockTiming.staleAfter
+        : !(Number(pid) > 0) ||
+          (Number(pid) === process.pid ? !lockedHere.has(path) : !running(Number(pid)));
+    if (stale) {
+      if ((await readFile(path, 'utf8').catch(() => '')) === holder)
+        await unlink(path).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== 'ENOENT') throw error;
+        });
+      continue;
+    }
+    // A restarting development server may still be closing; wait a moment, or until a
+    // lock from another host would have gone stale.
+    if (
+      Date.now() - started >
+      (foreign ? lockTiming.staleAfter + lockTiming.wait : lockTiming.wait)
+    )
+      throw new Error(
+        `The database in ${dataDir} is in use by process ${pid}${foreign ? ` on ${host}` : ''}. ` +
+          `Stop that Trestl process first. If no Trestl process is running, delete ${path}.`,
+      );
+    await new Promise((accept) => setTimeout(accept, foreign ? 1000 : 100));
+  }
+}
+
 export async function openDatabase(
-  options: { databaseUrl?: string; dataDir?: string; initialize?: boolean } = {},
+  options: {
+    databaseUrl?: string;
+    dataDir?: string;
+    initialize?: boolean;
+    /** Fail instead of creating an empty PGlite database. */
+    mustExist?: boolean;
+    /** Checked before migrations; see checkUpgrade. */
+    upgrade?: UpgradeOptions;
+  } = {},
 ): Promise<Database> {
   let db: Database;
+  let dataDir: string | undefined;
   if (options.databaseUrl) {
     const pool = new pg.Pool({
       connectionString: options.databaseUrl,
@@ -51,10 +142,22 @@ export async function openDatabase(
       close: () => pool.end(),
     };
   } else {
-    const dataDir =
-      options.dataDir === ':memory:' ? undefined : resolve(options.dataDir ?? '.data');
+    dataDir = options.dataDir === ':memory:' ? undefined : resolve(options.dataDir ?? '.data');
+    let unlock: (() => Promise<void>) | undefined;
+    const initialized = !!dataDir && existsSync(join(dataDir, 'PG_VERSION'));
+    if (dataDir && !initialized && options.mustExist)
+      throw new Error(`No Trestl database was found in ${dataDir}.`);
     if (dataDir) await mkdir(dataDir, { recursive: true });
+    if (dataDir && initialized) unlock = await lockDataDir(dataDir);
     const engine = new PGlite(dataDir);
+    try {
+      await engine.waitReady;
+      if (dataDir && !unlock) unlock = await lockDataDir(dataDir);
+    } catch (error) {
+      await engine.close().catch(() => {});
+      await unlock?.();
+      throw error;
+    }
     db = {
       query: async <T>(sql: string, params?: unknown[]) => ({
         rows: (await engine.query<T>(sql, params)).rows,
@@ -70,10 +173,23 @@ export async function openDatabase(
           };
           return fn(tx);
         }),
-      close: () => engine.close(),
+      close: async () => {
+        try {
+          await engine.close();
+        } finally {
+          await unlock?.();
+        }
+      },
     };
   }
   if (options.initialize === false) return db;
+  if (options.upgrade)
+    try {
+      await checkUpgrade(db, options.databaseUrl ? 'postgres' : 'pglite', dataDir, options.upgrade);
+    } catch (error) {
+      await db.close();
+      throw error;
+    }
   await db.query(
     `CREATE TABLE IF NOT EXISTS entities (collection TEXT NOT NULL, id TEXT NOT NULL, data JSONB NOT NULL, PRIMARY KEY(collection,id))`,
   );

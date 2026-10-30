@@ -90,18 +90,25 @@ testing signed/notarized installers and public GitHub downloads on each platform
 | Windows | `%APPDATA%\app.trestl.desktop\`                        |
 | Linux   | `${XDG_DATA_HOME:-~/.local/share}/app.trestl.desktop/` |
 
-The folder contains `database/`, `app-secret`, `port`, and `desktop.log`.
-`desktop.lock` exists while the database is running. The persistent `app-secret`
+The folder contains `database/`, `app-secret`, `port`, and `desktop.log`, and
+`backups/` after the first upgrade. `desktop.lock` exists while the database is
+running. The persistent `app-secret`
 encrypts integration credentials: back it up together with the database. The
 webview also retains account cookies and appearance preferences in its own
 operating-system storage. The desktop database is separate from development
 `.data/` and all hosted installations.
 
-For a full backup, **quit Trestl**, wait for it to stop, and copy the entire data
+Before an update migrates your data, Trestl writes a complete backup to
+`backups/`. If that backup fails, Trestl does not start and leaves your data
+unchanged. An older version refuses to open data that a newer one has migrated.
+See [back up and restore an installation](backup.md) for the file format and for
+restoring a backup with the `restore` command.
+
+For a full copy, **quit Trestl**, wait for it to stop, and copy the entire data
 folder to a safe location. To restore, quit Trestl and replace the data folder
-with that backup. Preserve the original before replacing anything. Do not copy
-a live database or run an older version against data migrated by a newer one.
-Uninstalling the application is not a request to erase your workspace.
+with that copy. Preserve the original before replacing anything. Do not copy a
+live database. Uninstalling the application is not a request to erase your
+workspace.
 
 For selective transfer between desktop and web installations, use
 [project export/import](project-transfer.md). The administration JSON export is

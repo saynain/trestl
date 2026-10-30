@@ -11,6 +11,9 @@ playwright-report
 test-results
 *.log
 .backups
+.data-backups
+*.trestl-backup
+*.trestl-backup.partial
 .pnpm-store
 .playwright-mcp
 output

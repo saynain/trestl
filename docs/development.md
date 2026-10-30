@@ -20,8 +20,8 @@ the settings you need. The development launcher loads it; shell variables
 take precedence. Never replace an existing `.env` or encryption key casually.
 
 Set `DATABASE_URL` to use PostgreSQL instead. Switching the URL selects another
-database; it does not migrate your PGlite workspace. See [backup and
-restore](../deploy/README.md#backup-and-restore).
+database; it does not migrate your PGlite workspace. To move it, use [backup and
+restore](backup.md). Only one process can open a PGlite folder at a time.
 
 ## Ports and isolated testing
 

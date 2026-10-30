@@ -53,7 +53,8 @@ be handled with the same access restrictions as the source project.
 
 This feature does not merge with existing projects, synchronize installations,
 restore server configuration, or accept the installation-wide JSON export from
-Administration. Keep database backups for complete server recovery.
+Administration. For complete server recovery, keep
+[installation backups](backup.md).
 
 ## API
 
