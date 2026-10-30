@@ -3,8 +3,8 @@ import pg from 'pg';
 import { migrateItemIdentifiers } from './item-identifiers.ts';
 import { checkUpgrade, type UpgradeOptions } from './upgrade.ts';
 import {
-  engineFor,
   folderMajor,
+  openFolder,
   pgliteMajor,
   recoverFolderUpgrade,
   upgradeFolder,
@@ -195,8 +195,7 @@ export async function openDatabase(
         await mkdir(dataDir, { recursive: true });
         unlock = major ? await lockDataDir(dataDir) : undefined;
       }
-      engine = new (await engineFor(major))(dataDir);
-      await engine.waitReady;
+      engine = await openFolder(dataDir, major);
       if (dataDir && !unlock) unlock = await lockDataDir(dataDir);
     } catch (error) {
       await engine?.close().catch(() => {});

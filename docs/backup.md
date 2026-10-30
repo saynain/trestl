@@ -190,7 +190,8 @@ and start the new release again, or restore the backup into a new database.
 ### PGlite 0.5 (PostgreSQL 18)
 
 Trestl 0.6 and earlier stored PGlite data with PostgreSQL 17 (PGlite 0.3). Later
-releases use PostgreSQL 18 (PGlite 0.5), which cannot open those folders. On the
+releases use PostgreSQL 18 (PGlite 0.5), which cannot open those folders. Folders
+written by PGlite 0.4, also PostgreSQL 17, move the same way. On the
 first start after the upgrade, Trestl moves the data:
 
 1. The bundled older engine writes the pre-upgrade backup.

@@ -12,9 +12,10 @@ const fixtures = new URL('./fixtures/', import.meta.url);
  * A PGlite 0.3 (PostgreSQL 17) folder holding data that Trestl 0.6.0 wrote. The fixture is
  * the backup of an installation that release created, so the folder has its exact tables
  * and rows. The installation's APP_SECRET is `testSecret`; its fake Gitea is at port 4516.
+ * PGlite 0.4 wrote the same PostgreSQL 17 folders, but into the `postgres` database.
  */
-export async function releaseFolder(dataDir: string): Promise<Fixture> {
-  const legacy = pgliteDatabase(new LegacyPGlite(dataDir) as never);
+export async function releaseFolder(dataDir: string, database = 'template1'): Promise<Fixture> {
+  const legacy = pgliteDatabase(new LegacyPGlite(dataDir, { database }) as never);
   try {
     const backup = await readFile(new URL('release-0.6.0.jsonl', fixtures));
     await restoreBackup(legacy, Readable.from([gzipSync(backup)]), {

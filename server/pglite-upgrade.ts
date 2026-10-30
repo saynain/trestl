@@ -14,10 +14,11 @@ import {
 
 /** PostgreSQL major version of the bundled PGlite engine. */
 export const pgliteMajor = '18';
-export type Engine = new (dataDir?: string) => PGlite;
+export type Engine = new (dataDir?: string, options?: { database?: string }) => PGlite;
 /** Engines that still read folders written by earlier Trestl releases. */
 const legacyEngines: Record<string, { name: string; load: () => Promise<Engine> }> = {
-  // Trestl 0.6 and earlier: PGlite 0.3, PostgreSQL 17, tables in the template1 database.
+  // Trestl 0.6 and earlier used PGlite 0.3 (PostgreSQL 17), with tables in template1.
+  // PGlite 0.4 also wrote PostgreSQL 17 folders, but into the postgres database.
   '17': {
     name: 'pglite-0.3',
     load: async () => (await import('pglite-0.3')).PGlite as unknown as Engine,
@@ -33,16 +34,46 @@ export async function folderMajor(dataDir: string): Promise<string | null> {
   }
 }
 
-/** The engine that reads a folder as it is, without changing it. */
-export async function engineFor(major: string | null): Promise<Engine> {
-  if (!major || major === pgliteMajor) return PGlite;
+/**
+ * Open a folder as it is, without changing it. A folder from an earlier PGlite opens with
+ * that engine, in whichever database holds Trestl's tables.
+ */
+export async function openFolder(dataDir: string | undefined, major: string | null) {
+  if (!dataDir || !major || major === pgliteMajor) return ready(new PGlite(dataDir));
   const legacy = legacyEngines[major];
   if (!legacy)
     throw new Error(
       `This PGlite folder uses PostgreSQL ${major}, which this Trestl release cannot open. ` +
         'Restore a backup into a new folder instead; see docs/backup.md.',
     );
-  return legacy.load();
+  const Engine = await legacy.load();
+  const found: string[] = [];
+  for (const database of ['template1', 'postgres']) {
+    const engine = await ready(new Engine(dataDir, { database }));
+    try {
+      const { rows } = await engine.query<{ found: boolean }>(
+        `SELECT to_regclass('entities') IS NOT NULL AS found`,
+      );
+      if (rows[0]?.found) found.push(database);
+    } finally {
+      await engine.close();
+    }
+  }
+  if (found.length > 1)
+    throw new Error(
+      `${dataDir} has Trestl tables in both its template1 and postgres databases, so Trestl ` +
+        'cannot tell which one is current. It was not changed; see docs/backup.md.',
+    );
+  return ready(new Engine(dataDir, { database: found[0] ?? 'template1' }));
+}
+async function ready(engine: PGlite) {
+  try {
+    await engine.waitReady;
+    return engine;
+  } catch (error) {
+    await engine.close().catch(() => {});
+    throw error;
+  }
 }
 
 const exists = (path: string) =>
@@ -74,7 +105,7 @@ export async function upgradeFolder(
   wrap: (engine: PGlite) => Database,
 ): Promise<void> {
   const log = options.log ?? { info: console.error, warn: console.warn };
-  const legacy = wrap(new (await engineFor(major))(dataDir));
+  const legacy = wrap(await openFolder(dataDir, major));
   let backup: string | null = null;
   let marker;
   try {

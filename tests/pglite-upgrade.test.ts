@@ -134,6 +134,34 @@ test('the desktop app moves its database on the first start after an update', as
   assert.match((await readdir(join(appData, 'backups'))).join(), /-before-.+\.trestl-backup$/);
 });
 
+test('a PostgreSQL 17 folder written by PGlite 0.4 moves with its data', async (t) => {
+  const directory = await scratch(t);
+  t.mock.method(console, 'error', () => {});
+  const users = async (dataDir: string) => {
+    const db = await openDatabase({ dataDir });
+    try {
+      return (
+        await db.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM entities WHERE collection='users'`,
+        )
+      ).rows[0]!.n;
+    } finally {
+      await db.close();
+    }
+  };
+  const dataDir = join(directory, 'data');
+  await releaseFolder(dataDir, 'postgres');
+  assert.equal(await users(dataDir), 2, 'Not an empty new installation');
+  assert.equal(await major(dataDir), pgliteMajor);
+  // Trestl tables in both databases are ambiguous: refuse, and change nothing.
+  const both = join(directory, 'both');
+  await releaseFolder(both);
+  await releaseFolder(both, 'postgres');
+  await assert.rejects(openDatabase({ dataDir: both }), /both its template1 and postgres/);
+  assert.equal(await major(both), '17');
+  assert.equal(existsSync(`${both}-pglite-0.3`), false);
+});
+
 test('a failed or interrupted move leaves a folder that opens', async (t) => {
   const directory = await scratch(t);
   const dataDir = join(directory, 'data');
