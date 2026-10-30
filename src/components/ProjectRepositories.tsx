@@ -79,17 +79,25 @@ const published = (publish: Publication) =>
 function health(repository: Repository) {
   if (repository.syncing) return 'Syncing…';
   if (repository.mode === 'reference') return 'Linked for reference';
-  const { inbound, outbound, failed } = repository.pending;
-  const queued = [
-    inbound + outbound ? `${inbound + outbound} pending` : '',
-    failed ? `${failed} not published` : '',
-  ]
-    .filter(Boolean)
-    .map((part) => ` · ${part}`)
-    .join('');
   if (repository.lastError)
-    return `Sync failed${repository.lastErrorAt ? ` ${when(repository.lastErrorAt)}` : ''}${queued}`;
-  return `${repository.lastSyncedAt ? `Synced ${when(repository.lastSyncedAt)}` : 'Not synced yet'}${queued}`;
+    return `Sync failed${repository.lastErrorAt ? ` ${when(repository.lastErrorAt)}` : ''}`;
+  return repository.lastSyncedAt ? `Synced ${when(repository.lastSyncedAt)}` : 'Not synced yet';
+}
+
+/** Journal work: only changes that could not be published are a problem. */
+function PendingWork({ pending }: { pending: Repository['pending'] }) {
+  const queued = pending.inbound + pending.outbound;
+  return (
+    <>
+      {queued > 0 && <> · {queued} pending</>}
+      {pending.failed > 0 && (
+        <>
+          {' '}
+          · <span className="danger-text">{pending.failed} not published</span>
+        </>
+      )}
+    </>
+  );
 }
 
 function ModeChoice({
@@ -784,13 +792,12 @@ export default function ProjectRepositories({ project }: { project: Project }) {
                     {modeName[repository.mode]}
                     {repository.mode === 'two_way' && ` (${published(repository.publish)})`}
                     {repository.connection && <> · {repository.connection.name}</>} ·{' '}
-                    <span
-                      className={
-                        repository.lastError || repository.pending.failed ? 'danger-text' : ''
-                      }
-                    >
+                    <span className={repository.lastError ? 'danger-text' : ''}>
                       {syncing === repository.id ? 'Syncing…' : health(repository)}
                     </span>
+                    {repository.mode !== 'reference' && (
+                      <PendingWork pending={repository.pending} />
+                    )}
                   </small>
                   {repository.lastError && repository.mode !== 'reference' && (
                     <p className="repository-error">{repository.lastError}</p>
