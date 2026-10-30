@@ -213,6 +213,8 @@ function AttachRepository({
       setBusy(false);
     }
   }
+  // Only a repository already attached here blocks Reference; no mode is left to choose.
+  const attachedHere = verified?.conflicts.reference ?? null;
   const blocked = verified && {
     reference: verified.conflicts.reference,
     inbound:
@@ -309,29 +311,37 @@ function AttachRepository({
                   . It only reads from the repository.
                 </span>
               </p>
-              <ModeChoice
-                value={mode}
-                onChange={setMode}
-                access={verified.access}
-                provider={verified.provider}
-                disabled={blocked ?? {}}
-              />
-              <label className="check-field">
-                <input
-                  type="checkbox"
-                  checked={isDefault}
-                  disabled={first}
-                  onChange={(e) => setIsDefault(e.target.checked)}
-                />
-                <span>
-                  Default for new items
-                  <small>
-                    {first
-                      ? 'The first repository is the project’s default.'
-                      : 'Replaces the current default repository.'}
-                  </small>
-                </span>
-              </label>
+              {attachedHere ? (
+                <p className="form-error" role="alert">
+                  {attachedHere}
+                </p>
+              ) : (
+                <>
+                  <ModeChoice
+                    value={mode}
+                    onChange={setMode}
+                    access={verified.access}
+                    provider={verified.provider}
+                    disabled={blocked ?? {}}
+                  />
+                  <label className="check-field">
+                    <input
+                      type="checkbox"
+                      checked={isDefault}
+                      disabled={first}
+                      onChange={(e) => setIsDefault(e.target.checked)}
+                    />
+                    <span>
+                      Default for new items
+                      <small>
+                        {first
+                          ? 'The first repository is the project’s default.'
+                          : 'Replaces the current default repository.'}
+                      </small>
+                    </span>
+                  </label>
+                </>
+              )}
             </>
           )}
           {error && (
@@ -345,7 +355,7 @@ function AttachRepository({
             </button>
             <button
               className="button primary"
-              disabled={busy || !connectionId || !!(verified && blocked?.[mode])}
+              disabled={busy || !connectionId || !!(verified && (attachedHere || blocked?.[mode]))}
             >
               {busy && <Loader2 className="spin" size={14} />}
               {verified ? 'Attach repository' : 'Check access'}
