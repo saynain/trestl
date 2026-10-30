@@ -2,6 +2,14 @@ import type { Priority, ResourceLink, WorkItem } from './types';
 
 const priorityRank: Record<Priority, number> = { urgent: 0, high: 1, medium: 2, low: 3, none: 4 };
 
+/**
+ * Who an item belongs to: its assignee, or the creator of an unassigned inbox capture
+ * (the same rule as isMyWork in the interface). Null means anyone may claim it.
+ */
+export function queueOwner(item: WorkItem) {
+  return item.assigneeId ?? (item.projectId ? null : item.creatorId);
+}
+
 /** Ready order: priority, then the earliest due date (undated last), then board position. */
 export function compareReady(a: WorkItem, b: WorkItem) {
   return (

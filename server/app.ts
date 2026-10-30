@@ -21,6 +21,7 @@ import {
   belongsToRepository,
   compareReady,
   pullRequestTitle,
+  queueOwner,
   repositoryName,
 } from '../shared/work-queue.ts';
 import { registerProjectTransfer } from './project-transfer.ts';
@@ -1886,10 +1887,11 @@ export async function createApp(
       );
     if (item.status !== 'todo')
       fail(409, `${item.identifier} has status ${item.status}; only todo items can be claimed.`);
-    if (item.assigneeId && item.assigneeId !== u.id)
+    const owner = queueOwner(item);
+    if (owner && owner !== u.id)
       fail(
         409,
-        `${item.identifier} is assigned to ${await memberName(s, u, item.assigneeId)}. Choose another ready item.`,
+        `${item.identifier} ${item.assigneeId ? 'is assigned to' : 'is an inbox capture of'} ${await memberName(s, u, owner)}. Choose another ready item.`,
       );
     const blockers = (await unfinishedBlockers(s, [item.id])).get(item.id) ?? [];
     if (!blockers.length) return;
@@ -1937,7 +1939,7 @@ export async function createApp(
     const candidates = visible.items.filter(
       (item) =>
         item.status === 'todo' &&
-        (!item.assigneeId || item.assigneeId === user.id) &&
+        [null, user.id].includes(queueOwner(item)) &&
         (!query.projectId ||
           (query.projectId === 'null' ? !item.projectId : item.projectId === query.projectId)) &&
         (!label || (item.labels ?? []).some((value) => value.toLowerCase() === label)) &&

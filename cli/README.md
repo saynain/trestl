@@ -156,7 +156,7 @@ trestl handoff K8S-12 --pr https://github.com/acme/k8s/pull/7 --comment "Rollout
 trestl release K8S-12 --comment "Needs cluster credentials I don't have."
 ```
 
-**Ready** work is accessible to you, has status `todo`, is unassigned or assigned to you, and has no unfinished blockers. A blocker is a finish-to-start dependency (`relation-add <blocker> <dependent>`) whose blocker is not `done` or `canceled`. Blockers you can't access still block. Ready work is sorted by priority (urgent first), then due date (undated last), then board position.
+**Ready** work is accessible to you, has status `todo`, is unassigned or assigned to you, and has no unfinished blockers. An unassigned inbox item belongs to whoever captured it, as it does in the browser. A blocker is a finish-to-start dependency (`relation-add <blocker> <dependent>`) whose blocker is not `done` or `canceled`. Blockers you can't access still block. Ready work is sorted by priority (urgent first), then due date (undated last), then board position.
 
 `--project` and the repository project default apply as they do for `list`. `--no-config` lists ready work in every project and `--project none` lists the inbox. `--label` matches one label, ignoring case. `--repository owner/name` matches items imported from that repository or with their own repository link to it. Items with neither match through their project's repository links. Read-only tokens can list ready work.
 

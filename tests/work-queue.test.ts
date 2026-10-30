@@ -8,6 +8,7 @@ import {
   belongsToRepository,
   compareReady,
   pullRequestTitle,
+  queueOwner,
   repositoryName,
 } from '../shared/work-queue.ts';
 import type { Activity, ResourceLink, WorkItem } from '../shared/types.ts';
@@ -132,7 +133,7 @@ test('ready lists unblocked todo work by priority then due date, never blocked o
     const hiddenBlocked = await create('Hidden blocker', { ...inProject, priority: 'urgent' });
     const secret = await create('Private plan', { visibility: 'private' }, auth.member);
     await block(secret, hiddenBlocked, auth.member);
-    await create('Inbox capture');
+    const inbox = await create('Inbox capture');
 
     const expected = [
       'Urgent soon',
@@ -157,6 +158,11 @@ test('ready lists unblocked todo work by priority then due date, never blocked o
     const memberReady = await ready('', auth.member);
     assert.ok(memberReady.includes('Theirs') && memberReady.includes('Private plan'));
     assert.ok(!memberReady.includes('Mine') && !memberReady.includes('Hidden blocker'));
+    // An unassigned inbox capture belongs to whoever captured it, as in the interface.
+    assert.ok(!memberReady.includes('Inbox capture'));
+    const captured = await api(auth.member, 'POST', `/items/${inbox.id}/claim`);
+    assert.equal(captured.statusCode, 409);
+    assert.match(captured.json().message, /is an inbox capture of Queue owner/);
 
     assert.deepEqual(await ready('?label=AGENT'), ['Urgent late', 'High']);
     assert.deepEqual(await ready('?projectId=null'), ['Inbox capture']);
@@ -221,7 +227,10 @@ test('ready lists unblocked todo work by priority then due date, never blocked o
 test('concurrent claims: exactly one succeeds, across people and within one token', async () => {
   const { app, auth, api, create, ready, detail, ownerId, memberId } = await queueApp();
   try {
-    const contested = await create('Contested', { priority: 'high' });
+    const project = (
+      await api(auth.owner, 'POST', '/projects', { key: 'RACE', name: 'Race' })
+    ).json();
+    const contested = await create('Contested', { priority: 'high', projectId: project.id });
     const claims = await Promise.all([
       api(auth.owner, 'POST', `/items/${contested.id}/claim`),
       api(auth.member, 'POST', `/items/${contested.id}/claim`),
@@ -243,7 +252,7 @@ test('concurrent claims: exactly one succeeds, across people and within one toke
     assert.equal(current.activity[0].userId, winner.assigneeId);
 
     // Several agents sharing one person's token still cannot take the same item twice.
-    const shared = await create('Shared token');
+    const shared = await create('Shared token', { projectId: project.id });
     const results = await Promise.all(
       Array.from({ length: 5 }, () => api(auth.owner, 'POST', `/items/${shared.id}/claim`)),
     );
@@ -450,6 +459,13 @@ test('ready ordering and repository matching', () => {
     'low',
     'none',
   ]);
+
+  const owned = (fields: Partial<WorkItem>) =>
+    queueOwner(item({ creatorId: 'creator', projectId: null, assigneeId: null, ...fields }));
+  assert.equal(owned({}), 'creator');
+  assert.equal(owned({ projectId: 'p' }), null);
+  assert.equal(owned({ assigneeId: 'assignee' }), 'assignee');
+  assert.equal(owned({ projectId: 'p', assigneeId: 'assignee' }), 'assignee');
 
   assert.equal(repositoryName(' Acme/API.git '), 'acme/api');
   assert.equal(repositoryName('/acme/api/'), 'acme/api');

@@ -220,7 +220,7 @@ function commandHelp(command: string): string {
     milestones:
       'Shows done / total progress for linked items, plus the revision used by milestone-update.',
     ready:
-      'Ready work is todo, unassigned or assigned to you, and has no unfinished blockers. Sorted by priority, then due date. Repository project defaults apply; --no-config lists every project.',
+      'Ready work is todo, unassigned or assigned to you (an unassigned inbox item belongs to its creator), and has no unfinished blockers. Sorted by priority, then due date. Repository project defaults apply; --no-config lists every project.',
     claim:
       'Assigns you and sets in_progress, only if the item is still ready. Exit 5 means someone else claimed it or it is no longer ready: run ready again. Reuse --idempotency-key to retry an uncertain claim.',
     release: 'Sets todo and clears the assignee. Only the claimant can release.',

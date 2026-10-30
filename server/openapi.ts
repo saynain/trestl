@@ -802,7 +802,7 @@ operation(
   undefined,
   {
     description:
-      'Ready work is accessible, has status todo, is unassigned or assigned to the caller, and has no unfinished blockers (finish-to-start blocks relations whose blocker is not done or canceled). Blockers the caller cannot access still block. Order: priority (urgent first), due date (undated last), then board position. Read-only tokens may list ready work.',
+      'Ready work is accessible, has status todo, is unassigned or assigned to the caller (an unassigned inbox item belongs to its creator), and has no unfinished blockers (finish-to-start blocks relations whose blocker is not done or canceled). Blockers the caller cannot access still block. Order: priority (urgent first), due date (undated last), then board position. Read-only tokens may list ready work.',
     parameters: [
       {
         name: 'projectId',
