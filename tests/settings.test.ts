@@ -299,29 +299,39 @@ test('a fresh PGlite server generates its key beside the database and reuses it'
   // The container layout: one volume holding the database folder and its key. The volume
   // folder does not exist yet, so the key creates it before the database opens.
   const dir = await mkdtemp(join(tmpdir(), 'trestl-pglite-'));
-  const port = await freePort();
+  // Contact the server only once it has logged that it listens on the chosen port.
+  // Polling earlier could reach another test's mock server that took the same port.
   const run = async () => {
-    const server = start({
-      DATA_DIR: join(dir, 'volume', 'database'),
-      PORT: String(port),
-      NODE_ENV: 'production',
-    });
-    try {
-      for (let attempt = 0; ; attempt++) {
-        try {
-          if ((await fetch(`http://127.0.0.1:${port}/health`)).ok) break;
-        } catch {}
-        if (attempt > 150) throw new Error(`Server did not start:\n${server.output()}`);
-        await new Promise((resolve) => setTimeout(resolve, 100));
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const port = await freePort();
+      const server = start({
+        DATA_DIR: join(dir, 'volume', 'database'),
+        PORT: String(port),
+        NODE_ENV: 'production',
+      });
+      try {
+        const started = Date.now();
+        // The first-run hint is the last line logged after listening.
+        while (!server.output().includes('create the administrator account')) {
+          if (server.child.exitCode !== null || Date.now() - started > 20_000) break;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        if (server.child.exitCode !== null && server.output().includes('EADDRINUSE')) continue;
+        assert.match(
+          server.output(),
+          new RegExp(`Server listening at http://127\\.0\\.0\\.1:${port}`),
+        );
+        assert.equal((await fetch(`http://127.0.0.1:${port}/health`)).status, 200);
+        return {
+          key: await readFile(join(dir, 'volume', 'database-app-secret'), 'utf8'),
+          log: server.output(),
+        };
+      } finally {
+        if (server.child.exitCode === null) server.child.kill('SIGTERM');
+        await server.exited;
       }
-      return {
-        key: await readFile(join(dir, 'volume', 'database-app-secret'), 'utf8'),
-        log: server.output(),
-      };
-    } finally {
-      server.child.kill('SIGTERM');
-      await server.exited;
     }
+    throw new Error('The test server found no free port in three attempts.');
   };
   try {
     const first = await run();
