@@ -156,9 +156,20 @@ Then set `POSTGRES_DB=trestl_restored` in `.env` and run
 ### If `APP_SECRET` is lost
 
 A restore refuses to continue if `APP_SECRET` is missing or differs from the
-backup's. To recover everything except integration credentials, add
-`--allow-secret-mismatch`. Then reconnect Git, GitHub, Confluence, and
-authentication provider settings.
+backup's. To recover everything except the encrypted secrets, add
+`--allow-secret-mismatch`. The same applies to a server that starts with another
+`APP_SECRET`. People, projects, private work, images and canvases are unaffected,
+and nothing is deleted. Only what was encrypted with the old key stops working:
+
+- Git, GitHub and Confluence connections report that their credentials cannot be
+  decrypted. Reconnect them, or update their tokens.
+- Google or OpenID Connect sign-in fails until an administrator enters the client
+  secret again in **Administration → Authentication**.
+- Trusted-proxy sign-in stops, and proxy identity headers are no longer trusted.
+  The setup administrator can still sign in with their local password and enter
+  the proxy secret again in **Administration → Authentication**.
+
+With the original key back, everything works again.
 
 ### Rehearse
 

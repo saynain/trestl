@@ -583,6 +583,7 @@ export async function createApp(
     );
     reply.setCookie('trestl_session', secret, cookieOptions);
   };
+  let unreadableProxySecret = false;
   app.addHook('onRequest', async (request, reply) => {
     if (!request.url.startsWith('/api/')) return;
     const route = request.url.split('?')[0];
@@ -591,7 +592,17 @@ export async function createApp(
     const proxyAuth = site
       ? configured
         ? configured.mode === 'proxy'
-          ? await configuredProxy(store, configured)
+          ? // With another APP_SECRET (a lost key, or a restore without it) the proxy secret
+            // cannot be checked. Trust no proxy identity headers, but keep the setup
+            // administrator's local sign-in so the secret can be entered again.
+            await configuredProxy(store, configured).catch(() => {
+              if (!unreadableProxySecret)
+                app.log.warn(
+                  'The trusted proxy secret cannot be decrypted with this APP_SECRET. Proxy sign-in is off until an administrator enters it again in Administration → Authentication.',
+                );
+              unreadableProxySecret = true;
+              return null;
+            })
           : null
         : environmentProxy
           ? { ...environmentProxy, installationId: site.workspaceId }
