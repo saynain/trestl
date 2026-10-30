@@ -1,4 +1,4 @@
 interface:
   display_name: 'Trestl'
-  short_description: 'Use Trestl work across repositories and chats'
+  short_description: 'Find, claim and hand off Trestl work across repositories'
   default_prompt: 'Use $trestl to find the referenced work and use it as context for this task.'

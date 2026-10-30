@@ -36,6 +36,10 @@ Commands:
   config                        Show repository defaults and effective profile
   get <id-or-identifier>         Read an item, description, activity and links
   list                          List work items
+  ready                         List unblocked todo work you can claim
+  claim <id-or-identifier>       Assign yourself and start ready work
+  release <id-or-identifier>     Return your claimed work to the ready queue
+  handoff <id-or-identifier>     Move your claimed work to review
   search <text>                 Search titles, descriptions, identifiers
   create <title>                Create a work item
   update <id-or-identifier>      Update a work item
@@ -62,7 +66,7 @@ Options:
   --limit <1-500>               Page size (default: 100)
   --cursor <cursor>             Continue a page (requires --page)
   --expected-revision <number>  Change or delete only the revision you read
-  --idempotency-key <key>       Deduplicate item/milestone creation or comments
+  --idempotency-key <key>       Deduplicate creates, comments, claims and handoffs
   --version                     Show CLI version
   --profile <name>              Saved account profile (default: default)
   --url <server-url>            Server URL; saved during login
@@ -88,6 +92,10 @@ Options:
   --color <#hex>                Project color
   --completed                   Mark a new milestone completed
   --labels <comma-separated>    Item labels (use "none" to clear)
+  --label <name>                Only ready work with this label
+  --repository <owner/name>     Only ready work for this repository
+  --pr <url>                    Link a pull request when handing off
+  --comment <text>              Explain a release or handoff
   --due <YYYY-MM-DD|none>       Delivery deadline
   --follow-up <YYYY-MM-DD|none> Review date
   --assignee <user-id|none>      Assign or clear owner
@@ -102,6 +110,9 @@ Environment:
   TRESTL_CONFIG_DIR Override credential directory
 
 Examples:
+  trestl ready --project K8S --json
+  trestl claim K8S-12 --idempotency-key claim-k8s-12 --json
+  trestl handoff K8S-12 --pr https://github.com/acme/k8s/pull/7 --comment "Ready for review."
   trestl create "Plan cluster upgrade" --project K8S --priority high
   trestl update K8S-12 --status in_progress --due 2026-10-15
   trestl list --project K8S --json
@@ -146,6 +157,10 @@ const commandOptions: Record<string, string[]> = {
   config: [],
   list: filters,
   search: filters,
+  ready: ['project', 'label', 'repository', 'limit', 'cursor', 'page'],
+  claim: ['expected-revision', 'idempotency-key'],
+  release: ['comment', 'expected-revision', 'idempotency-key'],
+  handoff: ['pr', 'comment', 'expected-revision', 'idempotency-key'],
   get: [],
   delete: ['expected-revision'],
   projects: [],
@@ -204,6 +219,13 @@ function commandHelp(command: string): string {
       'Requires an explicit --project. Reuse --idempotency-key with identical input after an uncertain response.',
     milestones:
       'Shows done / total progress for linked items, plus the revision used by milestone-update.',
+    ready:
+      'Ready work is todo, unassigned or assigned to you (an unassigned inbox item belongs to its creator), and has no unfinished blockers. Sorted by priority, then due date. Repository project defaults apply; --no-config lists every project.',
+    claim:
+      'Assigns you and sets in_progress, only if the item is still ready. Exit 5 means someone else claimed it or it is no longer ready: run ready again. Reuse --idempotency-key to retry an uncertain claim.',
+    release: 'Sets todo and clears the assignee. Only the claimant can release.',
+    handoff:
+      'Sets in_review and keeps you as assignee. --pr adds a repository link; --comment adds a comment. Only the claimant can hand off.',
   };
   return `${usageLines.join('\n')}\n\nOptions:\n${flagLines.join('\n')}\n${notes[command] ? `\n${notes[command]}\n` : ''}`;
 }
@@ -279,6 +301,9 @@ async function main() {
         ? 2
         : [
               'get',
+              'claim',
+              'release',
+              'handoff',
               'delete',
               'search',
               'create',
@@ -429,7 +454,7 @@ async function main() {
       });
     } catch {
       throw new CliError(
-        'Request failed or timed out. Check server connectivity. For create/comment retries, reuse the same idempotency key.',
+        'Request failed or timed out. Check server connectivity. To retry create, comment, claim, release or handoff, reuse the same idempotency key.',
         'network_error',
         6,
       );
@@ -722,6 +747,30 @@ async function main() {
       const items = await all<WorkItem>('items', query);
       output(items, rows(items));
     }
+    return;
+  }
+  if (command === 'ready') {
+    const query = new URLSearchParams();
+    const project = values.project ?? repository.config.project;
+    if (project) query.set('projectId', project === 'none' ? 'null' : String(project));
+    for (const key of ['label', 'repository', 'limit', 'cursor'])
+      if (values[key] !== undefined) query.set(key, String(values[key]));
+    if (values.page) output(await page<WorkItem>('items/ready', query));
+    else {
+      const items = await all<WorkItem>('items/ready', query);
+      output(items, rows(items));
+    }
+    return;
+  }
+  if (command === 'claim' || command === 'release' || command === 'handoff') {
+    if (values.comment !== undefined && !String(values.comment).trim())
+      throw usage('Comment cannot be empty.');
+    const result = await api<{ item: WorkItem }>(`${itemPath()}/${command}`, 'POST', {
+      ...(expectedRevision !== undefined ? { expectedRevision } : {}),
+      ...(values.comment !== undefined ? { comment: values.comment } : {}),
+      ...(values.pr !== undefined ? { pullRequestUrl: values.pr } : {}),
+    });
+    output(result, rows([result.item]));
     return;
   }
   if (command === 'comment') {

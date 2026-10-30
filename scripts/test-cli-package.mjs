@@ -30,8 +30,9 @@ const run = (executable, args, { cwd = outside, input, expected = 0, onStderr } 
     child.on('error', reject);
     child.on('close', (code) => {
       try {
-        assert.equal(code, expected, `${executable} ${args.join(' ')}\n${stderr}`);
-        resolve({ stdout, stderr });
+        if (expected !== null)
+          assert.equal(code, expected, `${executable} ${args.join(' ')}\n${stderr}`);
+        resolve({ stdout, stderr, code });
       } catch (error) {
         reject(error);
       }
@@ -102,12 +103,24 @@ try {
       payload: { name: 'Package test', scope: 'write' },
     })
   ).json().token;
-  await app.inject({
-    method: 'POST',
-    url: '/api/v1/projects',
-    headers: { cookie },
-    payload: { name: 'Package project', key: 'PKG' },
-  });
+  const project = (
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/projects',
+      headers: { cookie },
+      payload: { name: 'Package project', key: 'PKG' },
+    })
+  ).json();
+  const queued = async (title) =>
+    (
+      await app.inject({
+        method: 'POST',
+        url: '/api/v1/items',
+        headers: { cookie },
+        payload: { title, projectId: project.id, priority: 'high' },
+      })
+    ).json();
+  const contested = await queued('Packaged queue work');
   await cli(['login', '--profile', 'test', '--url', url, '--token-stdin', '--json'], {
     input: token,
   });
@@ -135,6 +148,12 @@ try {
     true,
   );
   await cli(['create', 'Denied', '--profile', 'browser'], { expected: 3 });
+  const readable = JSON.parse((await cli(['ready', '--profile', 'browser', '--json'])).stdout);
+  assert.deepEqual(
+    readable.map((item) => item.identifier),
+    [contested.identifier],
+  );
+  await cli(['claim', contested.identifier, '--profile', 'browser'], { expected: 3 });
   await cli(['logout', '--profile', 'browser']);
   await cli(['init', '--profile', 'test', '--project', 'PKG']);
   const discovery = JSON.parse((await cli(['profiles', 'list', '--json'])).stdout);
@@ -173,6 +192,41 @@ try {
     JSON.parse((await cli(noteArgs)).stdout).id,
     JSON.parse((await cli(noteArgs)).stdout).id,
   );
+  // Two agents sharing this login race for the same ready item: exactly one wins.
+  assert.ok(
+    JSON.parse((await cli(['ready', '--json'])).stdout).some(
+      (item) => item.identifier === contested.identifier,
+    ),
+  );
+  const claims = await Promise.all(
+    [1, 2].map(() => cli(['claim', contested.identifier, '--json'], { expected: null })),
+  );
+  assert.deepEqual(claims.map((claim) => claim.code).sort(), [0, 5]);
+  const won = JSON.parse(claims.find((claim) => claim.code === 0).stdout);
+  assert.equal(won.item.status, 'in_progress');
+  assert.equal(JSON.parse(claims.find((claim) => claim.code === 5).stderr).error.code, 'conflict');
+  const handoffArgs = [
+    'handoff',
+    contested.identifier,
+    '--pr',
+    'https://github.com/acme/package/pull/1',
+    '--comment',
+    'Ready for review.',
+    '--idempotency-key',
+    'package-handoff',
+    '--json',
+  ];
+  const handed = JSON.parse((await cli(handoffArgs)).stdout);
+  assert.equal(handed.item.status, 'in_review');
+  assert.equal(handed.link.title, 'Pull request acme/package#1');
+  assert.deepEqual(JSON.parse((await cli(handoffArgs)).stdout), handed);
+  const released = await queued('Packaged release');
+  await cli(['claim', released.identifier]);
+  await cli(['release', released.identifier, '--comment', 'Giving this back.']);
+  assert.deepEqual(
+    JSON.parse((await cli(['ready', '--json'])).stdout).map((item) => item.identifier),
+    [released.identifier],
+  );
   const drawingPath = join(outside, 'package-diagram.excalidraw');
   const document = {
     type: 'excalidraw',
@@ -209,7 +263,7 @@ try {
   await cli(['logout']);
   await cli(['list', '--json'], { expected: 3 });
   console.log(
-    'Standalone package passed: offline installation, unrelated working directory, saved login, repository defaults, real API reads, guarded updates, retry-safe creates/comments, canvas import/list/create/show/delete and logout.',
+    'Standalone package passed: offline installation, unrelated working directory, saved login, repository defaults, real API reads, guarded updates, retry-safe creates/comments, ready/claim/handoff/release with concurrent claims, canvas import/list/create/show/delete and logout.',
   );
 } finally {
   if (app) await app.close();
