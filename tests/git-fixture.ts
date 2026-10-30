@@ -36,14 +36,16 @@ export async function giteaServer() {
     repository: { id: repository.id },
   });
   const server = createServer((request, response) => {
-    assert.equal(request.method, 'GET', 'Repository sync never writes to the provider');
-    assert.equal(request.headers.authorization, 'token service-account-token');
     const url = new URL(request.url!, 'http://gitea.test');
-    requests.push(url.pathname);
     const json = (status: number, body: unknown) => {
       response.writeHead(status, { 'Content-Type': 'application/json' });
       response.end(JSON.stringify(body));
     };
+    // Local tools probe new ports; only API calls come from Trestl.
+    if (!url.pathname.startsWith('/api/v1/')) return json(404, {});
+    assert.equal(request.method, 'GET', 'Repository sync never writes to the provider');
+    assert.equal(request.headers.authorization, 'token service-account-token');
+    requests.push(url.pathname);
     if (url.pathname === '/api/v1/repos/search')
       return json(200, { ok: true, data: Object.values(repositories) });
     const byId = url.pathname.match(/^\/api\/v1\/repositories\/(\d+)$/);
