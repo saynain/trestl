@@ -2093,6 +2093,12 @@ textarea::placeholder {
   background: #edf5ef;
   color: #6d977b;
 }
+[data-theme='dark'] .resource-icon.confluence {
+  background: color-mix(in srgb, #7396d5 16%, var(--surface));
+}
+[data-theme='dark'] .resource-icon.repository {
+  background: color-mix(in srgb, #6d977b 16%, var(--surface));
+}
 .resource-row > a:not(.icon-button) {
   flex: 1;
   min-width: 0;
