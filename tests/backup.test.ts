@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import pg from 'pg';
 import { createApp } from '../server/app.ts';
+import { cookieOf } from './installation-fixture.ts';
 import { readBackup, restoreBackup, writeBackup } from '../server/backup.ts';
 import { lockTiming, openDatabase } from '../server/db.ts';
 import { checkUpgrade } from '../server/upgrade.ts';
@@ -223,6 +224,80 @@ test('restore refuses unsafe targets and keeps them unchanged', async (t) => {
   assert.equal(empty.code, 1);
   assert.match(empty.stderr, /it has no entities table/);
   assert.equal(existsSync(join(directory, 'empty.trestl-backup')), false);
+});
+
+test('with another APP_SECRET, proxy sign-in stops but local sign-in keeps working', async (t) => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'trestl-backup-proxy-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true }));
+  const origin = 'http://127.0.0.1:4515';
+  const previousOrigin = process.env.APP_ORIGIN;
+  process.env.APP_ORIGIN = origin;
+  t.after(() => {
+    if (previousOrigin === undefined) delete process.env.APP_ORIGIN;
+    else process.env.APP_ORIGIN = previousOrigin;
+  });
+  const owner = { email: 'owner@proxy.test', password: 'correct-horse-battery' };
+  await withSecret(testSecret, async () => {
+    const app = await createApp({ dataDir, integrations: false, proxyAuth: null });
+    try {
+      const setup = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/setup',
+        payload: { name: 'Owner', ...owner },
+      });
+      const configured = await app.inject({
+        method: 'PUT',
+        url: '/api/v1/admin/authentication',
+        headers: { cookie: cookieOf(setup), origin },
+        payload: {
+          mode: 'proxy',
+          origin,
+          proxySecret: 'p'.repeat(40),
+          allowedDomains: ['proxy.test'],
+        },
+      });
+      assert.equal(configured.statusCode, 200, configured.body);
+    } finally {
+      await app.close();
+    }
+  });
+  // A lost key, or a restore with --allow-secret-mismatch.
+  await withSecret('a-different-secret-that-is-long-enough-123', async () => {
+    const app = await createApp({ dataDir, integrations: false, proxyAuth: null });
+    try {
+      assert.equal((await app.inject('/api/v1/auth/status')).statusCode, 200);
+      const forged = await app.inject({
+        url: '/api/v1/bootstrap',
+        headers: {
+          'x-trestl-proxy-secret': 'p'.repeat(40),
+          'x-auth-request-user': 'someone',
+          'x-auth-request-email': owner.email,
+        },
+      });
+      assert.equal(forged.statusCode, 401, 'Proxy identity headers are not trusted');
+      const login = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/login',
+        headers: { origin },
+        payload: owner,
+      });
+      assert.equal(login.statusCode, 200, login.body);
+      const reentered = await app.inject({
+        method: 'PUT',
+        url: '/api/v1/admin/authentication',
+        headers: { cookie: cookieOf(login), origin },
+        payload: {
+          mode: 'proxy',
+          origin,
+          proxySecret: 'q'.repeat(40),
+          allowedDomains: ['proxy.test'],
+        },
+      });
+      assert.equal(reentered.statusCode, 200, reentered.body);
+    } finally {
+      await app.close();
+    }
+  });
 });
 
 test('backups detect damage, truncation and incompatible releases', async () => {
