@@ -15,8 +15,8 @@ importers:
   .:
     dependencies:
       '@electric-sql/pglite':
-        specifier: ^0.3.14
-        version: 0.3.16
+        specifier: ^0.5.13
+        version: 0.5.13
       '@excalidraw/excalidraw':
         specifier: ^0.18.1
         version: 0.18.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -56,6 +56,9 @@ importers:
       pg:
         specifier: ^8.23.1
         version: 8.23.1
+      pglite-0.3:
+        specifier: npm:@electric-sql/pglite@0.3.16
+        version: '@electric-sql/pglite@0.3.16'
       react:
         specifier: ^19.3.1
         version: 19.3.1
@@ -230,6 +233,9 @@ packages:
 
   '@electric-sql/pglite@0.3.16':
     resolution: {integrity: sha512-mZkZfOd9OqTMHsK+1cje8OSzfAQcpD7JmILXTl5ahdempjUDdmg4euf1biDex5/LfQIDJ3gvCu6qDgdnDxfJmA==}
+
+  '@electric-sql/pglite@0.5.13':
+    resolution: {integrity: sha512-4rZuxK1k07w6sSpJzjMri0B9+HuXuC7V9pxVB51pR0T9KPqXg6TD0mdaEwBA9rkcL4jdht4tGDf/wYzAiGhT7g==}
 
   '@esbuild/aix-ppc64@0.25.12':
     resolution: {integrity: sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA==}
@@ -3056,6 +3062,8 @@ snapshots:
   '@chevrotain/utils@11.0.3': {}
 
   '@electric-sql/pglite@0.3.16': {}
+
+  '@electric-sql/pglite@0.5.13': {}
 
   '@esbuild/aix-ppc64@0.25.12':
     optional: true

@@ -116,6 +116,8 @@ const end = z.object({ tables: z.number().int(), rows: z.number().int(), sha256:
 export interface BackupSummary {
   header: BackupHeader;
   tables: Record<string, number>;
+  /** SHA-256 of each table's rows, comparable between engines. */
+  digests: Record<string, string>;
   rows: number;
 }
 
@@ -250,25 +252,28 @@ async function readSchema(
   return result;
 }
 
-/** Stream a consistent snapshot of every table in Trestl's schema. */
+/**
+ * Stream a consistent snapshot of every table in Trestl's schema. Without an output, only
+ * the summary and digests are computed.
+ */
 export async function writeBackup(
   db: Database,
-  output: Writable,
+  output: Writable | null,
   info: {
     engine: Engine;
     createdBy: { version: string; commit: string | null };
     secret?: string;
   },
 ): Promise<BackupSummary> {
-  const gzip = createGzip();
-  const written = pipelineAsync(gzip, output);
+  const gzip = output && createGzip();
+  const written = gzip ? pipelineAsync(gzip, output!) : Promise.resolve();
   // Surface a failed destination (for example a full disk) instead of waiting forever.
   written.catch(() => {});
   const overall = createHash('sha256');
   async function emit(value: unknown, ...hashes: ReturnType<typeof createHash>[]) {
     const line = JSON.stringify(value) + '\n';
     for (const hash of hashes) hash.update(line);
-    if (!gzip.write(line)) await Promise.race([once(gzip, 'drain'), written]);
+    if (gzip && !gzip.write(line)) await Promise.race([once(gzip, 'drain'), written]);
   }
   let summary: BackupSummary;
   try {
@@ -290,6 +295,7 @@ export async function writeBackup(
       };
       await emit(backupHeader, overall);
       const tables: Record<string, number> = {};
+      const digests: Record<string, string> = {};
       let total = 0;
       for (const { key, ...schema } of await readSchema(tx, await trestlSchema(tx))) {
         await emit({ table: schema }, overall);
@@ -334,8 +340,9 @@ export async function writeBackup(
             (k): string | null => final[`c${schema.columns.findIndex((c) => c.name === k)}`],
           );
         }
+        digests[schema.name] = digest.digest('hex');
         await emit(
-          { tableEnd: { name: schema.name, rows: count, sha256: digest.digest('hex') } },
+          { tableEnd: { name: schema.name, rows: count, sha256: digests[schema.name] } },
           overall,
         );
         tables[schema.name] = count;
@@ -344,15 +351,15 @@ export async function writeBackup(
       await emit({
         end: { tables: Object.keys(tables).length, rows: total, sha256: overall.digest('hex') },
       });
-      return { header: backupHeader, tables, rows: total };
+      return { header: backupHeader, tables, digests, rows: total };
     });
   } catch (error) {
     // Close the destination before the caller removes an incomplete file.
-    gzip.destroy();
+    gzip?.destroy();
     await written.catch(() => {});
     throw error;
   }
-  gzip.end();
+  gzip?.end();
   await written;
   return summary;
 }
@@ -453,6 +460,7 @@ export async function readBackup(
   let current: { schema: TableSchema; rows: number; digest: ReturnType<typeof createHash> } | null =
     null;
   const tables: Record<string, number> = {};
+  const digests: Record<string, string> = {};
   let total = 0;
   let finished = false;
   for await (const line of lines(input)) {
@@ -510,6 +518,7 @@ export async function readBackup(
       overall.update(line + '\n');
       await handlers.tableEnd?.(current.schema, current.rows);
       tables[current.schema.name] = current.rows;
+      digests[current.schema.name] = parsed.data.sha256;
       total += current.rows;
       current = null;
     } else if (entry.end !== undefined) {
@@ -526,7 +535,7 @@ export async function readBackup(
   }
   if (!parsedHeader) invalid('the file is empty.');
   if (!finished) invalid('the file is incomplete. It may have been truncated.');
-  return { header: parsedHeader, tables, rows: total };
+  return { header: parsedHeader, tables, digests, rows: total };
 }
 
 export type SecretStatus = 'matches' | 'differs' | 'missing' | 'not-recorded';

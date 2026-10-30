@@ -13,7 +13,7 @@ export interface UpgradeOptions {
   log?: { info(message: string): void; warn(message: string): void };
 }
 /** Stored as the `system/installation-version` entity. */
-interface Marker {
+export interface Marker {
   id: 'installation-version';
   /** The release that last finished migrating this database; null before it was recorded. */
   version: string | null;
@@ -22,13 +22,61 @@ interface Marker {
   upgrade?: { to: string; backup: string | null; startedAt: string };
 }
 
-async function readMarker(db: Database): Promise<Marker | null> {
+/** The marker, or `undefined` when the database has no Trestl tables yet. */
+export async function readMarker(db: Database): Promise<Marker | null | undefined> {
+  const exists = (
+    await db.query<{ name: string | null }>(`SELECT to_regclass('entities')::text AS name`)
+  ).rows[0]?.name;
+  if (!exists) return undefined;
   return (
     (
       await db.query<{ data: Marker }>(
         `SELECT data FROM entities WHERE collection='system' AND id='installation-version'`,
       )
     ).rows[0]?.data ?? null
+  );
+}
+
+/** Never let a release open data that a newer one has migrated, or started to. */
+export function refuseNewerData(marker: Marker | null, version: string) {
+  const recorded = marker?.version;
+  const pending = marker?.upgrade;
+  if (recorded && compareVersions(recorded, version) === 1)
+    throw new Error(
+      `This database was last used by Trestl ${recorded}, which is newer than this Trestl ${version}. ` +
+        `Running an older release could damage its data. Install Trestl ${recorded} or later, ` +
+        'or restore a backup taken before the upgrade into a new database.',
+    );
+  if (pending && compareVersions(pending.to, version) === 1)
+    throw new Error(
+      `An upgrade to Trestl ${pending.to} started on this database and did not finish. ` +
+        `Running Trestl ${version} could damage its data. Start Trestl ${pending.to} again, ` +
+        (pending.backup
+          ? `or restore ${pending.backup} into a new database.`
+          : 'or restore a backup taken before the upgrade into a new database.'),
+    );
+}
+
+export async function markUpgradeStarted(
+  db: Database,
+  marker: Marker | null,
+  version: string,
+  backup: string | null,
+) {
+  const started: Marker = {
+    ...marker,
+    id: 'installation-version',
+    version: marker?.version ?? null,
+    upgrade: {
+      to: version,
+      backup,
+      startedAt: marker?.upgrade?.startedAt ?? new Date().toISOString(),
+    },
+  };
+  await db.query(
+    `INSERT INTO entities(collection,id,data) VALUES ('system','installation-version',$1::jsonb)
+     ON CONFLICT(collection,id) DO UPDATE SET data=EXCLUDED.data`,
+    [JSON.stringify(started)],
   );
 }
 
@@ -43,67 +91,37 @@ export async function checkUpgrade(
   options: UpgradeOptions,
 ): Promise<string | null> {
   const log = options.log ?? { info: console.error, warn: console.warn };
-  const exists = (
-    await db.query<{ name: string | null }>(`SELECT to_regclass('entities')::text AS name`)
-  ).rows[0]?.name;
-  if (!exists) return null;
   const marker = await readMarker(db);
+  if (marker === undefined) return null;
   const recorded = marker?.version ?? null;
   const pending = marker?.upgrade;
   if (recorded === options.version && !pending) return null;
-  if (recorded && compareVersions(recorded, options.version) === 1)
-    throw new Error(
-      `This database was last used by Trestl ${recorded}, which is newer than this Trestl ${options.version}. ` +
-        `Running an older release could damage its data. Install Trestl ${recorded} or later, ` +
-        'or restore a backup taken before the upgrade into a new database.',
-    );
-  if (pending && compareVersions(pending.to, options.version) === 1)
-    throw new Error(
-      `An upgrade to Trestl ${pending.to} started on this database and did not finish. ` +
-        `Running Trestl ${options.version} could damage its data. Start Trestl ${pending.to} again, ` +
-        (pending.backup
-          ? `or restore ${pending.backup} into a new database.`
-          : 'or restore a backup taken before the upgrade into a new database.'),
-    );
-  const from = recorded ? `Trestl ${recorded}` : 'an earlier Trestl release';
+  refuseNewerData(marker, options.version);
   let backup: string | null;
   if (pending) {
-    // A failed start already backed up the unmigrated data; later copies would be partial.
+    // The data was backed up before the upgrade began; later copies could be partial.
     backup = pending.backup;
     log.info(
-      `Resuming the upgrade from ${from} to ${options.version}.` +
+      `Continuing the upgrade from ${recorded ? `Trestl ${recorded}` : 'an earlier Trestl release'} ` +
+        `to ${options.version}.` +
         (backup ? ` The backup from before it is ${backup}.` : ''),
     );
   } else {
-    backup = await preUpgradeBackup(db, engine, dataDir, recorded, from, options);
+    backup = await preUpgradeBackup(db, engine, dataDir, recorded, options);
   }
-  const started: Marker = {
-    ...marker,
-    id: 'installation-version',
-    version: recorded,
-    upgrade: {
-      to: options.version,
-      backup,
-      startedAt: pending?.startedAt ?? new Date().toISOString(),
-    },
-  };
-  await db.query(
-    `INSERT INTO entities(collection,id,data) VALUES ('system','installation-version',$1::jsonb)
-     ON CONFLICT(collection,id) DO UPDATE SET data=EXCLUDED.data`,
-    [JSON.stringify(started)],
-  );
+  await markUpgradeStarted(db, marker, options.version, backup);
   return backup;
 }
 
-async function preUpgradeBackup(
+export async function preUpgradeBackup(
   db: Database,
   engine: 'pglite' | 'postgres',
   dataDir: string | undefined,
   recorded: string | null,
-  from: string,
   options: UpgradeOptions,
 ): Promise<string | null> {
   const log = options.log ?? { info: console.error, warn: console.warn };
+  const from = recorded ? `Trestl ${recorded}` : 'an earlier Trestl release';
   const directory =
     options.backupDir || (engine === 'pglite' && dataDir ? `${dataDir}-backups` : null);
   if (!directory) {

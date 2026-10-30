@@ -12,6 +12,7 @@ test-results
 *.log
 .backups
 .data-backups
+.data-pglite-*
 *.trestl-backup
 *.trestl-backup.partial
 .pnpm-store

@@ -1,0 +1,54 @@
+{
+  "memberId": "ec0c30ac-e452-4dd1-aace-d11047ffcf13",
+  "projects": {
+    "shared": "8e8f5678-3b14-4358-b3ca-da52604791e2",
+    "secret": "017e15f6-19dc-4cbc-b82d-62b7ba5e35eb"
+  },
+  "items": {
+    "shared": "80d40f56-c22f-48fb-b2ec-6f92a50b1dc2",
+    "private": "0e3b2078-f4fb-44f2-8176-2c8a56826d45",
+    "secret": "97bd0e39-209d-4baa-aa90-983484791244"
+  },
+  "comment": "2c9d6b18-3baa-4f81-8628-9ae3915aa042",
+  "update": "3296a601-9361-4fb6-8115-97c6d95064f4",
+  "imageUrl": "/api/v1/images/22e602c0-f5dc-4160-9876-7b5fa91bfad1",
+  "canvas": {
+    "id": "b8210341-97bc-427a-b2bf-79cf31a5df67",
+    "scene": {
+      "elements": [
+        {
+          "id": "box",
+          "type": "rectangle",
+          "x": 0,
+          "y": 0,
+          "width": 100,
+          "height": 50,
+          "version": 1
+        },
+        {
+          "id": "pic",
+          "type": "image",
+          "x": 0,
+          "y": 60,
+          "width": 10,
+          "height": 10,
+          "version": 1,
+          "fileId": "png"
+        }
+      ],
+      "appState": {
+        "viewBackgroundColor": "#ffffff"
+      },
+      "files": {
+        "png": {
+          "id": "png",
+          "mimeType": "image/png",
+          "dataURL": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLytQAAAABJRU5ErkJggg==",
+          "created": 1
+        }
+      }
+    }
+  },
+  "apiToken": "ep_Zwi80l-jByaEds91m4ofVjReE8JLa7uCX_3BWEqDh8U",
+  "connection": "628daba3-e6d1-4b8d-b330-1b12a4e7892d"
+}
