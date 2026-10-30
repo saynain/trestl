@@ -1988,6 +1988,7 @@ textarea::placeholder {
 .milestone-row small {
   color: var(--muted);
   font-size: var(--text-sm);
+  white-space: nowrap;
 }
 .overview-empty {
   font-size: var(--text-ui);
