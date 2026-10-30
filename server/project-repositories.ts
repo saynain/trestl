@@ -27,6 +27,7 @@ import {
 } from './repository-attachments.ts';
 import { sameWorkspace } from './workspaces.ts';
 import { readOnlyConnection, twoWayPreview } from './repository-policy.ts';
+import { journalCounts } from './sync-journal.ts';
 import { mirrors, outboundFields } from '../shared/repository-sync.ts';
 
 interface SyncEngine {
@@ -76,7 +77,8 @@ export async function registerProjectRepositories(
     const connection = row.connectionId
       ? await ctx.store.get<GitConnection>('gitConnections', row.connectionId)
       : null;
-    return publicAttachment(row, user, connection, engine.syncing(row.id));
+    const pending = (await journalCounts(ctx.db, [row.id])).get(row.id);
+    return publicAttachment(row, user, connection, engine.syncing(row.id), pending);
   }
   /** Inbound mirrors import issues, so one repository mirrors into one project per workspace. */
   async function conflict(

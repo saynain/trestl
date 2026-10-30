@@ -37,6 +37,8 @@ export interface Repository {
   lastError: string | null;
   lastErrorAt: string | null;
   syncing: boolean;
+  /** Queued webhook events, unpublished changes, and changes that could not be published. */
+  pending: { inbound: number; outbound: number; failed: number };
   access: Access | null;
   publish: Publication;
   twoWay: { activatedAt: string; activatedBy: string } | null;
@@ -80,6 +82,22 @@ function health(repository: Repository) {
   if (repository.lastError)
     return `Sync failed${repository.lastErrorAt ? ` ${when(repository.lastErrorAt)}` : ''}`;
   return repository.lastSyncedAt ? `Synced ${when(repository.lastSyncedAt)}` : 'Not synced yet';
+}
+
+/** Journal work: only changes that could not be published are a problem. */
+function PendingWork({ pending }: { pending: Repository['pending'] }) {
+  const queued = pending.inbound + pending.outbound;
+  return (
+    <>
+      {queued > 0 && <> · {queued} pending</>}
+      {pending.failed > 0 && (
+        <>
+          {' '}
+          · <span className="danger-text">{pending.failed} not published</span>
+        </>
+      )}
+    </>
+  );
 }
 
 function ModeChoice({
@@ -777,6 +795,9 @@ export default function ProjectRepositories({ project }: { project: Project }) {
                     <span className={repository.lastError ? 'danger-text' : ''}>
                       {syncing === repository.id ? 'Syncing…' : health(repository)}
                     </span>
+                    {repository.mode !== 'reference' && (
+                      <PendingWork pending={repository.pending} />
+                    )}
                   </small>
                   {repository.lastError && repository.mode !== 'reference' && (
                     <p className="repository-error">{repository.lastError}</p>

@@ -98,7 +98,16 @@ test('personal Git credentials work without projects, enforce ownership, and are
       ? { id: 42, number: 42, title: 'Shared issue', body: 'Preview', state: 'open' }
       : url.pathname.endsWith('/comments') || url.searchParams.get('page') !== '1'
         ? []
-        : [{ id: 42, number: 42, title: 'Shared issue', body: 'Preview', state: 'open' }];
+        : [
+            {
+              // Provider issue IDs are unique per server; numbers repeat across repositories.
+              id: url.pathname.includes('/owner/two/') ? 4200 : 42,
+              number: 42,
+              title: 'Shared issue',
+              body: 'Preview',
+              state: 'open',
+            },
+          ];
     response.setHeader('Content-Type', 'application/json');
     response.end(JSON.stringify(body));
   });
