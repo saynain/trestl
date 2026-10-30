@@ -1,5 +1,7 @@
 # GitHub App setup for self-hosted Trestl
 
+**Earlier personal connection.** This page describes the per-person GitHub App flow. The app no longer offers **Connect GitHub**; new GitHub connections are shared with the whole installation and set up in **Administration → Integrations**, as described in [shared GitHub organization connection](github-installation.md). Existing personal connections remain and show **Legacy personal connection**.
+
 Each Trestl installation can use its own GitHub App. No central Trestl service, shared developer credentials, or paid GitHub organization is required. A personal GitHub account can register and install an app. GitHub.com is supported by this browser flow; GitHub Enterprise Server and Gitea can continue using personal tokens.
 
 ## 1. Choose the public Trestl address
@@ -58,11 +60,11 @@ Existing personal-token connections remain available under **Use access token**.
 
 ## Credential and permission lifecycle
 
-Trestl uses **GitHub App user access tokens**, so it can read only resources accessible to both the app installation and that GitHub user. It does not use installation tokens to bypass personal permissions. GitHub credentials remain personal to a Trestl account and workspace, and are encrypted at rest using `APP_SECRET`. Neither access nor refresh tokens are returned to the frontend or included in exports.
+Trestl uses **GitHub App user access tokens**, so it can read only resources accessible to both the app installation and that GitHub user. It does not use installation tokens to bypass personal permissions. GitHub credentials remain personal to a Trestl account, and are encrypted at rest using `APP_SECRET`. Neither access nor refresh tokens are returned to the frontend or included in exports.
 
 GitHub normally issues an eight-hour access token and a six-month refresh token. Trestl renews expiring access tokens on demand, including during scheduled imports, and stores each replacement refresh token. Refresh is serialized per connection across app instances. If authorization expires or is revoked, use **Reconnect GitHub** with the same GitHub account; the connection ID and dependent imports are retained. To use a different account, add a new connection.
 
-**Disconnect** deletes local credentials, cancels pending reconnects, and stops dependent imports. Existing work and resource links remain. It does not uninstall the app or revoke other Trestl profiles' grants. To revoke access on GitHub itself, open **GitHub Settings → Applications → Authorized GitHub Apps**; installation repository access is managed under **Installed GitHub Apps**. Removing installation access is enforced by GitHub on subsequent API requests.
+**Disconnect** deletes local credentials, cancels pending reconnects, and stops dependent imports. Existing work and resource links remain. It does not uninstall the app or revoke other Trestl accounts' grants. To revoke access on GitHub itself, open **GitHub Settings → Applications → Authorized GitHub Apps**; installation repository access is managed under **Installed GitHub Apps**. Removing installation access is enforced by GitHub on subsequent API requests.
 
 ## Troubleshooting
 

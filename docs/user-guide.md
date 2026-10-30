@@ -2,17 +2,27 @@
 
 [Back to the project](../README.md) · [Self-hosting](../deploy/README.md)
 
-## Work and personal profiles
+## One installation, private and shared work
 
-Open the workspace picker below the Trestl logo in the top-left corner and choose **Add account**. Sign in to an existing account, or choose **Create one** for a separate, empty workspace where the new account is the administrator. Work and Personal labels help distinguish saved sign-ins. Profiles remember authenticated sessions for up to 30 days; switching opens the selected profile’s Home.
+Trestl runs as one installation, and each person has one account in it. There is no workspace picker or profile switcher.
 
-Projects, tasks, workspace members, exports, and repository connections are isolated between workspaces, including through the API. **Settings → Members** still adds collaborators to the current workspace. Existing installations retain their original workspace and data; creating a new profile does not seed or copy example projects.
+On first visit, name the installation and create its administrator with an email and password. There are no default credentials. Start empty or with example projects. With local sign-in, administrators add colleagues in **Administration → People**. With Google, OpenID Connect or an authentication proxy, approved people join when they first sign in. See [installation setup and authentication](installation.md).
+
+Private and shared work sit side by side:
+
+- Your **Personal inbox** and quick captures on Home are private to you.
+- A **Private** project is visible to its owner and the people they add. A **Workspace** project is visible to everyone in the installation.
+- An individually private item is visible only to the person who created it, even in a shared project.
+
+**Administration**, at the bottom of the sidebar, contains General, People, Integrations and Export. Administrators also see Authentication and Server version. **Account settings**, in the account menu below it, contains Profile, Appearance and API tokens.
+
+To keep unrelated work apart, run a separate installation, for example the [desktop app](desktop.md), and move projects between installations with [project transfer](project-transfer.md). When you upgrade a database that has several workspaces, startup uses one of them as the installation; see [migrating experimental workspaces](installation.md#migrating-experimental-workspaces).
 
 ## Activity calendars
 
-Each project's **Overview** includes a GitHub-style activity calendar. **People** in the sidebar shows the same calendar for a workspace member; **My activity** in the account menu opens your own. Choose a year, then hover, focus, or select a day to see its count. On small screens, scroll the calendar horizontally.
+Each project's **Overview** includes a GitHub-style activity calendar. **People** in the sidebar shows the same calendar for each person; **My activity** in the account menu opens your own. Choose a year, then hover, focus, or select a day to see its count. On small screens, scroll the calendar horizontally.
 
-Activity counts verified work-item and project creation, work-item changes and comments, and project updates. Dates use UTC. Project totals include accessible subprojects and explicitly linked work; user totals cover the current workspace. Counts include only work the viewer can access, so different people may see different totals. Imported history, external-service authors, and automatically generated task creations are excluded from local user attribution. The calendar reflects retained records: deleting work removes its activity, and older creations without a verified actor or project/canvas edits without recorded events are not reconstructed.
+Activity counts verified work-item and project creation, work-item changes and comments, and project updates. Dates use UTC. Project totals include accessible subprojects and explicitly linked work; user totals cover the whole installation. Counts include only work the viewer can access, so different people may see different totals. Imported history, external-service authors, and automatically generated task creations are excluded from local user attribution. The calendar reflects retained records: deleting work removes its activity, and older creations without a verified actor or project/canvas edits without recorded events are not reconstructed.
 
 ## Gantt schedules and dependencies
 
@@ -34,9 +44,9 @@ Date edits are checked on the server as well as in Gantt, including linked tasks
 
 ## Personal Home and inbox
 
-Home is the default landing page in each workspace. Quick capture adds a private work item assigned to you in your **Personal inbox**, without requiring a project. Choose **Task**, **Follow-up** (with a review date), or **Someday** (an idea in Backlog). Items can stay in the inbox permanently, or move into a project later through their normal properties.
+Home is the default landing page. Quick capture adds a private work item assigned to you in your **Personal inbox**, without requiring a project. Choose **Task**, **Follow-up** (with a review date), or **Someday** (an idea in Backlog). Items can stay in the inbox permanently, or move into a project later through their normal properties.
 
-Home includes open items assigned to you, plus your own unassigned inbox captures. The same ownership rule applies to My work and saved My work views. Items assigned to someone else are excluded from your Home; your inbox still retains items you created without a project. Work and personal workspaces remain separate.
+Home includes open items assigned to you, plus your own unassigned inbox captures. The same ownership rule applies to My work and saved My work views. Items assigned to someone else are excluded from your Home; your inbox still retains items you created without a project.
 
 - **Needs attention:** due or overdue deadlines, reviews scheduled for today or earlier, and work in progress or review. A future follow-up date defers work until that review, unless its delivery deadline is already due.
 - **Next up:** upcoming reviews and deadlines, plus undated tasks ready to pick up.
@@ -50,14 +60,14 @@ Open any row to edit its normal work-item properties, or complete it directly on
 - Create ongoing or time-bound projects, nest related projects, and keep work outside projects in your inbox.
 - Capture tasks, ideas, bugs, and follow-ups with separate delivery and review dates.
 - Work from lists, boards, project views, My Work, and saved views. Filter by status, priority, and ownership.
-- Open a work item to focus on its Markdown description and discussion; edit planning attributes in the side panel. Use **Add image** or paste a screenshot in a description or comment to insert an image at the cursor. PNG, JPEG, GIF, and WebP images up to 8 MB are supported, with 1 GB total image storage per workspace. Images follow the work item’s visibility after saving; removing a link revokes access for other viewers.
-- Choose **Settings → General → Work item view → Centered box** to open items in a centered dialog. The side panel remains the default; small screens use the full screen. UI preferences are saved per profile in the current browser.
-- Toggle **zen mode** with **⌘B / Ctrl+B**, the sidebar button in the top bar, or Settings to hide the desktop sidebar. On mobile, the shortcut opens or closes navigation.
+- Open a work item to focus on its Markdown description and discussion; edit planning attributes in the side panel. Use **Add image** or paste a screenshot in a description or comment to insert an image at the cursor. PNG, JPEG, GIF, and WebP images up to 8 MB are supported, with 1 GB total image storage per installation. Images follow the work item’s visibility after saving; removing a link revokes access for other viewers.
+- Choose **Account settings → Appearance → Work item view** to open items in a **Side panel** (the default), a **Centered box** or a **Full page**. Small screens use the full screen. UI preferences are saved for your account in the current browser.
+- Toggle **zen mode** with **⌘B / Ctrl+B** or the sidebar button in the top bar to hide the desktop sidebar. On mobile, the shortcut opens or closes navigation.
 - Add subtasks, blockers and related work, recurring tasks, labels, milestones, and documentation links.
-- Keep personal work private. When creating or editing a private project, select workspace members under **People with access** to collaborate with a specific group. Only the owner can change visibility or membership, and the owner always retains access. Workspace projects remain visible to all workspace members. Parent privacy still constrains nested projects, and individually private items remain visible only to their creators. The API exposes additional project members as `memberIds` (an omitted list means no additional members).
-- Connect GitHub or Gitea repositories through Settings. Import issue descriptions and discussions while retaining local planning fields.
+- Keep personal work private. When creating or editing a private project, select people under **Project members** to collaborate with a specific group. Only the owner can change visibility or membership, and the owner always retains access. Projects with **Workspace** visibility are visible to everyone in the installation. Parent privacy still constrains nested projects, and individually private items remain visible only to their creators. The API exposes additional project members as `memberIds` (an omitted list means no additional members).
+- Administrators connect Gitea or GitHub in **Administration → Integrations**. Import issue descriptions and discussions while retaining local planning fields.
 - Search and preview Confluence pages through your personal connection, and link documentation to work without copying it into a wiki.
-- Create scoped API tokens, export accessible workspace data, and use the CLI or Raycast extension.
+- Create scoped API tokens in **Account settings**, export the data you can access from **Administration → Export**, and use the CLI or Raycast extension.
 
 Mermaid diagrams render from fenced Markdown blocks in descriptions and comments, including comment previews:
 
@@ -91,13 +101,13 @@ Open a project’s **Roadmap** tab to curate features under **Current focus**, *
 
 Use **Edit summary** to set the headline, review date, and a short “Since last review” update. **Present** hides the app navigation and editing controls for meetings; Escape or **Exit presentation** returns to the regular view. Feature cards still open read-only details in presentation mode. **Copy link** copies the presentation URL and retains existing project access requirements. **Print / PDF** uses the browser’s print dialog with a landscape print layout.
 
-Roadmaps persist with their project and are included in the existing project, bootstrap, and JSON export responses. `PATCH /api/v1/projects/:id/roadmap` replaces the roadmap using `expectedRevision`; stale edits return 409 instead of overwriting a teammate’s changes. Existing projects start with an empty roadmap; only newly seeded example workspaces receive sample roadmap content.
+Roadmaps persist with their project and are included in the existing project, bootstrap, and JSON export responses. `PATCH /api/v1/projects/:id/roadmap` replaces the roadmap using `expectedRevision`; stale edits return 409 instead of overwriting a teammate’s changes. Existing projects start with an empty roadmap; only new installations started with example projects receive sample roadmap content.
 
 ## Project canvases
 
 Open a project's **Canvases** tab and choose **Import .excalidraw** to create a canvas directly from a file, without creating a blank canvas first. Imports use the filename as the canvas name and join the selected collection. Invalid files create no canvas. Choose **New canvas** to sketch architecture diagrams, workflows, and ideas with the embedded Excalidraw editor. Each project can have multiple named canvases. Rename a canvas in the editor header; drawing and name changes synchronize live and save automatically. The header shows whether changes are saved. **Canvases** returns to the list after saving pending changes.
 
-**Light / Dark** in the canvas header controls Excalidraw independently of the rest of Trestl. Canvases default to light mode, and your choice is remembered for your profile in this browser. Changing canvas appearance does not modify the shared diagram.
+**Light / Dark** in the canvas header controls Excalidraw independently of the rest of Trestl. Canvases default to light mode, and your choice is remembered for your account in this browser. Changing canvas appearance does not modify the shared diagram.
 
 Use **Switch canvas** beside the project name in the editor header to search and open another canvas in the same project. On narrow screens, tap the project name and chevron. Pending edits save before switching; if saving fails, the current canvas stays open with its unsaved changes.
 
@@ -122,7 +132,7 @@ npm install --global ./trestl-cli-0.4.0.tgz
 trestl login --profile work --url https://projects.example.com
 ```
 
-Create a personal API token in Settings and paste it into the hidden login prompt. Credentials persist per profile; environment variables are optional. Token files use owner-only permissions on Unix and are stored as plaintext in `~/.config/trestl`, not an OS keychain. Use `trestl auth status` to check your selected profile and `trestl logout` to remove its saved token.
+Create a personal API token in **Account settings → API tokens** and paste it into the hidden login prompt. Credentials persist per profile; environment variables are optional. Token files use owner-only permissions on Unix and are stored as plaintext in `~/.config/trestl`, not an OS keychain. Use `trestl auth status` to check your selected profile and `trestl logout` to remove its saved token.
 
 Inside another repository, set defaults and read work:
 
@@ -144,19 +154,19 @@ The native Raycast extension includes **Search Work Items**, **My Work**, **Sear
 
 The API lives under `/api/v1`. Send `Authorization: Bearer <token>` for integrations and scripts. The browser uses an HTTP-only session cookie. The [OpenAPI document](http://localhost:4317/api/v1/openapi.json) is served by the running app at `/api/v1/openapi.json` and describes the endpoint contract.
 
-To enable integrations, an administrator sets `APP_SECRET` to a durable random value of at least 32 characters and restarts the server. Each user connects GitHub or saves a GitHub/Gitea token in **Settings → Integrations**, alongside their Confluence connection. No project or repository is required to save a connection. Tokens are encrypted in storage; keep `APP_SECRET` with your backup secrets, as changing it prevents existing tokens from being decrypted.
+To enable integrations, an administrator sets `APP_SECRET` to a durable random value of at least 32 characters and restarts the server. Administrators then add Git connections in **Administration → Integrations → Add connection**. Each connection is shared with everyone in the installation: anyone can look up issues in the repositories its credentials allow, so choose credentials with that audience in mind. No project or repository is required to save a connection. Tokens are encrypted in storage; keep `APP_SECRET` with your backup secrets, as changing it prevents existing tokens from being decrypted.
 
-**GitHub App (recommended):** each self-hosted instance registers its own GitHub App and configures `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, and `GITHUB_APP_SLUG`, together with `APP_ORIGIN`. Follow the [GitHub App setup guide](../docs/github-app.md) for exact callback URLs, read permissions, Docker configuration, and troubleshooting. Users click **Connect GitHub**, authorize in their browser, and select repositories on GitHub. Trestl automatically renews expiring user tokens and respects both personal and installation permissions. No central Trestl service is required. Use **Reconnect GitHub** to restore an expired or revoked authorization while retaining imports.
+**GitHub App · organization (recommended):** register your own GitHub App with read-only Issues and Metadata access, install it on your organization, and enter its App ID, installation ID and private key. Trestl creates short-lived, read-only installation tokens on the server. No central Trestl service is required. Follow the [shared GitHub organization guide](github-installation.md).
 
-**Personal tokens (advanced):** **Use access token** remains available for GitHub and Gitea. GitHub's API origin is allowed by default. For Gitea, explicitly allow the exact server origin with `INTEGRATION_ALLOWED_ORIGINS`, for example `https://git.example.com`. Multiple origins are comma-separated. Internal HTTP origins can be allowed explicitly, but HTTPS is preferred for credentials in transit. Use provider credentials that can only read the repositories you intend to import.
+**Access tokens:** choose **Gitea** or **GitHub · access token** and enter a token, preferably from a service account. GitHub's API origin is allowed by default. For Gitea, explicitly allow the exact server origin with `INTEGRATION_ALLOWED_ORIGINS`, for example `https://git.example.com`. Multiple origins are comma-separated. Internal HTTP origins can be allowed explicitly, but HTTPS is preferred for credentials in transit. Use provider credentials that can only read the repositories you intend to share.
 
-Git connections are personal to your account in the current workspace and available in every project, including projects created later. Choose repository access and permissions at the provider when creating the token; for GitHub fine-grained tokens, grant Issues read access for the repositories you need ([GitHub issue API permissions](https://docs.github.com/en/rest/issues/issues)). Use **Update token** to replace credentials without recreating imports. Trestl reads providers and does not use write permissions even if a token grants them.
+Connections are available in every project, including projects created later. Choose repository access and permissions at the provider when creating the token; for GitHub fine-grained tokens, grant Issues read access for the repositories you need ([GitHub issue API permissions](https://docs.github.com/en/rest/issues/issues)). Use **Update token** to replace credentials without recreating imports. Trestl reads providers and does not use write permissions even if a token grants them. Connections created before shared connections existed stay personal and show **Legacy personal connection**; they are never silently shared.
 
-In any project's **Resources → Find Git issue**, choose a connection and enter `owner/repository#123` to preview and link an issue. Lookup uses your token on every request and does not import the repository or cache the issue. Linking shares its title and URL with project members; the provider still controls access to the original issue. Pull requests are not supported by this lookup.
+In any project's **Resources → Find Git issue**, choose a connection and enter `owner/repository#123` to preview and link an issue. Lookup uses the connection's credentials on every request and does not import the repository or cache the issue. Linking shares its title and URL with project members; the provider still controls access to the original issue. Pull requests are not supported by this lookup.
 
-Administrators can add **Repository imports** by choosing a saved connection, repository, and destination project. One connection can serve multiple repository imports. Existing repository credentials migrate automatically into their creator's personal connections, preserving imports and source identities. Deleting your saved connection stops its dependent imports; imported work and resource links are retained. You can always remove your own token, even after losing administrator access.
+Administrators can add **Repository imports** in **Administration → Integrations** by choosing a connection, repository, and destination project. One connection can serve multiple repository imports. Existing repository credentials migrate automatically into their creator's personal connections, preserving imports and source identities. Disconnecting a connection stops its dependent imports; imported work and resource links are retained. You can always disconnect your own legacy personal connection, even after losing administrator access.
 
-Sync runs when requested in Settings. Set `INTEGRATION_SYNC_INTERVAL_MS=300000` to reconcile every five minutes; the minimum periodic interval is 60000 milliseconds. A repository connection imports issues and comments, skips pull requests, and deduplicates repeated imports. After the initial import, title and description follow the source while status, priority, assignee, and dates remain local. Remote comment edits and deletions are reconciled. Imported work remains in Trestl if its source issue disappears or the connection is removed.
+Sync runs when requested in **Administration → Integrations**. Set `INTEGRATION_SYNC_INTERVAL_MS=300000` to reconcile every five minutes; the minimum periodic interval is 60000 milliseconds. A repository connection imports issues and comments, skips pull requests, and deduplicates repeated imports. After the initial import, title and description follow the source while status, priority, assignee, and dates remain local. Remote comment edits and deletions are reconciled. Imported work remains in Trestl if its source issue disappears or the connection is removed.
 
 Imported items are **linked issues with local planning**. Lists and boards display the provider, repository, and original issue number; native Trestl items have no source badge. Use **Filter → Source** to select native items, a provider, or a specific repository, and **Save view** to keep that perspective. Search also recognizes original references such as `acme/platform #14`.
 
@@ -166,12 +176,12 @@ Repository connections are **inbound only**. Internal notes and planning changes
 
 ### Confluence documentation
 
-An administrator sets `CONFLUENCE_ALLOWED_ORIGINS` to a comma-separated list of exact HTTPS origins, for example `https://example.atlassian.net,https://docs.example.com`. The same durable `APP_SECRET` protects Confluence tokens. Each user connects their own account in **Settings → Integrations**:
+An administrator sets `CONFLUENCE_ALLOWED_ORIGINS` to a comma-separated list of exact HTTPS origins, for example `https://example.atlassian.net,https://docs.example.com`. The same durable `APP_SECRET` protects Confluence tokens. Each person connects their own account in **Administration → Integrations**:
 
 - **Cloud:** site URL (optionally ending in `/wiki`), account email, and a personal API token.
 - **Data Center:** application URL including any context path such as `/confluence`, and a personal access token.
 
-Search and page previews call Confluence using that user's credentials, so the provider enforces their page permissions. Credentials are not shared between workspace members, and page content is not stored as a shared cache. Search returns up to 25 results; previews show up to 3,000 characters of plain text and a link to the original page. Refine the search to narrow larger result sets. These connections support reading and linking pages; Confluence editing, OAuth/SSO connections, and paginated search are not implemented. See Atlassian's [Cloud search API](https://developer.atlassian.com/cloud/confluence/rest/v1/api-group-search/) and [Data Center access tokens](https://confluence.atlassian.com/enterprise/using-personal-access-tokens-1026032365.html).
+Search and page previews call Confluence using that user's credentials, so the provider enforces their page permissions. Credentials are not shared between people, and page content is not stored as a shared cache. Search returns up to 25 results; previews show up to 3,000 characters of plain text and a link to the original page. Refine the search to narrow larger result sets. These connections support reading and linking pages; Confluence editing, OAuth/SSO connections, and paginated search are not implemented. See Atlassian's [Cloud search API](https://developer.atlassian.com/cloud/confluence/rest/v1/api-group-search/) and [Data Center access tokens](https://confluence.atlassian.com/enterprise/using-personal-access-tokens-1026032365.html).
 
 
 ## Daily planning and reliable saves

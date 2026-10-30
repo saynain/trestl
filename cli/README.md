@@ -39,7 +39,7 @@ The CLI opens your installation in the browser. Sign in normally (Google, OIDC o
 
 The token belongs to your existing Trestl user. It defaults to write access within your current permissions; use `--scope read` for read-only access or `--name "Work laptop"` to identify it in Settings. Use `--no-browser` to open the displayed URL manually. Requests expire after ten minutes and can be redeemed only once, by the CLI that started them.
 
-Tokens remain valid until revoked. Revoke a lost machine's token in **Settings → API tokens**, or disable its user in Administration. `trestl logout --profile work` removes only the local credential; it does not revoke the server token. Provider offboarding alone does not revoke an existing Trestl token.
+Tokens remain valid until revoked. Revoke a lost machine's token in **Account settings → API tokens**, or disable its user in Administration. `trestl logout --profile work` removes only the local credential; it does not revoke the server token. Provider offboarding alone does not revoke an existing Trestl token.
 
 For automation or an older server, create a personal API token in Settings and use `trestl login --token` for a hidden prompt, or `--token-stdin` for a secret manager pipeline. Do not put tokens in command arguments. Existing `TRESTL_TOKEN` automation remains supported. The CLI stores credentials in an owner-only file and will not reuse a saved token with another server URL.
 
@@ -64,7 +64,7 @@ trestl auth status --profile work --json
 
 Listing works offline, without a token, and reads only saved profile filenames. It never opens credential files or validates authentication. JSON returns `{selectedProfile, tokenOverride, profiles: [{name, selected}]}` with names sorted alphabetically. `selectedProfile` uses the same flag/environment/repository precedence as other commands; it may name a profile that has not been saved. `tokenOverride` indicates that `TRESTL_TOKEN` is set and would override saved credentials. A missing credentials directory returns an empty list. Temporary files, invalid profile names, directories and symlinks are excluded.
 
-Use `auth status --profile <name>` to verify a chosen account and server. Profiles on the same server can belong to different accounts/workspaces. Each token is bound to the workspace where it was created; browser workspace switching does not change CLI scope. To use another workspace, switch there in the browser, create a token, and save it under a separate CLI profile. Listing does not switch profiles or choose an account for you. In an unrelated directory, use `--no-config` to ignore repository defaults. If an environment token override is present, authentication describes that token rather than proving the selected saved account; unset `TRESTL_TOKEN` for a saved-credential check.
+Use `auth status --profile <name>` to verify a chosen account and server. Each saved profile holds one server URL and one token, and the token acts as the account that created it. Two profiles on the same server can belong to different accounts. To use another installation or account, log in under a separate CLI profile. Listing does not switch profiles or choose an account for you. In an unrelated directory, use `--no-config` to ignore repository defaults. If an environment token override is present, authentication describes that token rather than proving the selected saved account; unset `TRESTL_TOKEN` for a saved-credential check.
 
 ## Connect another repository
 

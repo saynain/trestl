@@ -95,7 +95,7 @@ scene updates contain complete snapshots.
 
 Upgrade requests use the normal authentication and origin checks, including
 read-only token restrictions. Live connections recheck credentials, account
-status, workspace membership, and project access before accepting changes or
+status, installation membership, and project access before accepting changes or
 broadcasting content. An idle scan also removes revoked users and picks up
 ordinary REST changes/deletions within about one second. Revoked access stops
 syncing and leaves a download option for any local unsaved work.
