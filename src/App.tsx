@@ -412,7 +412,7 @@ export default function App() {
   if (route.page === 'welcome')
     return (
       <Suspense fallback={null}>
-        <Welcome refresh={refresh} />
+        <Welcome refresh={refresh} project={data.projects.find((p) => p.id === route.id)} />
       </Suspense>
     );
   const project =

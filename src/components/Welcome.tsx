@@ -5,12 +5,20 @@ import { post } from '../lib/api';
 import { navigate, projectKey } from '../lib/model';
 import { Brand, SetupSteps } from './ui';
 
-/** The end of first-run setup: a first project, then optional links to existing settings. */
-export default function Welcome({ refresh }: { refresh: () => Promise<void> }) {
+/**
+ * The end of first-run setup: a first project, then optional links to existing settings.
+ * The created project lives in the URL, so Back and reload return to the last step.
+ */
+export default function Welcome({
+  project,
+  refresh,
+}: {
+  project?: Project;
+  refresh: () => Promise<void>;
+}) {
   const [name, setName] = useState('');
   const [key, setKey] = useState('');
   const [keyEdited, setKeyEdited] = useState(false);
-  const [project, setProject] = useState<Project>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   async function submit(e: FormEvent) {
@@ -20,7 +28,7 @@ export default function Welcome({ refresh }: { refresh: () => Promise<void> }) {
     try {
       const created = await post<Project>('/projects', { name: name.trim(), key });
       await refresh();
-      setProject(created);
+      window.location.replace(`#/welcome/${created.id}`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
