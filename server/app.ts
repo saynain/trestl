@@ -43,6 +43,7 @@ import { nextItemIdentifier } from './item-identifiers.ts';
 import { seedDemo } from './seed.ts';
 import { openapi } from './openapi.ts';
 import { registerIntegrations } from './integrations.ts';
+import { detachAttachments, projectAttachments } from './repository-attachments.ts';
 import { registerConfluence } from './confluence.ts';
 import type { AppContext } from './context.ts';
 import type {
@@ -1336,6 +1337,10 @@ export async function createApp(
         if (update.projectId === p.id) await s.remove('projectUpdates', update.id);
       for (const r of await s.list<ProjectRelation>('projectRelations'))
         if (r.projectId === p.id) await s.remove('projectRelations', r.id);
+      await detachAttachments(
+        s,
+        (await projectAttachments(s, p.id)).map((attachment) => attachment.id),
+      );
       await s.remove('projects', p.id);
     });
     return reply.code(204).send();

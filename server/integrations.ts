@@ -13,30 +13,24 @@ import { z } from 'zod';
 import type { Activity, Project, User, WorkItem } from '../shared/types.ts';
 import type { AppContext } from './context.ts';
 import { nextItemIdentifier } from './item-identifiers.ts';
-import { makeStore } from './db.ts';
+import { makeStore, type Store } from './db.ts';
 import {
   encryptToken,
   fetchRepository,
   validateSource,
   ProviderRequestError,
-  type Provider,
   type SourceIssue,
 } from './integration-provider.ts';
+import {
+  canManageRepositories,
+  detachAttachments,
+  migrateRepositoryAttachments,
+  modeOf,
+  repositoryIdentity as identity,
+  type RepositoryAttachment as Integration,
+} from './repository-attachments.ts';
+import { registerProjectRepositories } from './project-repositories.ts';
 
-interface Integration {
-  id: string;
-  provider: Provider;
-  name: string;
-  baseUrl: string;
-  repository: string;
-  projectId: string;
-  creatorId: string;
-  encryptedToken?: string;
-  connectionId?: string;
-  createdAt: string;
-  lastSyncedAt: string | null;
-  lastError: string | null;
-}
 interface ImportedIssue {
   id: string;
   integrationId: string;
@@ -49,7 +43,7 @@ interface ImportedComment {
   itemId: string;
   activityId: string;
 }
-interface SyncResult {
+export interface SyncResult {
   imported: number;
   updated: number;
   comments: number;
@@ -67,21 +61,6 @@ const createSchema = z.object({
 function sanitize(integration: Integration) {
   const { encryptedToken: _token, ...publicFields } = integration;
   return { ...publicFields, configured: true };
-}
-function identity(
-  integration: Pick<Integration, 'provider' | 'baseUrl' | 'repository'>,
-  remoteId = '',
-): string {
-  return createHash('sha256')
-    .update(
-      [
-        integration.provider,
-        integration.baseUrl,
-        integration.repository.toLowerCase(),
-        remoteId,
-      ].join('\n'),
-    )
-    .digest('hex');
 }
 /** Upgrade imported records in place without network access or per-item queries. */
 export async function backfillIssueSources(ctx: AppContext) {
@@ -151,9 +130,20 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
     .filter(Boolean);
   const secret = () => process.env.APP_SECRET ?? '';
   let syncing = false;
+  const active = new Set<string>();
   await migrateGitConnections(ctx);
+  await migrateRepositoryAttachments(ctx);
   await registerGitConnections(app, ctx);
   await backfillIssueSources(ctx);
+  /** The attachment's creator acts for synchronization and must still manage the project. */
+  async function syncActor(integration: Integration, store: Store = ctx.store) {
+    const project = await store.get<Project>('projects', integration.projectId);
+    const owner =
+      project && (await workspaceUser(store, integration.creatorId, workspaceOf(project)));
+    return owner && (await canManageRepositories(ctx, owner, integration.projectId, store))
+      ? { project: project!, owner }
+      : null;
+  }
 
   function admin(request: FastifyRequest): User {
     const user = ctx.requireUser(request);
@@ -188,6 +178,8 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
       );
       if (!locked.rows.length)
         ctx.fail(404, 'The repository connection was removed during synchronization.');
+      if (modeOf(locked.rows[0]!.data) !== 'inbound')
+        ctx.fail(409, 'The repository mode changed during synchronization.');
       if (locked.rows[0]!.data.connectionId !== credential.id)
         ctx.fail(
           409,
@@ -199,11 +191,11 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
           409,
           'Repository credentials changed during synchronization. Retry with the current connection.',
         );
-      const project = await store.get<Project>('projects', integration.projectId);
-      if (!project) ctx.fail(404, 'The connected project no longer exists.');
-      const owner = await workspaceUser(store, integration.creatorId, workspaceOf(project));
-      if (!owner || owner.role !== 'admin' || !(await ctx.canProject(owner, project.id, store)))
-        ctx.fail(403, 'The connection owner no longer has access to this project.');
+      if (!(await store.get<Project>('projects', integration.projectId)))
+        ctx.fail(404, 'The connected project no longer exists.');
+      const actor = await syncActor(integration, store);
+      if (!actor) ctx.fail(403, 'The connection owner no longer has access to this project.');
+      const { project, owner } = actor;
       const result = { imported: 0, updated: 0, comments: 0 };
       for (const issue of remote) {
         const mappingId = identity(integration, issue.id);
@@ -331,7 +323,12 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
         }
       }
       // Commit sync status with the items so disconnect cannot resurrect an import.
-      const updated = { ...locked.rows[0]!.data, lastSyncedAt: ctx.now(), lastError: null };
+      const updated = {
+        ...locked.rows[0]!.data,
+        lastSyncedAt: ctx.now(),
+        lastError: null,
+        lastErrorAt: null,
+      };
       await store.put('integrations', updated);
       // Missing remote issues are retained: providers can hide issues because access changed.
       return { ...result, integration: sanitize(updated) };
@@ -339,9 +336,12 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
   }
 
   async function sync(integration: Integration): Promise<SyncResult> {
+    if (modeOf(integration) !== 'inbound')
+      ctx.fail(400, 'Reference repositories are linked to the project without importing issues.');
     if (syncing)
       ctx.fail(409, 'A repository synchronization is already running. Please retry shortly.');
     syncing = true;
+    active.add(integration.id);
     try {
       let credential = await ownGitConnection(
         ctx,
@@ -386,11 +386,8 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
         throw error;
       }
       // Recheck owner authorization after network work, before writing fetched content.
-      const project = await ctx.store.get<Project>('projects', integration.projectId);
-      const owner =
-        project && (await workspaceUser(ctx.store, integration.creatorId, workspaceOf(project)));
-      if (!owner || owner.role !== 'admin' || !(await ctx.canProject(owner, integration.projectId)))
-        throw new Error('The connection owner no longer has administrator access to this project.');
+      if (!(await syncActor(integration)))
+        throw new Error('The connection owner can no longer manage this project’s repositories.');
       const current = await ctx.store.get<Integration>('integrations', integration.id);
       if (!current)
         throw new Error('The repository connection was removed during synchronization.');
@@ -407,14 +404,16 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
       const current = await ctx.store.get<Integration>('integrations', integration.id);
       if (current)
         await ctx.db.query(
-          "UPDATE entities SET data=jsonb_set(data, '{lastError}', $3::jsonb) WHERE collection='integrations' AND id=$1 AND data->>'connectionId'=$2",
-          [integration.id, integration.connectionId, JSON.stringify(message)],
+          "UPDATE entities SET data=data || jsonb_build_object('lastError',$3::text,'lastErrorAt',$4::text) WHERE collection='integrations' AND id=$1 AND data->>'connectionId'=$2",
+          [integration.id, integration.connectionId, message, ctx.now()],
         );
       ctx.fail(502, message);
     } finally {
       syncing = false;
+      active.delete(integration.id);
     }
   }
+  await registerProjectRepositories(app, ctx, { sync, syncing: (id) => active.has(id) });
 
   app.get('/api/v1/integrations', async (request) => {
     const user = admin(request);
@@ -470,7 +469,12 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
     if (
       existing.some((connection) => {
         const project = projects.get(connection.projectId);
-        return project && sameWorkspace(user, project) && identity(connection) === identity(source);
+        return (
+          project &&
+          modeOf(connection) === 'inbound' &&
+          sameWorkspace(user, project) &&
+          identity(connection) === identity(source)
+        );
       })
     )
       ctx.fail(
@@ -504,6 +508,8 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
       createdAt: ctx.now(),
       lastSyncedAt: null,
       lastError: null,
+      mode: 'inbound',
+      isDefault: !existing.some((other) => other.projectId === data.projectId),
     };
     await ctx.db.transaction(async (db) => {
       const store = makeStore(db);
@@ -535,11 +541,7 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
       await db.query(
         "SELECT id FROM entities WHERE collection='system' AND id='mutation-lock' FOR UPDATE",
       );
-      for (const item of await store.list<WorkItem>('items')) {
-        if (item.source?.integrationId === request.params.id)
-          await store.put('items', { ...item, source: { ...item.source, connected: false } });
-      }
-      await store.remove('integrations', request.params.id);
+      await detachAttachments(store, [request.params.id]);
     });
     return reply.code(204).send();
   });
@@ -556,16 +558,7 @@ export async function registerIntegrations(app: FastifyInstance, ctx: AppContext
       try {
         for (const integration of await ctx.store.list<Integration>('integrations')) {
           if (stopped || syncing) break;
-          const project = await ctx.store.get<Project>('projects', integration.projectId);
-          const owner =
-            project &&
-            (await workspaceUser(ctx.store, integration.creatorId, workspaceOf(project)));
-          if (
-            !owner ||
-            owner.role !== 'admin' ||
-            !(await ctx.canProject(owner, integration.projectId))
-          )
-            continue;
+          if (modeOf(integration) !== 'inbound' || !(await syncActor(integration))) continue;
           try {
             await sync(integration);
           } catch {

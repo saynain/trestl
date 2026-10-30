@@ -50,7 +50,7 @@ Your reverse proxy must forward the callback and setup paths under `/api` to Tre
 2. Choose the correct GitHub account and authorize the app.
 3. If no accessible installation exists yet, Trestl sends you to GitHub to install it. Select your personal account or an organization, then choose repositories.
 4. GitHub returns you to Trestl. Settings displays installation access verified through GitHub's API. You can also use **Choose repositories**, **Manage access**, or **Refresh access** later.
-5. In any project's **Resources → Find Git issue**, use `owner/repository#123`. Administrators can also reuse this connection for repository imports.
+5. In any project's **Resources → Find Git issue**, use `owner/repository#123`. You can also choose this connection when attaching a repository to a project you own.
 
 GitHub authorization and app installation are separate steps. Organization access may require an owner's approval. A connection can therefore be authorized before it has access to any repositories; Settings shows the remaining step. An installation ID supplied in a redirect never grants access by itself.
 
@@ -76,7 +76,7 @@ GitHub normally issues an eight-hour access token and a six-month refresh token.
 
 ## Scope and upstream references
 
-This implementation covers personal authorization, installation access visibility, automatic token renewal, issue lookup, and the existing read-only repository imports. Webhook-driven synchronization, GitHub writes, and automatic app registration are not implemented. Operators register their app once using the steps above.
+This implementation covers personal authorization, installation access visibility, automatic token renewal, issue lookup, and read-only repository attachments. Webhook-driven synchronization, GitHub writes, and automatic app registration are not implemented. Operators register their app once using the steps above.
 
 - [Registering a GitHub App](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app)
 - [User authorization, state, PKCE and personal permission boundaries](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app)

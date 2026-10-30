@@ -1,0 +1,211 @@
+.repository-panel {
+  margin-bottom: 34px;
+}
+.resources-subheading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.resources-subheading h3 {
+  font-size: var(--text-ui);
+  font-weight: 550;
+}
+.resources-subheading p {
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  margin-top: 4px;
+}
+.repository-loading,
+.repository-empty,
+.repository-dialog-empty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--text-ui);
+  color: var(--muted);
+}
+.repository-empty {
+  padding: 18px;
+  border: 1px dashed var(--border);
+  border-radius: 7px;
+  line-height: 1.6;
+}
+.repository-empty svg {
+  flex-shrink: 0;
+}
+.repository-entry {
+  border-bottom: 1px solid var(--border);
+}
+.repository-entry:last-child {
+  border-bottom: 0;
+}
+.repository-entry > .resource-row {
+  border-bottom: 0;
+}
+.repository-row-main {
+  flex: 1;
+  min-width: 0;
+}
+.repository-row-main > a {
+  color: var(--text);
+}
+.repository-row-main > a:hover strong {
+  color: var(--accent);
+}
+.repository-row-main small {
+  display: block;
+  line-height: 1.5;
+}
+.repository-error {
+  margin-top: 6px;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--danger);
+}
+.repository-badge {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+.repository-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 0 18px 18px 73px;
+}
+.repository-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.repository-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: var(--text-ui);
+  line-height: 1.6;
+}
+.repository-confirm > span {
+  flex: 1 1 220px;
+}
+.repository-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.repository-modes legend {
+  font-size: var(--text-ui);
+  font-weight: 500;
+  margin-bottom: 7px;
+}
+.repository-mode {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+}
+.repository-mode.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.repository-mode.disabled {
+  cursor: default;
+  background: var(--surface);
+}
+.repository-mode.disabled strong {
+  color: var(--muted);
+}
+.repository-mode input {
+  margin: 3px 0 0;
+  flex-shrink: 0;
+}
+.repository-mode strong {
+  display: block;
+  font-size: var(--text-ui);
+  font-weight: 500;
+}
+.repository-mode small {
+  display: block;
+  margin-top: 3px;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--muted);
+}
+.repository-mode-reason {
+  display: flex !important;
+  gap: 6px;
+  align-items: flex-start;
+}
+.repository-mode-reason svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.repository-hint {
+  font-size: var(--text-sm);
+  font-weight: 400;
+  color: var(--muted);
+}
+.repository-verified {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: var(--text-ui);
+  line-height: 1.6;
+}
+.repository-verified svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--accent);
+}
+.repository-verified strong {
+  font-weight: 550;
+}
+.repository-dialog-empty {
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 24px;
+  line-height: 1.7;
+}
+@media (max-width: 760px) {
+  .resources-subheading {
+    flex-wrap: wrap;
+  }
+  .resources-subheading .resource-actions {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+  .resource-row.repository-row small > span {
+    display: inline;
+  }
+  .repository-row {
+    flex-wrap: wrap;
+  }
+  .repository-row-main {
+    flex-basis: calc(100% - 45px);
+  }
+  .repository-badge,
+  .repository-row-main + .icon-button {
+    margin-left: 40px;
+  }
+  .repository-settings {
+    padding: 0 11px 14px;
+  }
+}

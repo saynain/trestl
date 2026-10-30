@@ -3,8 +3,8 @@ import { workspaceUser, workspaceOf } from './workspaces.ts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from './context.ts';
-import type { WorkItem } from '../shared/types.ts';
 import { makeStore } from './db.ts';
+import { detachAttachments } from './repository-attachments.ts';
 import {
   githubAppCredential,
   invalidateGitHubCredential,
@@ -14,6 +14,7 @@ import {
   decryptToken,
   encryptToken,
   fetchIssue,
+  listRepositories,
   validateSource,
   ProviderRequestError,
   type Provider,
@@ -78,6 +79,64 @@ export async function resolveGitCredential(ctx: AppContext, connection: GitConne
   return { connection, token: gitToken(connection, secretForGit()) };
 }
 const secretForGit = () => process.env.APP_SECRET ?? '';
+export const integrationOrigins = () =>
+  (process.env.INTEGRATION_ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+/** Administrators trust a shared connection's origin by saving it. */
+export const gitOrigins = (connection: GitConnection) =>
+  connection.shared
+    ? [...integrationOrigins(), new URL(connection.baseUrl).origin]
+    : integrationOrigins();
+
+/** Run provider reads with a resolved credential; failures are mapped to safe API errors. */
+export async function withGitCredential<T>(
+  ctx: AppContext,
+  saved: GitConnection,
+  run: (
+    token: string,
+    options: { allowedOrigins: string[]; fetch?: typeof fetch },
+    connection: GitConnection,
+  ) => Promise<T>,
+): Promise<T> {
+  let connection = saved;
+  let token: string;
+  try {
+    const resolved = await resolveGitCredential(ctx, saved);
+    connection = resolved.connection;
+    token = resolved.token;
+  } catch (error) {
+    if (saved.githubApp || saved.githubInstallation) throw error;
+    ctx.fail(
+      503,
+      'Git credentials could not be decrypted. Restore APP_SECRET or update the connection token.',
+    );
+  }
+  try {
+    return await run(
+      token,
+      {
+        allowedOrigins: gitOrigins(connection),
+        ...(connection.githubApp || connection.githubInstallation
+          ? { fetch: ctx.githubFetch }
+          : {}),
+      },
+      connection,
+    );
+  } catch (error) {
+    if (error instanceof ProviderRequestError) {
+      if (error.providerStatus === 401 && connection.githubApp) {
+        await invalidateGitHubCredential(ctx, connection);
+        ctx.fail(401, 'GitHub authorization was revoked. Reconnect GitHub in Settings.');
+      }
+      ctx.fail(error.providerStatus === 404 ? 400 : 502, error.message);
+    }
+    if (error instanceof Error && /^(Provider |Repository |Could not reach )/.test(error.message))
+      ctx.fail(502, error.message);
+    throw error;
+  }
+}
 export async function ownGitConnection(ctx: AppContext, userId: string, id: string) {
   const connection = await ctx.store.get<GitConnection>('gitConnections', id);
   if (
@@ -267,14 +326,10 @@ export async function registerGitConnections(app: FastifyInstance, ctx: AppConte
         "SELECT id FROM entities WHERE collection='system' AND id='mutation-lock' FOR UPDATE",
       );
       const imports = await store.list<{ id: string; connectionId?: string }>('integrations');
-      const dependent = new Set(
+      await detachAttachments(
+        store,
         imports.filter((i) => i.connectionId === request.params.id).map((i) => i.id),
       );
-      for (const item of await store.list<WorkItem>('items')) {
-        if (item.source && dependent.has(item.source.integrationId))
-          await store.put('items', { ...item, source: { ...item.source, connected: false } });
-      }
-      for (const id of dependent) await store.remove('integrations', id);
       await db.query(
         "DELETE FROM entities WHERE collection='githubAuthorizationStates' AND data->>'userId'=$1 AND (data->>'connectionId' IS NULL OR data->>'connectionId'=$2)",
         [user.id, request.params.id],
@@ -283,6 +338,25 @@ export async function registerGitConnections(app: FastifyInstance, ctx: AppConte
     });
     return reply.code(204).send();
   });
+  app.get<{ Params: { id: string } }>(
+    '/api/v1/git/connections/:id/repositories',
+    async (request) => {
+      const connection = await ownGitConnection(
+        ctx,
+        ctx.requireUser(request).id,
+        request.params.id,
+      );
+      const result = await withGitCredential(ctx, connection, (token, options) =>
+        listRepositories(
+          connection,
+          token,
+          connection.githubInstallation ? 'installation' : 'user',
+          options,
+        ),
+      );
+      return { data: result.repositories, more: result.more };
+    },
+  );
   app.get<{ Params: { id: string }; Querystring: { repository?: string; number?: string } }>(
     '/api/v1/git/connections/:id/issue',
     async (request) => {

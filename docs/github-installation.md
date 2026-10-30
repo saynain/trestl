@@ -8,6 +8,6 @@ Everyone in this Trestl installation can reference issues from repositories avai
 
 Trestl creates short-lived installation access tokens on the server when needed, requesting only Issues and Metadata read access. GitHub's all/selected repository choice continues to govern access. GitHub suspensions, revocations, and repository restrictions apply when Trestl requests access. No GitHub secret is sent to the browser or native clients.
 
-To rotate the private key, add and verify a replacement connection, reconnect repository imports as needed, then disconnect the old connection and revoke its key on GitHub. Disconnecting preserves imported work and existing links but stops its imports.
+To rotate the private key, add and verify a replacement connection, reattach repositories with it as needed, then disconnect the old connection and revoke its key on GitHub. Disconnecting detaches its repositories and preserves imported work and existing links.
 
 The previous [personal GitHub App flow](github-app.md) remains compatible for existing credentials; it is separate from this installation-wide connection.

@@ -353,3 +353,193 @@ export async function fetchIssue(
     clearTimeout(timer);
   }
 }
+
+export interface RepositoryInfo {
+  /** Provider repository ID. It survives renames and transfers, unlike the path. */
+  id: string;
+  repository: string;
+  private: boolean | null;
+  issues: boolean;
+  /** The credential's role on the repository, when the provider reports it. */
+  push: boolean | null;
+}
+export interface RepositoryAccess {
+  repository: string;
+  remoteId: string | null;
+  private: boolean | null;
+  /** Repository metadata could be read; Gitea issue-only tokens cannot. */
+  metadata: boolean;
+  issues: boolean;
+  push: boolean | null;
+}
+
+function apiBase(source: RepositorySource) {
+  return source.provider === 'gitea' ? `${source.baseUrl}/api/v1` : source.baseUrl;
+}
+function repoPath(source: RepositorySource) {
+  return source.repository.split('/').map(encodeURIComponent).join('/');
+}
+const repositoryName = (value: unknown) => {
+  const name = string(value);
+  return /^[\w.-]+\/[\w.-]+$/.test(name) && !name.split('/').some((part) => /^\.\.?$/.test(part))
+    ? name
+    : '';
+};
+
+/** A bounded, redirect-free GET to the trusted provider API. Errors never include bodies. */
+async function providerGet(
+  source: RepositorySource,
+  path: string,
+  token: string,
+  options: FetchOptions,
+): Promise<{ body: unknown; headers: Headers }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 15_000);
+  timer.unref();
+  try {
+    const response = await (options.fetch ?? fetch)(`${apiBase(source)}${path}`, {
+      method: 'GET',
+      redirect: 'error',
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/json',
+        Authorization: `${source.provider === 'gitea' ? 'token' : 'Bearer'} ${token}`,
+        'User-Agent': 'Trestl/0.1',
+        ...(source.provider === 'github' ? { 'X-GitHub-Api-Version': '2022-11-28' } : {}),
+      },
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new ProviderRequestError(
+        response.status,
+        `Provider request failed (HTTP ${response.status}). Check repository access, token permissions, and rate limits.`,
+      );
+    }
+    return { body: await readJson(response), headers: response.headers };
+  } catch (error) {
+    if (controller.signal.aborted)
+      throw new Error('Provider request timed out. Please retry later.');
+    if (error instanceof TypeError)
+      throw new Error(
+        'Could not reach the provider. Check its URL, TLS certificate, and redirect configuration.',
+      );
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function repositoryInfo(value: unknown): RepositoryInfo | null {
+  const body = record(value);
+  const repository = repositoryName(body.full_name);
+  if (!repository) return null;
+  const permissions = record(body.permissions);
+  return {
+    id: sourceId(body.id),
+    repository,
+    private: typeof body.private === 'boolean' ? body.private : null,
+    issues: body.has_issues !== false,
+    push:
+      typeof permissions.push === 'boolean' ? permissions.push || permissions.admin === true : null,
+  };
+}
+
+/**
+ * Confirms what a credential can read in one repository, using GET requests only.
+ * Metadata is optional because Gitea tokens scoped to issues cannot read it.
+ */
+export async function checkRepositoryAccess(
+  sourceInput: RepositorySource,
+  token: string,
+  options: FetchOptions = {},
+): Promise<RepositoryAccess> {
+  const source = validateSource(sourceInput, options.allowedOrigins);
+  const base = `/repos/${repoPath(source)}`;
+  let info: RepositoryInfo | null = null;
+  try {
+    info = repositoryInfo((await providerGet(source, base, token, options)).body);
+    if (!info) throw new Error('Provider returned an unexpected repository response.');
+  } catch (error) {
+    if (!(error instanceof ProviderRequestError) || ![403, 404].includes(error.providerStatus))
+      throw error;
+  }
+  let issues = false;
+  let remoteId = info?.id ?? null;
+  if (info?.issues !== false) {
+    try {
+      const page = (
+        await providerGet(
+          source,
+          `${base}/issues?state=all&${source.provider === 'gitea' ? 'type=issues&limit=1' : 'per_page=1'}`,
+          token,
+          options,
+        )
+      ).body;
+      if (!Array.isArray(page))
+        throw new Error('Provider returned an unexpected response; an array was required.');
+      issues = true;
+      // Gitea issues name their repository, which identifies it without metadata access.
+      const embedded = record(record(page[0]).repository).id;
+      if (!remoteId && embedded !== undefined) remoteId = sourceId(embedded);
+    } catch (error) {
+      if (
+        !(error instanceof ProviderRequestError) ||
+        ![403, 404, 410].includes(error.providerStatus)
+      )
+        throw error;
+    }
+  }
+  if (!info && !issues)
+    throw new ProviderRequestError(
+      404,
+      'Repository not found, or this connection cannot read it. Check the owner/repository name and the credential’s repository access.',
+    );
+  return {
+    repository: info?.repository ?? source.repository,
+    remoteId,
+    private: info?.private ?? null,
+    metadata: !!info,
+    issues,
+    push: info?.push ?? null,
+  };
+}
+
+/** The first page of repositories a credential can read, most recently updated first. */
+export async function listRepositories(
+  sourceInput: Omit<RepositorySource, 'repository'>,
+  token: string,
+  kind: 'user' | 'installation',
+  options: FetchOptions = {},
+): Promise<{ repositories: { repository: string; private: boolean | null }[]; more: boolean }> {
+  const source = validateSource(
+    { ...sourceInput, repository: 'owner/repository' },
+    options.allowedOrigins,
+  );
+  const limit = source.provider === 'gitea' ? 50 : 100;
+  const path =
+    source.provider === 'gitea'
+      ? `/repos/search?limit=${limit}&page=1&sort=updated&order=desc`
+      : kind === 'installation'
+        ? `/installation/repositories?per_page=${limit}&page=1`
+        : `/user/repos?per_page=${limit}&page=1&sort=updated`;
+  const body = (await providerGet(source, path, token, options)).body;
+  const rows = Array.isArray(body) ? body : (record(body).repositories ?? record(body).data);
+  if (!Array.isArray(rows)) throw new Error('Provider returned an unexpected repository list.');
+  const repositories = rows
+    .map(record)
+    .map((row) => ({
+      repository: repositoryName(row.full_name),
+      private: typeof row.private === 'boolean' ? row.private : null,
+    }))
+    .filter((row) => row.repository);
+  return { repositories, more: rows.length >= limit };
+}
+
+/** Browser links are built from the trusted base URL, never from provider responses. */
+export function repositoryWebUrl(source: RepositorySource): string {
+  const web =
+    source.baseUrl === 'https://api.github.com'
+      ? 'https://github.com'
+      : source.baseUrl.replace(/\/api\/(v1|v3)$/, '');
+  return `${web}/${repoPath(source)}`;
+}
