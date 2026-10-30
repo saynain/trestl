@@ -184,6 +184,86 @@
   padding: 24px;
   line-height: 1.7;
 }
+.repository-two-way {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.repository-publish {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.repository-publish legend {
+  font-size: var(--text-ui);
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+.repository-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: var(--text-ui);
+  line-height: 1.6;
+}
+.repository-preview dl {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.repository-preview dl > div {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 10px;
+}
+.repository-preview dt {
+  color: var(--muted);
+}
+.repository-ownership {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+.repository-ownership th,
+.repository-ownership td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.repository-ownership thead th {
+  color: var(--muted);
+  font-weight: 500;
+}
+.repository-ownership tbody th {
+  font-weight: 450;
+  width: 45%;
+}
+.repository-ownership td {
+  color: var(--muted);
+}
+.repository-ownership tr.published th,
+.repository-ownership tr.published td {
+  color: var(--text);
+  background: var(--accent-soft);
+}
+.repository-never,
+.repository-note {
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--muted);
+}
+.repository-never strong {
+  font-weight: 500;
+  color: var(--text);
+}
 @media (max-width: 760px) {
   .resources-subheading {
     flex-wrap: wrap;
@@ -207,5 +287,9 @@
   }
   .repository-settings {
     padding: 0 11px 14px;
+  }
+  .repository-preview dl > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
   }
 }

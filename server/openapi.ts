@@ -1082,6 +1082,10 @@ schemas.RepositoryAccess = object({
   reason: { ...nullableString, description: 'Why publishing would be unavailable.' },
 });
 const repositoryMode = { type: 'string', enum: ['reference', 'inbound'] };
+const publication = object(
+  { comments: { type: 'boolean' }, status: { type: 'boolean' }, assignee: { type: 'boolean' } },
+  ['comments', 'status', 'assignee'],
+);
 schemas.ProjectRepository = object({
   id: string,
   projectId: uuid,
@@ -1089,8 +1093,13 @@ schemas.ProjectRepository = object({
   repository: string,
   baseUrl: string,
   webUrl: string,
-  mode: repositoryMode,
+  mode: { type: 'string', enum: ['reference', 'inbound', 'two_way'] },
   isDefault: { type: 'boolean' },
+  publish: publication,
+  twoWay: {
+    type: ['object', 'null'],
+    properties: { activatedAt: string, activatedBy: uuid },
+  },
   connection: {
     type: ['object', 'null'],
     properties: { id: string, name: string, shared: { type: 'boolean' } },
@@ -1155,6 +1164,41 @@ operation(
   {},
   undefined,
   { noContent: true, browserOnly: true },
+);
+operation(
+  '/projects/{id}/repositories/{repositoryId}/two-way/preview',
+  'post',
+  'Preview what enabling two-way would publish, and who could read it',
+  object({
+    destination: object({
+      repository: string,
+      webUrl: string,
+      private: { type: ['boolean', 'null'] },
+    }),
+    publisher: string,
+    audience: string,
+    fields: {
+      type: 'array',
+      items: object({ field: string, owner: string, published: { type: 'boolean' } }),
+    },
+    neverPublished: { type: 'array', items: string },
+    note: string,
+    confirmation: { type: 'string', description: 'Send back to confirm exactly this preview.' },
+  }),
+  object({ publish: publication }, ['publish']),
+  { browserOnly: true },
+);
+operation(
+  '/projects/{id}/repositories/{repositoryId}/two-way',
+  'post',
+  'Enable two-way after confirming its preview (project owner or administrator, browser only)',
+  ref('ProjectRepository'),
+  object({ publish: publication, confirmation: string }, ['publish', 'confirmation']),
+  {
+    browserOnly: true,
+    description:
+      'Rejected with 409 when the preview changed. Switch back with PATCH mode inbound or reference, which withdraws consent. This version does not write to the repository.',
+  },
 );
 operation(
   '/projects/{id}/repositories/{repositoryId}/sync',

@@ -1,6 +1,13 @@
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { Check, GitFork, Loader2, Plus, RefreshCw, Settings2, ShieldAlert } from 'lucide-react';
 import type { Project } from '../../shared/types';
+import {
+  noPublication,
+  outboundFields,
+  outboundLabels,
+  type Publication,
+  type SyncMode,
+} from '../../shared/repository-sync';
 import { api, patch, post, remove } from '../lib/api';
 import { useApp } from '../lib/context';
 import { navigate } from '../lib/model';
@@ -9,7 +16,7 @@ import { GitHubIcon, Modal } from './ui';
 import type { GitConnection } from './GitSettings';
 import './repositories.css';
 
-type Mode = 'reference' | 'inbound';
+type Mode = SyncMode;
 interface Access {
   checkedAt: string;
   private: boolean | null;
@@ -31,12 +38,23 @@ export interface Repository {
   lastErrorAt: string | null;
   syncing: boolean;
   access: Access | null;
+  publish: Publication;
+  twoWay: { activatedAt: string; activatedBy: string } | null;
 }
 interface Verification {
   provider: 'github' | 'gitea';
   repository: string;
   access: Access;
-  conflicts: Record<Mode, string | null>;
+  conflicts: Record<'reference' | 'inbound', string | null>;
+}
+interface TwoWayPreview {
+  destination: { repository: string; webUrl: string; private: boolean | null };
+  publisher: string;
+  audience: string;
+  fields: { field: string; owner: string; published: boolean }[];
+  neverPublished: string[];
+  note: string;
+  confirmation: string;
 }
 const message = (error: unknown) =>
   error instanceof Error ? error.message : 'Something went wrong. Please try again.';
@@ -44,7 +62,17 @@ const when = (date: string) =>
   new Date(date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 const providerName = (provider: Repository['provider']) =>
   provider === 'github' ? 'GitHub' : 'Gitea';
-const modeName: Record<Mode, string> = { reference: 'Reference', inbound: 'Inbound mirror' };
+const modeName: Record<Mode, string> = {
+  reference: 'Reference',
+  inbound: 'Inbound mirror',
+  two_way: 'Two-way',
+};
+const published = (publish: Publication) =>
+  new Intl.ListFormat('en', { type: 'conjunction' }).format(
+    outboundFields
+      .filter((field) => publish[field])
+      .map((field) => outboundLabels[field].title.toLowerCase()),
+  );
 
 function health(repository: Repository) {
   if (repository.syncing) return 'Syncing…';
@@ -60,16 +88,19 @@ function ModeChoice({
   access,
   provider,
   disabled = {},
+  attached = true,
 }: {
   value: Mode;
   onChange: (mode: Mode) => void;
   access: Access | null;
   provider: Repository['provider'];
   disabled?: Partial<Record<Mode, string | null>>;
+  /** Two-way is enabled from an attached repository's settings, after a preview. */
+  attached?: boolean;
 }) {
   const name = useId();
   const readOnly = access && !access.write ? access.reason : null;
-  const options: { id: Mode | 'two_way'; title: string; detail: string; blocked: boolean }[] = [
+  const options: { id: Mode; title: string; detail: string; blocked: boolean }[] = [
     {
       id: 'reference',
       title: 'Reference',
@@ -90,8 +121,10 @@ function ModeChoice({
       title: 'Two-way',
       detail: readOnly
         ? 'Unavailable with this connection.'
-        : 'Not available yet. Replies and status will flow back only when you opt in.',
-      blocked: true,
+        : attached
+          ? 'An inbound mirror where replies, status or assignee flow back, only for the fields you opt into. You review a preview first.'
+          : 'Attach the repository first, then enable two-way from its settings.',
+      blocked: !!readOnly || !attached || !!disabled.two_way,
     },
   ];
   return (
@@ -108,7 +141,7 @@ function ModeChoice({
             value={option.id}
             checked={value === option.id}
             disabled={option.blocked}
-            onChange={() => option.id !== 'two_way' && onChange(option.id)}
+            onChange={() => onChange(option.id)}
           />
           <span>
             <strong>{option.title}</strong>
@@ -123,6 +156,157 @@ function ModeChoice({
         </label>
       ))}
     </fieldset>
+  );
+}
+
+function TwoWayActivation({
+  project,
+  repository,
+  onCancel,
+  onEnabled,
+}: {
+  project: Project;
+  repository: Repository;
+  onCancel: () => void;
+  onEnabled: (repository: Repository) => void;
+}) {
+  const [publish, setPublish] = useState<Publication>(noPublication);
+  const [preview, setPreview] = useState<TwoWayPreview | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const path = `/projects/${project.id}/repositories/${repository.id}/two-way`;
+  async function run(action: () => Promise<void>) {
+    setBusy(true);
+    setError('');
+    try {
+      await action();
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="repository-two-way">
+      <fieldset className="repository-publish">
+        <legend>What may flow back to {repository.repository}</legend>
+        {outboundFields.map((field) => (
+          <label className="check-field" key={field}>
+            <input
+              type="checkbox"
+              checked={publish[field]}
+              onChange={(e) => {
+                setPublish({ ...publish, [field]: e.target.checked });
+                setPreview(null);
+                setConfirmed(false);
+              }}
+            />
+            <span>
+              {outboundLabels[field].title}
+              <small>{outboundLabels[field].detail}</small>
+            </span>
+          </label>
+        ))}
+      </fieldset>
+      {preview && (
+        <section className="repository-preview" aria-label="Two-way preview">
+          <dl>
+            <div>
+              <dt>Destination</dt>
+              <dd>
+                <a href={preview.destination.webUrl} target="_blank" rel="noopener noreferrer">
+                  {preview.destination.repository}
+                </a>
+                {preview.destination.private === null
+                  ? ''
+                  : preview.destination.private
+                    ? ' · Private'
+                    : ' · Public'}
+              </dd>
+            </div>
+            <div>
+              <dt>Published by</dt>
+              <dd>{preview.publisher}</dd>
+            </div>
+            <div>
+              <dt>Audience</dt>
+              <dd>{preview.audience}</dd>
+            </div>
+          </dl>
+          <table className="repository-ownership">
+            <thead>
+              <tr>
+                <th scope="col">Field</th>
+                <th scope="col">With two-way</th>
+              </tr>
+            </thead>
+            <tbody>
+              {preview.fields.map((row) => (
+                <tr key={row.field} className={row.published ? 'published' : ''}>
+                  <th scope="row">{row.field}</th>
+                  <td>{row.published ? 'Published to the repository' : row.owner}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="repository-never">
+            <strong>Never published:</strong> {preview.neverPublished.join('; ')}.
+          </p>
+          <p className="repository-note">{preview.note}</p>
+          <label className="check-field">
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={(e) => setConfirmed(e.target.checked)}
+            />
+            <span>
+              I confirm Trestl may publish {published(publish)} to {preview.destination.repository}.
+            </span>
+          </label>
+        </section>
+      )}
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="repository-settings-actions">
+        <button className="button" disabled={busy} onClick={onCancel}>
+          Cancel
+        </button>
+        {preview ? (
+          <button
+            className="button primary"
+            disabled={busy || !confirmed}
+            onClick={() =>
+              void run(async () =>
+                onEnabled(
+                  await post<Repository>(path, {
+                    publish,
+                    confirmation: preview.confirmation,
+                  }),
+                ),
+              )
+            }
+          >
+            {busy && <Loader2 className="spin" size={14} />}Enable two-way
+          </button>
+        ) : (
+          <button
+            className="button primary"
+            disabled={busy || !outboundFields.some((field) => publish[field])}
+            onClick={() =>
+              void run(async () =>
+                setPreview(await post<TwoWayPreview>(`${path}/preview`, { publish })),
+              )
+            }
+          >
+            {busy && <Loader2 className="spin" size={14} />}Preview
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -215,11 +399,12 @@ function AttachRepository({
   }
   // Only a repository already attached here blocks Reference; no mode is left to choose.
   const attachedHere = verified?.conflicts.reference ?? null;
-  const blocked = verified && {
+  const blocked: Record<Mode, string | null> | null = verified && {
     reference: verified.conflicts.reference,
     inbound:
       verified.conflicts.inbound ??
       (verified.access.issues ? null : 'This connection cannot read issues in this repository.'),
+    two_way: 'Enable two-way after attaching.',
   };
   return (
     <Modal title="Attach repository" onClose={onClose} className="repository-dialog">
@@ -323,6 +508,7 @@ function AttachRepository({
                     access={verified.access}
                     provider={verified.provider}
                     disabled={blocked ?? {}}
+                    attached={false}
                   />
                   <label className="check-field">
                     <input
@@ -406,12 +592,32 @@ function RepositorySettings({
         access={repository.access}
         provider={repository.provider}
       />
-      {confirm === 'mode' && (
+      {repository.mode === 'two_way' && repository.twoWay && (
+        <p className="repository-note">
+          Publishes {published(repository.publish) || 'nothing'} to {repository.repository}. Enabled{' '}
+          {when(repository.twoWay.activatedAt)}; earlier notes are never published.
+        </p>
+      )}
+      {confirm === 'mode' && mode === 'two_way' && (
+        <TwoWayActivation
+          project={project}
+          repository={repository}
+          onCancel={() => (setMode(repository.mode), setConfirm(null))}
+          onEnabled={(next) => {
+            onChange(next);
+            setConfirm(null);
+            toast(`Two-way enabled for ${repository.repository}`);
+          }}
+        />
+      )}
+      {confirm === 'mode' && mode !== 'two_way' && (
         <div className="repository-confirm">
           <span>
             {mode === 'reference'
               ? 'Stop importing? Existing items stay in this project and stop updating.'
-              : 'Start importing issues and comments from this repository?'}
+              : repository.mode === 'two_way'
+                ? 'Stop publishing? Issues keep importing, and nothing flows back.'
+                : 'Start importing issues and comments from this repository?'}
           </span>
           <button className="button" onClick={() => (setMode(repository.mode), setConfirm(null))}>
             Cancel
@@ -528,7 +734,8 @@ export default function ProjectRepositories({ project }: { project: Project }) {
         <div>
           <h3 id={`repositories-${project.id}`}>Repositories</h3>
           <p className="muted">
-            Inbound mirrors bring issues into this project. Trestl only reads from repositories.
+            Mirrors bring issues into this project. Nothing flows back unless a project owner
+            enables two-way.
           </p>
         </div>
         {canManage && (
@@ -565,17 +772,18 @@ export default function ProjectRepositories({ project }: { project: Project }) {
                   </a>
                   <small>
                     {modeName[repository.mode]}
+                    {repository.mode === 'two_way' && ` (${published(repository.publish)})`}
                     {repository.connection && <> · {repository.connection.name}</>} ·{' '}
                     <span className={repository.lastError ? 'danger-text' : ''}>
                       {syncing === repository.id ? 'Syncing…' : health(repository)}
                     </span>
                   </small>
-                  {repository.lastError && repository.mode === 'inbound' && (
+                  {repository.lastError && repository.mode !== 'reference' && (
                     <p className="repository-error">{repository.lastError}</p>
                   )}
                 </div>
                 {repository.isDefault && <span className="repository-badge">Default</span>}
-                {canManage && repository.mode === 'inbound' && (
+                {canManage && repository.mode !== 'reference' && (
                   <button
                     className="icon-button"
                     aria-label={`Sync ${repository.repository}`}
@@ -633,7 +841,7 @@ export default function ProjectRepositories({ project }: { project: Project }) {
             setAttaching(false);
             toast(`${repository.repository} attached`);
             void load().then(() => {
-              if (repository.mode === 'inbound') void sync(repository);
+              if (repository.mode !== 'reference') void sync(repository);
             });
           }}
         />

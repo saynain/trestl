@@ -154,7 +154,7 @@ Git connections are personal to your account in the current workspace and availa
 
 In any project's **Resources → Find Git issue**, choose a connection and enter `owner/repository#123` to preview and link an issue. Lookup uses your token on every request and does not import the repository or cache the issue. Linking shares its title and URL with project members; the provider still controls access to the original issue. Pull requests are not supported by this lookup.
 
-Project owners and administrators attach repositories from the project's **Resources → Repositories** panel: choose a Git connection an administrator configured, choose a repository, check access, and pick **Reference** (link only) or **Inbound mirror** (import issues and comments). A project can have several repositories; one is the default for new items. Project members see each repository's mode and sync health but never its credentials. See [repository attachments](repositories.md) for modes, permissions, and upgrade behaviour. Repository imports configured before attachments become inbound mirrors with unchanged behaviour. Disconnecting a Git connection detaches its repositories; imported work and resource links are retained.
+Project owners and administrators attach repositories from the project's **Resources → Repositories** panel: choose a Git connection an administrator configured, choose a repository, check access, and pick **Reference** (link only) or **Inbound mirror** (import issues and comments). Project owners can later enable **Two-way** for the fields they opt into, after reviewing a preview. A project can have several repositories; one is the default for new items. Project members see each repository's mode and sync health but never its credentials. See [repository attachments](repositories.md) for modes, permissions, and upgrade behaviour. Repository imports configured before attachments become inbound mirrors with unchanged behaviour. Disconnecting a Git connection detaches its repositories; imported work and resource links are retained.
 
 Inbound mirrors sync when they are attached and when someone selects **Sync**. Set `INTEGRATION_SYNC_INTERVAL_MS=300000` to reconcile every five minutes; the minimum periodic interval is 60000 milliseconds. A mirror imports issues and comments, skips pull requests, and deduplicates repeated imports. After the initial import, title and description follow the source while status, priority, assignee, and dates remain local. Remote comment edits and deletions are reconciled. Imported work remains in Trestl if its source issue disappears or the repository is detached.
 
@@ -162,7 +162,7 @@ Imported items are **linked issues with local planning**. Lists and boards displ
 
 Inside a linked item, the source header provides the original issue link and last synchronization time. Title and description are read-only in Trestl; use **Edit in Gitea/GitHub** to open the source issue. **Repository state** follows the provider on sync, while **Planning status** remains local. A closed source issue with unfinished local work shows a review notice. Imported comments identify their original author and provider; the local composer is explicitly **Add internal note**. Existing imports gain this metadata automatically, and disconnected items retain their origin and last known state. Recurring successors are new native tasks rather than additional mirrors of the same source issue.
 
-Attached repositories are **read-only**. Internal notes and planning changes are never posted back to the source. There is no remote posting, two-way editing, or webhook receiver in this version.
+Attached repositories are **read-only** by default. Internal notes and planning changes are never posted back to the source. Two-way mode records which fields a project allows to flow back, but this version does not write to GitHub or Gitea and has no webhook receiver.
 
 ### Confluence documentation
 
@@ -172,7 +172,6 @@ An administrator sets `CONFLUENCE_ALLOWED_ORIGINS` to a comma-separated list of 
 - **Data Center:** application URL including any context path such as `/confluence`, and a personal access token.
 
 Search and page previews call Confluence using that user's credentials, so the provider enforces their page permissions. Credentials are not shared between workspace members, and page content is not stored as a shared cache. Search returns up to 25 results; previews show up to 3,000 characters of plain text and a link to the original page. Refine the search to narrow larger result sets. These connections support reading and linking pages; Confluence editing, OAuth/SSO connections, and paginated search are not implemented. See Atlassian's [Cloud search API](https://developer.atlassian.com/cloud/confluence/rest/v1/api-group-search/) and [Data Center access tokens](https://confluence.atlassian.com/enterprise/using-personal-access-tokens-1026032365.html).
-
 
 ## Daily planning and reliable saves
 
