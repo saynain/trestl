@@ -130,8 +130,11 @@ test('PGlite installations keep a generated key unless APP_SECRET is configured'
     assert.equal((await storedAppSecret(file, first.secret)).mismatch, false);
     await writeFile(first.path, 'short');
     await assert.rejects(storedAppSecret(file, undefined), /Restore it from a backup/);
+    // A missing parent is created; a file in its place cannot be.
+    assert.equal((await storedAppSecret(join(dir, 'new', 'app-secret'), undefined)).created, true);
+    await writeFile(join(dir, 'blocker'), '');
     await assert.rejects(
-      storedAppSecret(join(dir, 'missing', 'app-secret'), undefined),
+      storedAppSecret(join(dir, 'blocker', 'app-secret'), undefined),
       (error: Error) =>
         error instanceof SettingsError && /Make that folder writable/.test(error.message),
     );
@@ -293,12 +296,13 @@ test('the server refuses a malformed APP_ORIGIN before opening any data', async 
 });
 
 test('a fresh PGlite server generates its key beside the database and reuses it', async () => {
-  // The container layout: one volume holding the database folder and its key.
+  // The container layout: one volume holding the database folder and its key. The volume
+  // folder does not exist yet, so the key creates it before the database opens.
   const dir = await mkdtemp(join(tmpdir(), 'trestl-pglite-'));
   const port = await freePort();
   const run = async () => {
     const server = start({
-      DATA_DIR: join(dir, 'database'),
+      DATA_DIR: join(dir, 'volume', 'database'),
       PORT: String(port),
       NODE_ENV: 'production',
     });
@@ -311,7 +315,7 @@ test('a fresh PGlite server generates its key beside the database and reuses it'
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
       return {
-        key: await readFile(join(dir, 'database-app-secret'), 'utf8'),
+        key: await readFile(join(dir, 'volume', 'database-app-secret'), 'utf8'),
         log: server.output(),
       };
     } finally {
@@ -324,7 +328,9 @@ test('a fresh PGlite server generates its key beside the database and reuses it'
     assert.match(first.key, /^[0-9a-f]{64}$/);
     assert.match(first.log, /Generated the key that encrypts Git and sign-in credentials/);
     assert.match(first.log, /create the administrator account/);
-    await assert.rejects(stat(join(dir, 'database', 'app-secret')), { code: 'ENOENT' });
+    // The key exists before the database opens, yet PGlite still initializes its folder.
+    await assert.rejects(stat(join(dir, 'volume', 'database', 'app-secret')), { code: 'ENOENT' });
+    await stat(join(dir, 'volume', 'database', 'PG_VERSION'));
     const second = await run();
     assert.equal(second.key, first.key);
     assert.doesNotMatch(second.log, /Generated the key/);

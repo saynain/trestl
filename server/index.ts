@@ -35,6 +35,19 @@ if (
   );
   process.exit(1);
 }
+// Resolve the effective key before opening the database, so everything that runs while
+// it opens (such as a pre-upgrade backup) sees the same APP_SECRET as the running server.
+let key: Awaited<ReturnType<typeof storedAppSecret>> | undefined;
+if (database.kind === 'pglite' && database.secretFile) {
+  try {
+    key = await storedAppSecret(database.secretFile, process.env.APP_SECRET);
+  } catch (error) {
+    if (!(error instanceof SettingsError)) throw error;
+    console.error(`Trestl cannot start: ${error.message}`);
+    process.exit(1);
+  }
+  process.env.APP_SECRET = key.secret;
+}
 let app: Awaited<ReturnType<typeof createApp>>;
 try {
   app = await createApp({ logger: true });
@@ -45,25 +58,14 @@ try {
   process.exit(1);
 }
 for (const warning of settings.warnings) app.log.warn(warning);
-if (database.kind === 'pglite' && database.secretFile) {
-  const key = await storedAppSecret(database.secretFile, process.env.APP_SECRET).catch(
-    async (error) => {
-      if (!(error instanceof SettingsError)) throw error;
-      console.error(`Trestl cannot start: ${error.message}`);
-      await app.close();
-      process.exit(1);
-    },
+if (key?.created)
+  app.log.info(
+    `Generated the key that encrypts Git and sign-in credentials at ${key.path}. Back it up with the data, or set APP_SECRET.`,
   );
-  process.env.APP_SECRET = key.secret;
-  if (key.created)
-    app.log.info(
-      `Generated the key that encrypts Git and sign-in credentials at ${key.path}. Back it up with the data, or set APP_SECRET.`,
-    );
-  if (key.mismatch)
-    app.log.warn(
-      `APP_SECRET differs from the generated key at ${key.path}. Credentials saved with that key cannot be decrypted; unset APP_SECRET or reconnect them.`,
-    );
-}
+if (key?.mismatch)
+  app.log.warn(
+    `APP_SECRET differs from the generated key at ${key.path}. Credentials saved with that key cannot be decrypted; unset APP_SECRET or reconnect them.`,
+  );
 app.log.info(
   `Storing data in ${database.kind === 'pglite' ? 'PGlite' : 'PostgreSQL'} at ${database.description}`,
 );

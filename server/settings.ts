@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 
 /** A deployment value Trestl cannot safely run with. The message is shown to the operator. */
 export class SettingsError extends Error {}
@@ -135,14 +135,19 @@ export async function storedAppSecret(path: string, configured: string | undefin
       mismatch: !!existing && existing !== configured,
     };
   }
+  const unwritable = (error: unknown) =>
+    new SettingsError(
+      `Trestl could not save a generated key at ${path} (${(error as Error).message}). Make that folder writable, or set APP_SECRET.`,
+    );
+  // Callers load the key before the database creates DATA_DIR and its parents.
+  await mkdir(dirname(path), { recursive: true }).catch((error) => {
+    throw unwritable(error);
+  });
   let created = true;
   try {
     await writeFile(path, randomBytes(32).toString('hex'), { flag: 'wx', mode: 0o600 });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST')
-      throw new SettingsError(
-        `Trestl could not save a generated key at ${path} (${(error as Error).message}). Make that folder writable, or set APP_SECRET.`,
-      );
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw unwritable(error);
     created = false;
   }
   const secret = await saved();
