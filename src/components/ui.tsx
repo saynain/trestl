@@ -43,6 +43,16 @@ export function Brand({ small = false }: { small?: boolean }) {
     </span>
   );
 }
+/** Progress through first-run setup: installation, first project, next steps. */
+export function SetupSteps({ current }: { current: 1 | 2 | 3 }) {
+  return (
+    <div className="setup-steps" role="img" aria-label={`Setup step ${current} of 3`}>
+      {[1, 2, 3].map((step) => (
+        <span key={step} className={step <= current ? 'done' : undefined} />
+      ))}
+    </div>
+  );
+}
 export function Avatar({ user, size = 24 }: { user?: User | null; size?: number }) {
   return (
     <span

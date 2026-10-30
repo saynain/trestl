@@ -8,6 +8,7 @@ import {
   groupWorkItemsByTag,
   hashWithoutItem,
   itemPageHash,
+  projectKey,
   sortWorkItems,
   statusGroupOrder,
   statuses,
@@ -404,4 +405,13 @@ test('full-page items get their own hash and return to the list they were opened
   assert.equal(hashWithoutItem(''), '#/');
   assert.equal(hashWithoutItem('#/item/abc'), null);
   assert.equal(hashWithoutItem('#/item/abc?activity=act-1'), null);
+});
+
+test('project identifier prefixes use initials for several words and fit the server rules', () => {
+  assert.equal(projectKey('Web app'), 'WA');
+  assert.equal(projectKey('Kubernetes'), 'KUBE');
+  assert.equal(projectKey('  platform   and data  '), 'PAD');
+  assert.equal(projectKey('Café ølbryggeri'), 'CL');
+  assert.equal(projectKey('a b c d e f g h i j k l'), 'ABCDEFGHIJ');
+  assert.equal(projectKey(''), '');
 });

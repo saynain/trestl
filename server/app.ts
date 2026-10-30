@@ -22,9 +22,10 @@ import { registerCanvases } from './canvases.ts';
 import { registerCanvasCollaboration } from './canvas-collaboration.ts';
 import websocket from '@fastify/websocket';
 import { filterRoadmapReferences, roadmapUpdate, validateRoadmapReferences } from './roadmap.ts';
-import Fastify, { type FastifyRequest } from 'fastify';
+import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
 import { registerDesktopGateway } from './desktop-gateway.ts';
+import { appOrigin, cookieSecurity } from './settings.ts';
 import rateLimit from '@fastify/rate-limit';
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
 import { z } from 'zod';
@@ -528,15 +529,14 @@ export async function createApp(
       activityId,
     );
   const profileCookie = (userId: string) => `trestl_profile_${userId}`;
-  const cookieOptions = {
+  const secureCookies = cookieSecurity();
+  const cookieOptions = (request: FastifyRequest) => ({
     path: '/',
     httpOnly: true,
     sameSite: 'lax' as const,
-    secure:
-      process.env.SECURE_COOKIES === 'true' ||
-      (process.env.NODE_ENV === 'production' && process.env.SECURE_COOKIES !== 'false'),
+    secure: secureCookies === 'request' ? request.protocol === 'https' : secureCookies,
     maxAge: 30 * 86400,
-  };
+  });
   const savedSession = async (secret: string | undefined) => {
     if (!secret) return undefined;
     return (
@@ -546,7 +546,7 @@ export async function createApp(
       )
     ).rows[0];
   };
-  const session = async (user: User, reply: { setCookie: Function }, method = 'local') => {
+  const session = async (user: User, reply: FastifyReply, method = 'local') => {
     const workspaceId = workspaceOf(user);
     await db.query(
       "UPDATE entities SET data=data || jsonb_build_object('lastWorkspaceId',$1::text) WHERE collection='users' AND id=$2",
@@ -563,7 +563,7 @@ export async function createApp(
         method,
       ],
     );
-    reply.setCookie('trestl_session', secret, cookieOptions);
+    reply.setCookie('trestl_session', secret, cookieOptions(reply.request));
   };
   app.addHook('onRequest', async (request, reply) => {
     if (!request.url.startsWith('/api/')) return;
@@ -594,13 +594,17 @@ export async function createApp(
     if (writes && !bearer) {
       const origin = request.headers.origin;
       if (origin) {
-        const allowed =
-          proxyAuth?.origin ??
-          configured?.origin ??
-          (process.env.APP_ORIGIN
-            ? new URL(process.env.APP_ORIGIN).origin
-            : `${request.protocol}://${request.host}`);
-        if (origin !== allowed) fail(403, 'Request origin is not allowed');
+        const setting = proxyAuth?.origin ?? configured?.origin;
+        const environment = appOrigin(process.env.APP_ORIGIN);
+        const allowed = setting ?? environment ?? `${request.protocol}://${request.host}`;
+        // Name the setting to change: a wrong origin is the most common setup mistake.
+        if (origin !== allowed)
+          fail(
+            403,
+            setting || environment
+              ? `This page was opened at ${origin}, but Trestl only accepts changes from ${allowed}. Open Trestl at ${allowed}, or change ${setting ? 'the installation URL in Administration → Authentication' : 'APP_ORIGIN'}.`
+              : `This page was opened at ${origin}, but the request reached Trestl as ${allowed}. Behind an HTTPS reverse proxy, set APP_ORIGIN to the address people open.`,
+          );
       }
       if (request.headers['sec-fetch-site'] === 'cross-site')
         fail(403, 'Cross-site requests are not allowed');

@@ -4,41 +4,41 @@ The application serves its built frontend and API from the same origin. A single
 
 ## Docker Compose
 
-Copy `.env.example` to `.env` in the repository root. Generate two independent values with `openssl rand -hex 32` and set `APP_SECRET` and `POSTGRES_PASSWORD`. Hexadecimal database passwords avoid URL-encoding issues in the connection string. The Compose file refuses to start without both values, using Docker's [required-variable interpolation](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/).
+The [quick start](../docs/quick-start.md#run-it-for-your-team) sets up a new installation with four commands. `compose.yaml` runs the published release image, `ghcr.io/saynain/trestl`, with PostgreSQL 17. Its `.env` needs two independent values from `openssl rand -hex 32`: `APP_SECRET` and `POSTGRES_PASSWORD`. Hexadecimal database passwords avoid URL-encoding issues in the connection string. The Compose file refuses to start without both values, using Docker's [required-variable interpolation](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/). `.env.example` lists the other settings.
 
 ```sh
-cp .env.example .env
-# Edit .env and set the two generated secrets.
-docker compose up --build -d
+docker compose up -d
 docker compose logs -f app
 ```
 
-Open [localhost:4317](http://localhost:4317), then create your administrator account. Compose binds the app to loopback and keeps PostgreSQL on its internal network. The named `postgres-data` volume retains data across restarts. Do not remove the volume unless you intend to delete the workspace.
+Open [localhost:4317](http://localhost:4317), then create your administrator account and first project. Set `TRESTL_IMAGE` in `.env` to run another release or [your own build](../docs/development.md#container-image). Compose binds the app to loopback and keeps PostgreSQL on its internal network. The named `postgres-data` volume retains data across restarts. Do not remove the volume unless you intend to delete the workspace.
 
 For access from other machines, put an HTTPS reverse proxy in front of port 4317 and set:
 
 ```dotenv
-SECURE_COOKIES=true
 APP_ORIGIN=https://projects.example.com
 ```
 
-`APP_ORIGIN` must exactly match the public browser origin, including scheme and a non-default port if used. The proxy must preserve the public Host header. The provided Compose configuration uses `SECURE_COOKIES=false` solely for its loopback HTTP setup. The app defaults to secure cookies when `NODE_ENV=production` unless explicitly overridden.
+`APP_ORIGIN` must exactly match the public browser origin: the scheme, host, and a non-default port if used, without a path. Trestl refuses to start with a malformed value, and refuses changes from another address with a message naming both. The proxy must preserve the public Host header. Session cookies are always Secure with an HTTPS `APP_ORIGIN`. Otherwise `SECURE_COOKIES` decides; when it is unset, cookies are Secure only for requests that arrive over HTTPS. The provided Compose configuration sets `SECURE_COOKIES=false` for its loopback HTTP setup.
 
 Keep `.env` outside version control. Repository credentials in the database are encrypted using `APP_SECRET`; store that key alongside your backup secrets. If you change the key, remove and reconnect repository integrations. TLS termination, DNS, certificate provisioning, and proxy configuration depend on your environment and are not deployed by this repository.
 
 ## Environment
 
-| Variable                       | Purpose                                                                 |
-| ------------------------------ | ----------------------------------------------------------------------- |
-| `DATABASE_URL`                 | PostgreSQL connection string; absent uses PGlite                        |
-| `DATA_DIR`                     | PGlite directory, default `.data`                                       |
-| `HOST` / `PORT`                | Listen address and port; defaults `127.0.0.1:4317`                      |
-| `APP_SECRET`                   | At least 32 characters; encrypts integration credentials                |
-| `APP_ORIGIN`                   | Public browser origin for session request checks                        |
-| `SECURE_COOKIES`               | Set `true` for HTTPS deployments                                        |
-| `INTEGRATION_ALLOWED_ORIGINS`  | Comma-separated exact self-hosted Git service origins                   |
-| `CONFLUENCE_ALLOWED_ORIGINS`   | Comma-separated exact HTTPS origins for personal Confluence connections |
-| `INTEGRATION_SYNC_INTERVAL_MS` | Optional automatic sync; at least 60000, otherwise disabled when unset  |
+| Variable                       | Purpose                                                                                         |
+| ------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                 | PostgreSQL connection string; absent uses PGlite                                                |
+| `DATA_DIR`                     | PGlite directory, default `.data`; the image uses `/data/database`                              |
+| `HOST` / `PORT`                | Listen address and port; defaults `127.0.0.1:4317`                                              |
+| `APP_SECRET`                   | At least 32 characters; encrypts credentials. With PGlite, generated in `<DATA_DIR>-app-secret` |
+| `APP_ORIGIN`                   | Public browser origin: scheme, host and optional port                                           |
+| `SECURE_COOKIES`               | `true` or `false`; always Secure with an HTTPS `APP_ORIGIN`                                     |
+| `TRESTL_IMAGE`                 | Compose only: the image to run, by default the latest release                                   |
+| `INTEGRATION_ALLOWED_ORIGINS`  | Comma-separated exact self-hosted Git service origins                                           |
+| `CONFLUENCE_ALLOWED_ORIGINS`   | Comma-separated exact HTTPS origins for personal Confluence connections                         |
+| `INTEGRATION_SYNC_INTERVAL_MS` | Optional automatic sync; at least 60000, otherwise disabled when unset                          |
+
+Trestl checks these values at startup. It stops with a message naming the setting when a value cannot work, and logs a warning for values that limit features, such as a missing or short `APP_SECRET`. With PGlite and no `APP_SECRET`, Trestl generates a key beside the data directory and uses it from then on; back it up with the data. A configured `APP_SECRET` always takes precedence.
 
 Compose enables five-minute repository reconciliation by default. The `/health` endpoint reports process liveness. `/ready` checks database connectivity and returns 503 when it is unavailable. Neither endpoint requires authentication. Monitor integration sync status separately.
 
@@ -52,6 +52,10 @@ an example overlay, and the GitOps deployment workflow. Kubernetes requires an
 external PostgreSQL database and one application replica. Environment-specific
 hostnames, registry locations, database provisioning, and routes belong in your
 own deployment repository.
+
+## Upgrades
+
+Back up before every upgrade: database migrations run when the new version starts, and an older version cannot open the migrated database. The [quick start](../docs/quick-start.md#upgrade) shows the steps for one container and for Compose. For Kubernetes, see its [operations notes](kubernetes/README.md#operations).
 
 ## Backup and restore
 

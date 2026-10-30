@@ -131,6 +131,16 @@ export function hashWithoutItem(hash: string) {
   query.delete('activity');
   return `#/${path}${query.size ? `?${query}` : ''}`;
 }
+/** Suggests a project's identifier prefix: initials for several words, else the first four characters. */
+export function projectKey(name: string) {
+  const words = name
+    .toUpperCase()
+    .replace(/[^A-Z0-9 ]/g, '')
+    .trim()
+    .split(/\s+/);
+  const key = words.length > 1 ? words.map((w) => w[0]).join('') : words[0]?.slice(0, 4) || '';
+  return key.slice(0, 10);
+}
 export function navigate(page: string, id?: string, tab = 'list', itemId?: string) {
   const params = new URLSearchParams();
   if (tab !== 'list' || page === 'view') params.set('tab', tab);

@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { ArrowRight, Check, LoaderCircle, LockKeyhole } from 'lucide-react';
-import { post } from '../lib/api';
-import { Brand } from './ui';
+import { api, post } from '../lib/api';
+import { Brand, SetupSteps } from './ui';
 export default function Auth({
   setup,
   proxy = false,
@@ -39,7 +39,14 @@ export default function Auth({
         ...(creating ? { name } : {}),
         ...(setup ? { seedDemo: demo, installationName: siteName } : {}),
       });
-      onSuccess();
+      // A browser drops Secure cookies over plain HTTP; say so instead of showing sign-in again.
+      const kept = (await api<{ authenticated: boolean }>('/auth/status')).authenticated;
+      if (!kept)
+        setError(
+          `${setup ? 'The installation was created, but your' : 'Your'} browser did not keep the sign-in cookie. This happens when Trestl sends Secure cookies over plain HTTP: open it over HTTPS, or unset SECURE_COOKIES.`,
+        );
+      // After setup the form must switch to sign-in either way; the message stays visible.
+      if (kept || setup) onSuccess();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -81,6 +88,7 @@ export default function Auth({
         <Brand />
       </div>
       <main className="auth-card">
+        {setup && <SetupSteps current={1} />}
         <div className="auth-symbol">
           <LockKeyhole size={23} />
         </div>

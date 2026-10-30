@@ -6,7 +6,10 @@ The **Publish image** GitHub Actions workflow publishes to
 pushes it without rebuilding. ARM64 publication is not configured yet.
 
 The smoke test covers initial setup, authenticated requests, persistence after
-an app restart, and database outage/recovery. To test an already-built image:
+an app restart, and database outage/recovery with Compose. It also runs the
+image as one container with the embedded database, as in the
+[quick start](quick-start.md), and checks that recreating the container keeps
+its data and generated key. To test an already-built image:
 
 ```sh
 TRESTL_SMOKE_IMAGE=trestl:test node scripts/test-docker.mjs
@@ -27,6 +30,11 @@ commit, image tag and digest to hand to the deployment repository. There is no
 automatic deployment and no mutable `latest` tag.
 
 ## Publish a version
+
+The release commit also updates the image tag that new installations use:
+`compose.yaml`, the [quick start](quick-start.md), the README, and the
+website's install commands. Compose reads `compose.yaml` from `main`, so the
+tag there must be published shortly after the release commit merges.
 
 After merging and verifying a release commit on `main`, push a new version tag:
 

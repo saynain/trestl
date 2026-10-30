@@ -62,6 +62,22 @@ The API now serves the built frontend at http://localhost:4317. This uses the
 same database configuration as development. See [Docker and
 self-hosting](../deploy/README.md) for a packaged installation.
 
+## Container image
+
+`compose.yaml` and the [quick start](quick-start.md) run the published release
+image. To run your own build instead, build it and point Compose at it:
+
+```sh
+docker build -t trestl:local .
+TRESTL_IMAGE=trestl:local docker compose up -d
+```
+
+Or run it as one container with its embedded database, as in the quick start:
+
+```sh
+docker run -d --name trestl-local -p 127.0.0.1:4317:4317 -v trestl-local:/data trestl:local
+```
+
 ## Checks
 
 ```sh
@@ -77,10 +93,15 @@ Tests create isolated databases and mock provider responses. Some require
 loopback networking. The CLI package test builds, packs, installs, and exercises
 the standalone CLI against a temporary server.
 
-The container smoke test needs Docker and uses an isolated Compose project,
-generated test credentials, and a temporary PostgreSQL volume. It verifies
-setup, task persistence after restart, and database readiness during an outage,
-then removes only its own containers and volume:
+The container smoke test needs Docker. It builds the image, then runs it in an
+isolated Compose project with generated test credentials and a temporary
+PostgreSQL volume. It verifies setup, task persistence after restart, and
+database readiness during an outage. It then runs the same image as one
+container with the embedded database, as in the quick start, and verifies
+setup, a first project, a Git connection saved with the generated key, and
+recreating the container. It removes only its own containers, volumes, and
+image. `TRESTL_SMOKE_PORT` selects two consecutive host ports instead of free
+ones:
 
 ```sh
 pnpm test:docker

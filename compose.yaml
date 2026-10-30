@@ -1,13 +1,15 @@
+# Trestl with PostgreSQL. Quick start: docs/quick-start.md
 services:
   app:
-    build: .
+    # The latest release. To run an image you built, set TRESTL_IMAGE (see docs/development.md).
+    image: ${TRESTL_IMAGE:-ghcr.io/saynain/trestl:v0.6.0}
     restart: unless-stopped
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 4317
-      DATABASE_URL: postgresql://${POSTGRES_USER:-trestl}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-trestl}
-      APP_SECRET: ${APP_SECRET:?Set APP_SECRET in .env}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-trestl}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env, for example to the output of openssl rand -hex 32}@db:5432/${POSTGRES_DB:-trestl}
+      APP_SECRET: ${APP_SECRET:?Set APP_SECRET in .env, for example to the output of openssl rand -hex 32}
       SECURE_COOKIES: ${SECURE_COOKIES:-false}
       APP_ORIGIN: ${APP_ORIGIN:-}
       AUTH_MODE: ${AUTH_MODE:-local}
@@ -36,7 +38,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-trestl}
       POSTGRES_USER: ${POSTGRES_USER:-trestl}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env, for example to the output of openssl rand -hex 32}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:

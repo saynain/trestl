@@ -10,7 +10,7 @@ const repo = 'https://github.com/saynain/trestl';
 const canonical = new URL(Astro.url.pathname, Astro.site);
 const commands = {
   local: 'git clone https://github.com/saynain/trestl.git\ncd trestl\ncorepack enable\npnpm install --frozen-lockfile\npnpm dev',
-  docker: 'git clone https://github.com/saynain/trestl.git\ncd trestl\ncp .env.example .env\n# Configure APP_SECRET and POSTGRES_PASSWORD\n# in .env before starting (see the guide).\ndocker compose up --build -d',
+  docker: 'docker run -d --name trestl -p 127.0.0.1:4317:4317 -v trestl-data:/data ghcr.io/saynain/trestl:v0.6.0\n# Open http://localhost:4317 to finish setup.\n# For a team, use Compose with PostgreSQL (see the guide).',
   kubernetes: 'git clone https://github.com/saynain/trestl.git\ncd trestl\n# Preview the example configuration:\nkubectl kustomize deploy/kubernetes/examples/basic\n# Follow the guide to configure your cluster.',
 };
 ---
@@ -78,7 +78,7 @@ const commands = {
       const guide = document.querySelector<HTMLAnchorElement>('#install-guide')!;
       const guides: Record<string, [string, string, string]> = {
         local: ['Node.js 22.9+ · pnpm 10.7.1', 'Local guide', '/docs/development/'],
-        docker: ['Docker + Compose · configure secrets before starting', 'Docker guide', '/docs/self-hosting/docker/'],
+        docker: ['Docker · one container · nothing to configure', 'Quick start', '/docs/quick-start/'],
         kubernetes: ['An existing cluster · PostgreSQL · configuration required', 'Cluster guide', '/docs/self-hosting/kubernetes/'],
       };
       function selectMethod(tab: HTMLButtonElement) {

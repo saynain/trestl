@@ -6,8 +6,8 @@ export const docPages = [
     title: 'Quick start',
     group: 'Get started',
     icon: 'rocket',
-    file: 'website/src/content/docs/quick-start.md',
-    description: 'Run Trestl locally and create your first account.',
+    file: 'docs/quick-start.md',
+    description: 'Run Trestl with Docker in five minutes and create your first project.',
   },
   {
     slug: 'desktop',

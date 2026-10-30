@@ -5,7 +5,7 @@ import { Lock, FolderTree } from 'lucide-react';
 import type { Project, Visibility } from '../../shared/types';
 import { patch, post } from '../lib/api';
 import { useApp } from '../lib/context';
-import { descendants, navigate } from '../lib/model';
+import { descendants, navigate, projectKey } from '../lib/model';
 import { Avatar, Modal } from './ui';
 import './item.css';
 const colors = ['#34775a', '#537ba6', '#9470b0', '#bb8550', '#b46e79', '#5b9193', '#657280'];
@@ -102,18 +102,7 @@ export default function ProjectForm({
               value={name}
               onChange={(e) => {
                 setName(e.target.value);
-                if (!keyEdited) {
-                  const words = e.target.value
-                    .toUpperCase()
-                    .replace(/[^A-Z0-9 ]/g, '')
-                    .trim()
-                    .split(/\s+/);
-                  const generated =
-                    words.length > 1
-                      ? words.map((w) => w[0]).join('')
-                      : words[0]?.slice(0, 4) || '';
-                  setKey(generated.slice(0, 10));
-                }
+                if (!keyEdited) setKey(projectKey(e.target.value));
               }}
               maxLength={160}
             />
