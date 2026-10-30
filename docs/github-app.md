@@ -1,6 +1,6 @@
 # GitHub App setup for self-hosted Trestl
 
-> **Earlier personal connection.** This page describes the per-person GitHub App flow. The app no longer offers **Connect GitHub**; new GitHub connections are shared with the whole installation and set up in **Administration → Integrations**, as described in [shared GitHub organization connection](github-installation.md). Existing personal connections remain and show **Legacy personal connection**.
+**Earlier personal connection.** This page describes the per-person GitHub App flow. The app no longer offers **Connect GitHub**; new GitHub connections are shared with the whole installation and set up in **Administration → Integrations**, as described in [shared GitHub organization connection](github-installation.md). Existing personal connections remain and show **Legacy personal connection**.
 
 Each Trestl installation can use its own GitHub App. No central Trestl service, shared developer credentials, or paid GitHub organization is required. A personal GitHub account can register and install an app. GitHub.com is supported by this browser flow; GitHub Enterprise Server and Gitea can continue using personal tokens.
 
