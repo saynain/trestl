@@ -11,6 +11,11 @@
   height: 6px;
   accent-color: var(--accent);
 }
+@media (max-width: 760px) {
+  .milestone-progress > span {
+    white-space: normal;
+  }
+}
 .milestone-items {
   padding: 12px;
   font-size: var(--text-ui);

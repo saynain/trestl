@@ -234,8 +234,13 @@ const schemas: Record<string, unknown> = {
       progress: {
         type: 'object',
         readOnly: true,
-        description: 'Counts visible linked items; only done counts as completed.',
-        properties: { total: { type: 'integer' }, done: { type: 'integer' } },
+        description:
+          'Counts visible linked items once. Only done counts as completed; canceled items are excluded from total and counted separately.',
+        properties: {
+          total: { type: 'integer' },
+          done: { type: 'integer' },
+          canceled: { type: 'integer' },
+        },
       },
       revision: { type: 'integer', minimum: 0, readOnly: true },
       id: uuid,

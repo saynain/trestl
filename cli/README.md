@@ -190,7 +190,7 @@ Hierarchy represents epics and features: create an ordinary parent item and grou
 
 `--milestone` accepts an ID or an exact title in the item's project. On create, the project comes from `--project` or the repository default. On update, the existing item's project applies unless explicitly changed. Duplicate titles in one project require an ID. `--no-milestone` clears assignment. Do not combine an assignment flag with its `--no-…` counterpart. Moving an item to another project clears its old milestone unless a valid milestone in the new project is supplied.
 
-`milestones` displays linked-item progress as done / total and the revision. `milestones --json` includes `progress: {done, total}` and `itemIds`, scoped to items visible to the caller. Completion remains a separate milestone field.
+`milestones` displays linked-item progress as done / total and the revision. `milestones --json` includes `progress: {done, total, canceled}` and `itemIds`, scoped to items visible to the caller; canceled items are excluded from `total`. Completion remains a separate milestone field.
 
 `delete` requires the revision observed with `get --json`; it returns exit 5 on a stale revision. Move or delete child items before deleting their parent. Successful JSON deletion returns `{deleted: true, id: <supplied-item-reference>}`; relation removal returns the removed relation ID in the same shape.
 

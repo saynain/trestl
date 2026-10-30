@@ -25,12 +25,14 @@ test('acknowledged writes preserve newer revisions, compute milestone progress a
     item('foreign', 1, { workspaceId: 'two' }),
   ]);
   assert.equal(next.items.find((i) => i.id === 'a')?.status, 'todo');
-  assert.deepEqual(next.milestones[0].progress, { total: 3, done: 1 });
+  assert.deepEqual(next.milestones[0].progress, { total: 3, done: 1, canceled: 0 });
   assert.equal(
     next.items.some((i) => i.id === 'foreign'),
     false,
   );
   assert.equal(data.items.length, 2);
   const removed = applyBootstrapItems(next, [], ['b']);
-  assert.deepEqual(removed.milestones[0].progress, { total: 2, done: 0 });
+  assert.deepEqual(removed.milestones[0].progress, { total: 2, done: 0, canceled: 0 });
+  const canceled = applyBootstrapItems(removed, [item('c', 2, { status: 'canceled' })]);
+  assert.deepEqual(canceled.milestones[0].progress, { total: 1, done: 0, canceled: 1 });
 });

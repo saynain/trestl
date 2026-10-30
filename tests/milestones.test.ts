@@ -164,7 +164,8 @@ test('linked work drives visible milestone progress, validates scope, clears ass
       milestoneId: m.id,
     });
     let detail = (await api('GET', `/milestones/${m.id}`)).json();
-    assert.deepEqual(detail.progress, { total: 4, done: 1 });
+    // Canceled work is reported separately, never as done or as remaining scope.
+    assert.deepEqual(detail.progress, { total: 3, done: 1, canceled: 1 });
     assert.ok(detail.itemIds.includes(done.id));
     assert.equal(detail.completed, false);
     assert.equal((await api('GET', `/items?milestoneId=${m.id}`)).json().data.length, 4);
@@ -184,10 +185,11 @@ test('linked work drives visible milestone progress, validates scope, clears ass
     assert.deepEqual((await api('GET', `/milestones/${next.id}`)).json().progress, {
       total: 1,
       done: 0,
+      canceled: 0,
     });
     await api('PATCH', `/items/${canceled.id}`, { milestoneId: null });
     detail = (await api('GET', `/milestones/${m.id}`)).json();
-    assert.deepEqual(detail.progress, { total: 2, done: 1 });
+    assert.deepEqual(detail.progress, { total: 2, done: 1, canceled: 0 });
     // Progress and linked IDs must not leak private work to another project member.
     const { memberSession, cookieOf } = await import('./installation-fixture.ts');
     const member = await memberSession(app, cookie, {
@@ -198,7 +200,7 @@ test('linked work drives visible milestone progress, validates scope, clears ass
     const visible = (
       await api('GET', `/milestones/${m.id}`, undefined, { cookie: cookieOf(member) })
     ).json();
-    assert.deepEqual(visible.progress, { total: 1, done: 1 });
+    assert.deepEqual(visible.progress, { total: 1, done: 1, canceled: 0 });
     assert.deepEqual(visible.itemIds, [done.id]);
     const before = (await api('GET', `/items/${done.id}`)).json().item;
     assert.equal((await api('DELETE', `/milestones/${m.id}`)).statusCode, 204);
