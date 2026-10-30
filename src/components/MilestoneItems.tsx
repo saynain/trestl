@@ -1,6 +1,8 @@
+import { workProgress } from '../../shared/progress';
 import type { Milestone } from '../../shared/types';
 import { useApp } from '../lib/context';
 import { shortDate } from '../lib/model';
+import { progressLabel } from '../lib/progress';
 import { StatusIcon } from './ui';
 import './milestone-items.css';
 
@@ -9,12 +11,14 @@ export function MilestoneProgress({ milestone }: { milestone: Milestone }) {
   const items = data.items.filter(
     (item) => item.milestoneId === milestone.id && item.projectId === milestone.projectId,
   );
-  const done = items.filter((item) => item.status === 'done').length;
+  const progress = workProgress(items);
   return (
-    <span className="milestone-progress" aria-label={`${done} of ${items.length} work items done`}>
-      <progress max={items.length || 1} value={done} />
+    <span className="milestone-progress" aria-label={progressLabel(progress)}>
+      <progress max={progress.total || 1} value={progress.done} />
+      {/* Narrow rows may wrap only before the canceled count. */}
       <span>
-        {done}/{items.length} done
+        {progress.done}/{progress.total}&nbsp;done
+        {progress.canceled > 0 && <> ·&nbsp;{progress.canceled}&nbsp;canceled</>}
       </span>
     </span>
   );

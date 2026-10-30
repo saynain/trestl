@@ -1,20 +1,21 @@
 import { compareProjectUpdates } from '../../shared/project-updates';
 import { useState, type FormEvent } from 'react';
-import { Plus, Activity, UserRound } from 'lucide-react';
+import { Plus, Activity, ArrowRight, ChevronRight, UserRound } from 'lucide-react';
 import type { Project, ProjectHealth, ProjectUpdate } from '../../shared/types';
 import { useApp } from '../lib/context';
 import { post } from '../lib/api';
-import { navigate, shortDate } from '../lib/model';
+import { navigate, shortDate, today } from '../lib/model';
+import { progressLabel, projectProgress } from '../lib/progress';
 import {
   latestProjectUpdate,
   latestProjectUpdates,
   projectHealth,
-  projectReviewEvidence,
   projectEvidenceDraft,
-  projectDraftEvidence,
+  projectReviewSummary,
   type ProjectReviewEvidence,
-  reviewProjects,
+  updateAge,
   updateIsStale,
+  workspaceReviewProjects,
 } from '../lib/project-updates';
 import { Avatar, EmptyState, Modal, ProjectIcon } from './ui';
 import { Select } from './Select';
@@ -186,13 +187,31 @@ export function ProjectUpdates({ project }: { project: Project }) {
     </section>
   );
 }
+/** Latest health with a compact age; amber once the update is a week old. */
+export function UpdateHealth({ update }: { update?: ProjectUpdate }) {
+  return (
+    <span className="update-health">
+      <HealthBadge health={update?.health} />
+      {update && (
+        <time
+          dateTime={update.createdAt}
+          title={new Date(update.createdAt).toLocaleString()}
+          className={updateIsStale(update) ? 'update-stale' : undefined}
+        >
+          {updateAge(update)}
+        </time>
+      )}
+    </span>
+  );
+}
 export function WeeklyReview() {
   const { data } = useApp();
   const [filter, setFilter] = useState('all');
   const [query, setQuery] = useState('');
+  const [openId, setOpenId] = useState<string | null>(null);
   const [compose, setCompose] = useState<{ project: Project; body: string } | null>(null);
   const updates = latestProjectUpdates(data.projectUpdates || []);
-  const projects = reviewProjects(data.projects, updates);
+  const { projects, omittedPrivate } = workspaceReviewProjects(data, updates);
   const needsUpdate = (p: Project) => {
     const u = updates.get(p.id);
     return !u || updateIsStale(u);
@@ -204,6 +223,7 @@ export function WeeklyReview() {
       `${p.name} ${p.key}`.toLowerCase().includes(query.toLowerCase())
     );
   });
+  const day = today();
   return (
     <div className="weekly-review">
       <div className="section-heading">
@@ -212,6 +232,8 @@ export function WeeklyReview() {
           <p className="muted">
             {projects.length} active projects · {projects.filter(needsUpdate).length} need an
             update. Risks appear first.
+            {omittedPrivate > 0 &&
+              ` ${omittedPrivate} private ${omittedPrivate === 1 ? 'project' : 'projects'} omitted.`}
           </p>
         </div>
       </div>
@@ -237,66 +259,124 @@ export function WeeklyReview() {
           <option value="needs_update">Needs update</option>
         </Select>
       </div>
-      <div className="review-projects">
-        {shown.map((project) => {
-          const update = updates.get(project.id);
-          const owner = data.users.find((u) => u.id === project.ownerId);
-          const evidence = projectReviewEvidence(data, project.id);
-          return (
-            <article className="review-project" key={project.id}>
-              <div className="review-project-heading">
-                <button
-                  className="review-project-name"
-                  onClick={() => navigate('project', project.id, 'overview')}
-                >
-                  <ProjectIcon project={project} size={23} />
-                  <span>
-                    <strong>{project.name}</strong>
-                    <small>
-                      {project.key}
-                      {project.parentId
-                        ? ` · ${data.projects.find((p) => p.id === project.parentId)?.name || ''}`
-                        : ''}
-                    </small>
-                  </span>
-                </button>
-                <button className="button" onClick={() => setCompose({ project, body: '' })}>
-                  <Plus size={14} />
-                  Update
-                </button>
-              </div>
-              <ReviewEvidence
-                project={project}
-                evidence={evidence}
-                omittedRestricted={
-                  projectDraftEvidence(evidence, data, project.id).omittedRestricted
-                }
-                onDraft={() =>
-                  setCompose({ project, body: projectEvidenceDraft(evidence, data, project.id) })
-                }
-              />
-              <div className="review-project-facts">
-                <span>Owner: {owner?.name || 'Unassigned'}</span>
-                <span>
-                  Target:{' '}
-                  {shortDate(project.dueDate) ||
-                    (project.lifecycle === 'ongoing' ? 'Ongoing' : 'Not set')}
-                </span>
-              </div>
-              {update ? (
-                <UpdateBody update={update} />
-              ) : (
-                <div className="review-no-update">
-                  <HealthBadge />
-                  <p className="muted">
-                    No update yet. Add progress and next steps before the meeting.
-                  </p>
+      {shown.length > 0 && (
+        <div className="review-scan">
+          <div className="review-scan-line review-scan-head-line">
+            <div className="review-scan-head">
+              <span>Project</span>
+              <span>Health</span>
+              <span>Owner</span>
+              <span>Lifecycle</span>
+              <span>Next milestone</span>
+              <span>Open blockers</span>
+            </div>
+          </div>
+          {shown.map((project) => {
+            const update = updates.get(project.id);
+            const owner = data.users.find((u) => u.id === project.ownerId);
+            const parent = data.projects.find((p) => p.id === project.parentId);
+            const { evidence, omittedRestricted, blockers, nextMilestone } = projectReviewSummary(
+              data,
+              project.id,
+            );
+            const open = openId === project.id;
+            return (
+              <div className={`review-scan-entry ${open ? 'open' : ''}`} key={project.id}>
+                <div className="review-scan-line">
+                  <button
+                    className="review-scan-row"
+                    aria-expanded={open}
+                    aria-controls={open ? `review-${project.id}` : undefined}
+                    onClick={() => setOpenId(open ? null : project.id)}
+                  >
+                    <span className="review-scan-project">
+                      <ChevronRight size={14} className="review-scan-chevron" aria-hidden="true" />
+                      <ProjectIcon project={project} size={20} />
+                      <span>
+                        <strong>{project.name}</strong>
+                        <small>{parent ? parent.name : project.key}</small>
+                      </span>
+                    </span>
+                    <UpdateHealth update={update} />
+                    <span className="review-scan-owner">
+                      <Avatar user={owner} size={20} />
+                      <span>{owner?.name || 'Unassigned'}</span>
+                    </span>
+                    <span className="review-scan-stack">
+                      <span>{project.lifecycle === 'ongoing' ? 'Ongoing' : 'Time-bound'}</span>
+                      {project.lifecycle !== 'ongoing' && (
+                        <small>{shortDate(project.dueDate) || 'No target date'}</small>
+                      )}
+                    </span>
+                    <span className="review-scan-stack">
+                      {nextMilestone ? (
+                        <>
+                          <span>{nextMilestone.title}</span>
+                          <small
+                            className={
+                              nextMilestone.dueDate && nextMilestone.dueDate < day ? 'overdue' : ''
+                            }
+                          >
+                            {shortDate(nextMilestone.dueDate) || 'No date'}
+                          </small>
+                        </>
+                      ) : (
+                        <span className="muted">No milestone</span>
+                      )}
+                    </span>
+                    <span className={blockers ? 'review-scan-blockers' : 'muted'}>
+                      {blockers ? `${blockers} ${blockers === 1 ? 'blocker' : 'blockers'}` : 'None'}
+                    </span>
+                  </button>
+                  <button
+                    className="button review-scan-update"
+                    aria-label={`Update ${project.name}`}
+                    onClick={() => setCompose({ project, body: '' })}
+                  >
+                    <Plus size={14} />
+                    <span>Update</span>
+                  </button>
                 </div>
-              )}
-            </article>
-          );
-        })}
-      </div>
+                {open && (
+                  <div className="review-scan-detail" id={`review-${project.id}`}>
+                    <ReviewEvidence
+                      project={project}
+                      evidence={evidence}
+                      omittedRestricted={omittedRestricted}
+                      onDraft={() =>
+                        setCompose({
+                          project,
+                          body: projectEvidenceDraft(evidence, data, project.id),
+                        })
+                      }
+                    />
+                    <div className="review-project-facts">
+                      <span>Work: {progressLabel(projectProgress(data, project.id))}</span>
+                      <button
+                        className="text-button"
+                        onClick={() => navigate('project', project.id, 'overview')}
+                      >
+                        Open project
+                        <ArrowRight size={13} />
+                      </button>
+                    </div>
+                    {update ? (
+                      <UpdateBody update={update} />
+                    ) : (
+                      <div className="review-no-update">
+                        <HealthBadge />
+                        <p className="muted">
+                          No update yet. Add progress and next steps before the meeting.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
       {!shown.length && (
         <EmptyState
           title={projects.length ? 'No matching projects' : 'No active projects'}

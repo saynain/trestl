@@ -1,7 +1,7 @@
 import { MilestoneItems, MilestoneProgress } from './MilestoneItems';
 import ActivityHeatmap from './ActivityHeatmap';
 import './people.css';
-import { ProjectUpdates } from './ProjectUpdates';
+import { ProjectUpdates, UpdateHealth } from './ProjectUpdates';
 import { Select } from './Select';
 import { useState, type FormEvent } from 'react';
 import {
@@ -24,9 +24,12 @@ import {
   ArrowRight,
   CircleCheck,
 } from 'lucide-react';
-import type { Project, ResourceLink, WorkItem } from '../../shared/types';
+import { workProgress } from '../../shared/progress';
+import type { Project, ResourceLink } from '../../shared/types';
 import { useApp } from '../lib/context';
 import { descendants, isDone, isOverdue, navigate, shortDate, statuses, today } from '../lib/model';
+import { progressLabel, projectItems, projectProgress } from '../lib/progress';
+import { latestProjectUpdates } from '../lib/project-updates';
 import { patch, post, remove } from '../lib/api';
 import { Avatar, EmptyState, Modal, ProjectIcon, StatusIcon } from './ui';
 import ConfluenceSearch from './ConfluenceSearch';
@@ -36,6 +39,7 @@ export function AllProjects() {
   const { data, createProject, editProject } = useApp();
   const [showArchived, setShowArchived] = useState(false);
   const projects = data.projects.filter((p) => showArchived || p.status !== 'archived');
+  const updates = latestProjectUpdates(data.projectUpdates || []);
   return (
     <div className="projects-content">
       <div className="section-title">
@@ -52,15 +56,14 @@ export function AllProjects() {
       <div className="projects-table">
         <div className="projects-table-head">
           <span>Project</span>
+          <span>Health</span>
           <span>Status / lifecycle</span>
           <span>Work</span>
           <span>Target date</span>
           <span>Owner</span>
         </div>
         {projects.map((project) => {
-          const ids = descendants(data.projects, project.id);
-          const items = data.items.filter((i) => i.projectId && ids.has(i.projectId));
-          const done = items.filter(isDone).length;
+          const progress = projectProgress(data, project.id);
           return (
             <div className="project-table-entry" key={project.id}>
               <button
@@ -81,6 +84,7 @@ export function AllProjects() {
                     </small>
                   </span>
                 </span>
+                <UpdateHealth update={updates.get(project.id)} />
                 <span className="lifecycle-badge">
                   <span className={`tiny-dot ${project.status}`} aria-hidden="true" />
                   <strong>
@@ -88,13 +92,20 @@ export function AllProjects() {
                   </strong>
                   <small>{project.lifecycle === 'ongoing' ? 'Ongoing' : 'Time-bound'}</small>
                 </span>
-                <span className="project-progress">
+                <span className="project-progress" title={progressLabel(progress)}>
                   <span className="progress-track">
-                    <span style={{ width: `${items.length ? (done / items.length) * 100 : 0}%` }} />
+                    <span
+                      style={{
+                        width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%`,
+                      }}
+                    />
                   </span>
                   <small>
-                    {done}/{items.length}
+                    {progress.done}/{progress.total}
                   </small>
+                  {progress.canceled > 0 && (
+                    <small className="progress-canceled">{progress.canceled} canceled</small>
+                  )}
                 </span>
                 <span className="muted">{shortDate(project.dueDate) || '—'}</span>
                 <Avatar user={data.users.find((u) => u.id === project.ownerId)} />
@@ -126,26 +137,20 @@ export function AllProjects() {
     </div>
   );
 }
-export function Overview({
-  project,
-  items,
-  milestoneId,
-}: {
-  project: Project;
-  items: WorkItem[];
-  milestoneId?: string;
-}) {
+export function Overview({ project, milestoneId }: { project: Project; milestoneId?: string }) {
   const { data, refresh, toast, createProject, editProject, openItem } = useApp();
   const [milestoneOpen, setMilestoneOpen] = useState(false);
   const [selectedMilestone, setSelectedMilestone] = useState<string | null>(milestoneId ?? null);
   const [milestoneTitle, setMilestoneTitle] = useState('');
   const [milestoneDue, setMilestoneDue] = useState('');
   const [busy, setBusy] = useState(false);
-  const active = items.filter((i) => !isDone(i));
-  const done = items.filter((i) => i.status === 'done');
-  const overdue = items.filter(isOverdue);
-  const children = data.projects.filter((p) => p.parentId === project.id);
   const ids = descendants(data.projects, project.id);
+  const items = projectItems(data, project.id);
+  const progress = workProgress(items);
+  const related = items.filter((i) => !i.projectId || !ids.has(i.projectId)).length;
+  const active = items.filter((i) => !isDone(i));
+  const overdue = active.filter(isOverdue);
+  const children = data.projects.filter((p) => p.parentId === project.id);
   const milestones = data.milestones.filter((m) => ids.has(m.projectId));
   async function milestone(e: FormEvent) {
     e.preventDefault();
@@ -228,7 +233,7 @@ export function Overview({
           </div>
           <div className="work-summary">
             <div>
-              <strong>{active.length}</strong>
+              <strong>{progress.open}</strong>
               <span>Active items</span>
             </div>
             <div>
@@ -236,9 +241,15 @@ export function Overview({
               <span>Overdue</span>
             </div>
             <div>
-              <strong>{done.length}</strong>
+              <strong>{progress.done}</strong>
               <span>Completed</span>
             </div>
+            {progress.canceled > 0 && (
+              <div>
+                <strong>{progress.canceled}</strong>
+                <span>Canceled</span>
+              </div>
+            )}
           </div>
           <div className="status-distribution">
             {statuses
@@ -270,6 +281,11 @@ export function Overview({
               );
             })}
           </div>
+          {related > 0 && (
+            <p className="muted overview-related-note">
+              Includes {related} related {related === 1 ? 'item' : 'items'} from other projects.
+            </p>
+          )}
         </section>
         <section className="overview-section">
           <div className="section-heading">
@@ -283,8 +299,7 @@ export function Overview({
           </div>
           {children.length > 0 ? (
             children.map((child) => {
-              const childIds = descendants(data.projects, child.id);
-              const childItems = data.items.filter((i) => i.projectId && childIds.has(i.projectId));
+              const childProgress = projectProgress(data, child.id);
               return (
                 <button
                   key={child.id}
@@ -297,7 +312,7 @@ export function Overview({
                   <span>
                     <strong>{child.name}</strong>
                     <small>
-                      {childItems.filter((i) => !isDone(i)).length} active items ·{' '}
+                      {childProgress.open} active items ·{' '}
                       {child.lifecycle === 'ongoing'
                         ? 'Ongoing'
                         : shortDate(child.dueDate) || 'No target date'}

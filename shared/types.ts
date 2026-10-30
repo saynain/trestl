@@ -186,7 +186,8 @@ export interface SavedView {
 export interface Milestone {
   /** Computed from linked work items visible to the caller. */
   itemIds?: string[];
-  progress?: { total: number; done: number };
+  /** Same rule as project progress: canceled items are left out of total and counted separately. */
+  progress?: { total: number; done: number; canceled: number };
   revision?: number;
   id: string;
   projectId: string;

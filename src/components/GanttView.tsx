@@ -32,6 +32,7 @@ import { Avatar, EmptyState, Modal, StatusIcon } from './ui';
 import './gantt.css';
 import GanttMilestones from './GanttMilestones';
 import { criticalPath } from '../lib/critical-path';
+import { progressLabel, projectProgress } from '../lib/progress';
 
 type Schedule = { startDate: string | null; dueDate: string | null };
 type Drag = {
@@ -314,7 +315,8 @@ export default function GanttView({ project, items }: { project: Project; items:
     return [{ ...link, path }];
   });
   const style = { '--gantt-width': `${width}px`, '--gantt-day': `${cell}px` } as CSSProperties;
-  const completed = items.filter((item) => item.status === 'done').length;
+  const progress = projectProgress(data, project.id);
+  const percent = progress.total ? (progress.done / progress.total) * 100 : 0;
   return (
     <section
       className={`gantt-view ${hasCritical ? 'show-critical' : ''}`}
@@ -339,15 +341,12 @@ export default function GanttView({ project, items }: { project: Project; items:
         </div>
         <div className="gantt-progress">
           <span>
-            <strong>{items.length ? Math.round((completed / items.length) * 100) : 0}%</strong>{' '}
-            complete
+            <strong>{Math.round(percent)}%</strong> complete
           </span>
           <div>
-            <i style={{ width: `${items.length ? (completed / items.length) * 100 : 0}%` }} />
+            <i style={{ width: `${percent}%` }} />
           </div>
-          <small>
-            {completed} of {items.length} items done
-          </small>
+          <small>{progressLabel(progress)}</small>
         </div>
       </div>
       <div className="gantt-toolbar">

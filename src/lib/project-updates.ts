@@ -2,6 +2,7 @@ import { compareProjectUpdates } from '../../shared/project-updates';
 import { blockingRelations } from '../../shared/dependencies';
 import type { Bootstrap, Project, ProjectUpdate, WorkItem } from '../../shared/types';
 import { descendants, isDone } from './model';
+import { projectItems } from './progress';
 export const projectHealth = { on_track: 'On track', at_risk: 'At risk', off_track: 'Off track' };
 export function latestProjectUpdates(updates: ProjectUpdate[]) {
   const latest = new Map<string, ProjectUpdate>();
@@ -17,6 +18,14 @@ export function latestProjectUpdate(updates: ProjectUpdate[], projectId: string)
 }
 export function updateIsStale(update: ProjectUpdate, now = Date.now()) {
   return now - new Date(update.createdAt).getTime() >= 7 * 86400000;
+}
+/** Compact age of an update for scan tables, such as "3d ago". */
+export function updateAge(update: ProjectUpdate, now = Date.now()) {
+  const days = Math.floor((now - Date.parse(update.createdAt)) / 86400000);
+  if (days < 1) return 'today';
+  if (days < 14) return `${days}d ago`;
+  if (days < 60) return `${Math.floor(days / 7)}w ago`;
+  return `${Math.floor(days / 30)}mo ago`;
 }
 export function reviewProjects(
   projects: Project[],
@@ -47,14 +56,7 @@ function calendarDay(date: Date) {
 /** Evidence is computed only from the caller's visible bootstrap records. */
 export function projectReviewEvidence(data: Bootstrap, projectId: string, now = Date.now()) {
   const projectIds = descendants(data.projects, projectId);
-  const linkedIds = new Set(
-    (data.projectRelations || [])
-      .filter((link) => projectIds.has(link.projectId))
-      .map((link) => link.itemId),
-  );
-  const items = data.items.filter(
-    (item) => (item.projectId && projectIds.has(item.projectId)) || linkedIds.has(item.id),
-  );
+  const items = projectItems(data, projectId);
   const itemIds = new Set(items.map((item) => item.id));
   const latest = latestProjectUpdate(data.projectUpdates || [], projectId);
   const since = latest ? Date.parse(latest.createdAt) : now - 7 * 86400000;
@@ -96,6 +98,46 @@ export function projectReviewEvidence(data: Bootstrap, projectId: string, now = 
   };
 }
 export type ProjectReviewEvidence = ReturnType<typeof projectReviewEvidence>;
+/**
+ * The weekly review is a shared screen: it lists only projects everyone in the
+ * workspace can see. Private projects, and projects beneath them, are counted
+ * but never shown.
+ */
+export function workspaceReviewProjects(
+  data: Bootstrap,
+  updates: ProjectUpdate[] | Map<string, ProjectUpdate>,
+  now = Date.now(),
+) {
+  const active = reviewProjects(data.projects, updates, now);
+  const projects = active.filter((project) => projectAudience(data, project.id) === null);
+  return { projects, omittedPrivate: active.length - projects.length };
+}
+/** Scan-table facts, counted only from work shared with everyone who can see the project. */
+export function projectReviewSummary(data: Bootstrap, projectId: string, now = Date.now()) {
+  const evidence = projectReviewEvidence(data, projectId, now);
+  const shared = projectDraftEvidence(evidence, data, projectId);
+  const target = projectAudience(data, projectId);
+  const projectIds = descendants(data.projects, projectId);
+  const nextMilestone = data.milestones
+    .filter(
+      (milestone) =>
+        projectIds.has(milestone.projectId) &&
+        !milestone.completed &&
+        containsAudience(projectAudience(data, milestone.projectId), target),
+    )
+    .sort(
+      (a, b) =>
+        (a.dueDate || '9999-12-31').localeCompare(b.dueDate || '9999-12-31') ||
+        a.title.localeCompare(b.title) ||
+        a.id.localeCompare(b.id),
+    )[0];
+  return {
+    evidence,
+    omittedRestricted: shared.omittedRestricted,
+    blockers: shared.blockers.length,
+    nextMilestone,
+  };
+}
 
 // null means the whole workspace, including future members. Comparing only
 // current users would incorrectly treat a private project as workspace-wide.

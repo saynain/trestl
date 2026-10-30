@@ -1689,7 +1689,7 @@ textarea::placeholder {
 .projects-table-head,
 .project-table-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 125px 150px 110px 50px;
+  grid-template-columns: minmax(0, 1fr) 130px 115px 140px 95px 50px;
   align-items: center;
   gap: 20px;
   padding: 13px 15px;
@@ -1784,8 +1784,9 @@ textarea::placeholder {
 }
 .project-progress {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 4px 10px;
 }
 .progress-track {
   height: 4px;
@@ -1804,6 +1805,9 @@ textarea::placeholder {
 .project-progress > small {
   font-size: var(--text-sm);
   color: var(--muted);
+}
+.project-progress > .progress-canceled {
+  flex-basis: 100%;
 }
 .overview-content {
   display: grid;
@@ -1865,7 +1869,8 @@ textarea::placeholder {
 }
 .work-summary {
   display: flex;
-  gap: 60px;
+  flex-wrap: wrap;
+  gap: 18px 60px;
   margin: 24px 0;
 }
 .work-summary > div {
@@ -1912,6 +1917,10 @@ textarea::placeholder {
 .distribution-legend b {
   font-weight: 400;
   margin-left: 2px;
+}
+.overview-related-note {
+  font-size: var(--text-sm);
+  margin: 12px 0 0;
 }
 .count-badge {
   font-size: var(--text-sm);
@@ -1979,6 +1988,7 @@ textarea::placeholder {
 .milestone-row small {
   color: var(--muted);
   font-size: var(--text-sm);
+  white-space: nowrap;
 }
 .overview-empty {
   font-size: var(--text-ui);
@@ -2399,7 +2409,7 @@ textarea::placeholder {
   }
   .project-table-row,
   .projects-table-head {
-    grid-template-columns: minmax(0, 1fr) 100px 100px 80px 25px;
+    grid-template-columns: minmax(0, 1fr) 115px 100px 100px 80px 25px;
     gap: 12px;
   }
   .progress-track {
@@ -2476,10 +2486,10 @@ textarea::placeholder {
   }
   .project-table-row,
   .projects-table-head {
-    grid-template-columns: minmax(0, 1fr) 100px 80px 24px;
+    grid-template-columns: minmax(0, 1fr) 115px 100px 80px 24px;
   }
-  .project-table-row > :nth-child(3),
-  .projects-table-head > :nth-child(3) {
+  .project-table-row > :nth-child(4),
+  .projects-table-head > :nth-child(4) {
     display: none;
   }
   .resource-sync-note {
@@ -2789,17 +2799,22 @@ textarea::placeholder {
   }
   .project-table-row,
   .projects-table-head {
-    grid-template-columns: minmax(0, 1fr) 85px;
+    grid-template-columns: minmax(0, 1fr) 90px;
     gap: 10px;
     padding: 14px 11px;
+  }
+  .project-table-row .project-health svg {
+    display: none;
   }
   .projects-table-head {
     padding-right: 59px;
   }
-  .project-table-row > :nth-child(4),
+  .project-table-row > :nth-child(3),
   .project-table-row > :nth-child(5),
-  .projects-table-head > :nth-child(4),
-  .projects-table-head > :nth-child(5) {
+  .project-table-row > :nth-child(6),
+  .projects-table-head > :nth-child(3),
+  .projects-table-head > :nth-child(5),
+  .projects-table-head > :nth-child(6) {
     display: none;
   }
   .project-table-name {
@@ -2839,7 +2854,7 @@ textarea::placeholder {
     font-size: var(--text-ui);
   }
   .work-summary {
-    gap: 45px;
+    gap: 18px 45px;
   }
   .work-summary strong {
     font-size: 26px;

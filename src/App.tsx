@@ -64,6 +64,7 @@ import {
   shortDate,
   type Route,
 } from './lib/model';
+import { projectProgress } from './lib/progress';
 import { Avatar, EmptyState, Logo, Modal, ProjectIcon } from './components/ui';
 import Auth from './components/Auth';
 import Sidebar from './components/Sidebar';
@@ -665,7 +666,7 @@ export default function App() {
                         <span>
                           {route.page === 'projects'
                             ? `${data.projects.filter((p) => p.status === 'active').length} active projects`
-                            : `${headingItems.filter((i) => !isDone(i)).length} active items`}
+                            : `${project ? projectProgress(data, project.id).open : headingItems.filter((i) => !isDone(i)).length} active items`}
                         </span>
                         {project?.dueDate && (
                           <>
@@ -885,7 +886,6 @@ export default function App() {
                       <Overview
                         key={`${project.id}:${route.tab}`}
                         project={project}
-                        items={items}
                         milestoneId={route.tab.split('/')[1]}
                       />
                     ) : project && (route.tab === 'roadmap' || presentingRoadmap) ? (

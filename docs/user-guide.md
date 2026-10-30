@@ -20,7 +20,7 @@ Open a project's **Gantt** tab to plan work with start and due dates, drag or re
 
 Choose a milestone in a work item’s **Properties** to link it to a release or checkpoint in the same project. The **Milestone** list filter supports a specific milestone or **No milestone**, and is preserved in saved views. Moving an item to another project clears its milestone; deleting a milestone unlinks its items.
 
-Milestones show **done/total** progress from linked work you can access (canceled items remain in the total). Expand a milestone on the Roadmap or in the Gantt milestone list to open its linked work; click its name in the project Overview for the same detail. Completion is still a separate manual milestone setting.
+Milestones show **done/total** progress from linked work you can access. Projects, milestones and the weekly review count progress the same way: only done counts as completed, and canceled items are left out of the total and shown separately. Expand a milestone on the Roadmap or in the Gantt milestone list to open its linked work; click its name in the project Overview for the same detail. Completion is still a separate manual milestone setting.
 
 Milestones can be clicked to edit their name, date, and completion state, or dragged to a new calendar date. Overlapping labels are arranged into separate rows. Click the **Milestones** row heading to find milestones outside the visible range or restore a cleared date. Edits use revision checks to avoid overwriting newer changes.
 
@@ -182,6 +182,6 @@ New-item, item-edit, and comment drafts recover when you reopen the form in the 
 
 ## Review evidence and roadmap delivery
 
-Weekly review shows visible work completed since the latest update (or the last seven days), overdue and upcoming work, unresolved dependencies, and overdue milestones. Expand the evidence to open the underlying work. Draft from evidence prepares editable update text; project health remains your explicit choice.
+Weekly review lists active projects everyone can see in a compact table: health and update age, owner, lifecycle, next milestone, and open blockers. Private projects, and projects inside them, are left out and counted as omitted; row counts include only work shared with everyone who can see the project. Select a row to see visible work completed since the latest update (or the last seven days), overdue and upcoming work, unresolved dependencies, and overdue milestones. Expand the evidence to open the underlying work. Draft from evidence prepares editable update text; project health remains your explicit choice.
 
 Roadmap features can link projects, milestones, and individual work items. Delivery progress and risks are calculated from the linked work you can access. These links do not replace the feature's editorial status. Export/import preserves links within the exported project tree; links to work outside the package are omitted.
