@@ -47,7 +47,7 @@
     "jose": "^6.2.13",
     "lucide-react": "^1.61.0",
     "mdast-util-from-markdown": "^2.1.0",
-    "mermaid": "11.17.2",
+    "mermaid": "12.2.0",
     "openid-client": "^6.8.8",
     "pg": "^8.23.1",
     "react": "^19.3.1",
